@@ -16,7 +16,6 @@ import (
 
 	"github.com/LiveRamp/gazette/envflag"
 	"github.com/LiveRamp/gazette/envflagfactory"
-	"github.com/LiveRamp/gazette/pprof"
 )
 
 const (
@@ -41,7 +40,7 @@ func Initialize() {
 	initFlags()
 	initLog(*logLevel)
 	initMetrics(*metricsPort, *metricsPath)
-	pprof.RegisterSignalHandlers()
+	RegisterSignalHandlers()
 }
 
 // initFlags parses flags from the environment and command line, in that order.

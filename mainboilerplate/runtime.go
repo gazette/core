@@ -1,4 +1,4 @@
-package pprof
+package mainboilerplate
 
 import (
 	"fmt"
