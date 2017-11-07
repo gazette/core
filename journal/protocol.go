@@ -72,7 +72,7 @@ type ReadArgs struct {
 	// values specify a desired exact byte offset to read from. If the offset is
 	// not available (eg, because it represents a portion of Journal which has
 	// been permantently deleted), the broker will return the next available
-	// offset. Callers should therefor always inspect the ReadResult Offset.
+	// offset. Callers should therefore always inspect the ReadResult Offset.
 	Offset int64
 	// Whether the operation should block until content becomes available.
 	// ErrNotYetAvailable is returned if a non-blocking read has no ready content.
@@ -80,9 +80,9 @@ type ReadArgs struct {
 	// Context which may cancel or supply a deadline for the operation.
 	Context context.Context
 
-	// The time at which blocking will expire
-	// DEPRECATED. Server-side support for deadlines will be removed. Use
+	// Deprecated: Server-side support for deadlines will be removed. Use
 	// context.WithDeadline instead.
+	// The time at which blocking will expire
 	Deadline time.Time
 }
 

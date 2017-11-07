@@ -172,185 +172,185 @@ func (s *PlaybackSuite) TestStagingPaths(c *gc.C) {
 }
 
 func (s *PlaybackSuite) TestCreate(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
-	var b = tpc.frame(newCreateOp("/a/path"))
+	var b = poh.frame(newCreateOp("/a/path"))
 
 	// Expect a backing file for Fnode 42 was allocated in the staging directory.
-	c.Check(tpc.apply(c, b), gc.IsNil)
-	c.Check(tpc.files[42].Name(), gc.Equals, stagedPath(tpc.dir, 42))
+	c.Check(poh.apply(c, b), gc.IsNil)
+	c.Check(poh.files[42].Name(), gc.Equals, stagedPath(poh.dir, 42))
 }
 
 func (s *PlaybackSuite) TestCreateErrors(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
 	// Place a pre-existing fixture at the expected staging path.
-	c.Check(ioutil.WriteFile(stagedPath(tpc.dir, 42), []byte("whoops"), 0644), gc.IsNil)
+	c.Check(ioutil.WriteFile(stagedPath(poh.dir, 42), []byte("whoops"), 0644), gc.IsNil)
 
-	var b = tpc.frame(newCreateOp("/a/path"))
+	var b = poh.frame(newCreateOp("/a/path"))
 
 	// Expect that we fail with an aborting error.
-	c.Check(tpc.apply(c, b), gc.ErrorMatches, "open /.*/42: file exists")
-	c.Check(tpc.files, gc.HasLen, 0)
+	c.Check(poh.apply(c, b), gc.ErrorMatches, "open /.*/42: file exists")
+	c.Check(poh.files, gc.HasLen, 0)
 }
 
 func (s *PlaybackSuite) TestUnlink(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
 	// Precondition fixture: staged fnode exists with two links.
-	c.Check(tpc.apply(c, tpc.frame(newCreateOp("/a/path"))), gc.IsNil)
-	c.Check(tpc.apply(c, tpc.frame(newLinkOp(42, "/other/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newCreateOp("/a/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newLinkOp(42, "/other/path"))), gc.IsNil)
 
 	// Apply first unlink.
-	c.Check(tpc.apply(c, tpc.frame(newUnlinkOp(42, "/a/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newUnlinkOp(42, "/a/path"))), gc.IsNil)
 
 	// Expect staged file still exists.
-	c.Check(tpc.files[42].Name(), gc.Equals, stagedPath(tpc.dir, 42))
+	c.Check(poh.files[42].Name(), gc.Equals, stagedPath(poh.dir, 42))
 
 	// Second unlink.
-	c.Check(tpc.apply(c, tpc.frame(newUnlinkOp(42, "/other/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newUnlinkOp(42, "/other/path"))), gc.IsNil)
 
 	// Staged file was removed.
-	c.Check(tpc.files, gc.HasLen, 0)
+	c.Check(poh.files, gc.HasLen, 0)
 }
 
 func (s *PlaybackSuite) TestUnlinkCloseError(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
-	c.Check(tpc.apply(c, tpc.frame(newCreateOp("/a/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newCreateOp("/a/path"))), gc.IsNil)
 
 	// Sneak in a Close() such that a successive close fails.
-	tpc.files[42].Close()
+	poh.files[42].Close()
 
-	c.Check(tpc.apply(c, tpc.frame(newUnlinkOp(42, "/a/path"))),
+	c.Check(poh.apply(c, poh.frame(newUnlinkOp(42, "/a/path"))),
 		gc.ErrorMatches, ".*file already closed")
 
-	c.Check(tpc.files, gc.HasLen, 1)
+	c.Check(poh.files, gc.HasLen, 1)
 }
 
 func (s *PlaybackSuite) TestUnlinkRemoveError(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
-	c.Check(tpc.apply(c, tpc.frame(newCreateOp("/a/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newCreateOp("/a/path"))), gc.IsNil)
 
 	// Sneak in a Remove() such that a successive remove fails.
-	c.Check(os.Remove(tpc.files[42].Name()), gc.IsNil)
+	c.Check(os.Remove(poh.files[42].Name()), gc.IsNil)
 
-	c.Check(tpc.apply(c, tpc.frame(newUnlinkOp(42, "/a/path"))),
+	c.Check(poh.apply(c, poh.frame(newUnlinkOp(42, "/a/path"))),
 		gc.ErrorMatches, "remove .*: no such file or directory")
 
-	c.Check(tpc.files, gc.HasLen, 1)
+	c.Check(poh.files, gc.HasLen, 1)
 }
 
 func (s *PlaybackSuite) TestUnlinkUntrackedError(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
 	// Fnode is untracked; expect a failure to apply an unlink is not treated as an error.
-	c.Check(tpc.skips(c, tpc.frame(newUnlinkOp(15, "/a/path"))), gc.IsNil)
+	c.Check(poh.skips(c, poh.frame(newUnlinkOp(15, "/a/path"))), gc.IsNil)
 }
 
 func (s *PlaybackSuite) TestWrites(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
-	c.Check(tpc.apply(c, tpc.frame(newCreateOp("/a/path"))), gc.IsNil)
-	c.Check(tpc.skips(c, tpc.frame(newCreateOp("/skipped/path"))), gc.IsNil) // Fnode 43 is skipped by hintsFixture.
+	c.Check(poh.apply(c, poh.frame(newCreateOp("/a/path"))), gc.IsNil)
+	c.Check(poh.skips(c, poh.frame(newCreateOp("/skipped/path"))), gc.IsNil) // Fnode 43 is skipped by hintsFixture.
 
 	var getContent = func(fnode Fnode) string {
-		var bytes, err = ioutil.ReadFile(stagedPath(tpc.dir, fnode))
+		var bytes, err = ioutil.ReadFile(stagedPath(poh.dir, fnode))
 		c.Check(err, gc.IsNil)
 		return string(bytes)
 	}
 
 	// Perform a few writes, occurring out of order and with repetition of write range.
-	var b = tpc.frame(newWriteOp(42, 5, 10))
+	var b = poh.frame(newWriteOp(42, 5, 10))
 	b = append(b, []byte("over-write")...)
-	c.Check(tpc.apply(c, b), gc.IsNil)
+	c.Check(poh.apply(c, b), gc.IsNil)
 	c.Check(getContent(42), gc.Equals, "\x00\x00\x00\x00\x00over-write")
 
-	b = tpc.frame(newWriteOp(42, 0, 5))
+	b = poh.frame(newWriteOp(42, 0, 5))
 	b = append(b, []byte("abcde")...)
-	c.Check(tpc.apply(c, b), gc.IsNil)
+	c.Check(poh.apply(c, b), gc.IsNil)
 	c.Check(getContent(42), gc.Equals, "abcdeover-write")
 
-	b = tpc.frame(newWriteOp(42, 5, 10))
+	b = poh.frame(newWriteOp(42, 5, 10))
 	b = append(b, []byte("0123456789")...)
-	c.Check(tpc.apply(c, b), gc.IsNil)
+	c.Check(poh.apply(c, b), gc.IsNil)
 	c.Check(getContent(42), gc.Equals, "abcde0123456789")
 
 	// Reader returns early EOF (before op.Length). Expect an ErrUnexpectedEOF.
-	b = tpc.frame(newWriteOp(42, 15, 10))
+	b = poh.frame(newWriteOp(42, 15, 10))
 	b = append(b, []byte("short")...)
-	c.Check(tpc.apply(c, b), gc.Equals, io.ErrUnexpectedEOF)
+	c.Check(poh.apply(c, b), gc.Equals, io.ErrUnexpectedEOF)
 	c.Check(getContent(42), gc.Equals, "abcde0123456789short")
 
 	// Writes to skipped fnodes succeed without error, but are ignored.
-	b = tpc.frame(newWriteOp(43, 5, 10))
+	b = poh.frame(newWriteOp(43, 5, 10))
 	b = append(b, []byte("0123456789")...)
-	c.Check(tpc.skips(c, b), gc.IsNil)
-	var _, err = os.Stat(stagedPath(tpc.dir, 43))
+	c.Check(poh.skips(c, b), gc.IsNil)
+	var _, err = os.Stat(stagedPath(poh.dir, 43))
 	c.Check(os.IsNotExist(err), gc.Equals, true)
 
 	// Skipped Fnodes will also produce ErrUnexpectedEOF on a short read.
-	b = tpc.frame(newWriteOp(43, 15, 10))
+	b = poh.frame(newWriteOp(43, 15, 10))
 	b = append(b, []byte("short")...)
-	c.Check(tpc.skips(c, b), gc.Equals, io.ErrUnexpectedEOF)
+	c.Check(poh.skips(c, b), gc.Equals, io.ErrUnexpectedEOF)
 }
 
 func (s *PlaybackSuite) TestUnderlyingWriteErrors(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
-	c.Check(tpc.apply(c, tpc.frame(newCreateOp("/a/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newCreateOp("/a/path"))), gc.IsNil)
 
 	// Create a fixture such that underlying Write attempts return an error.
-	var readOnlyFile, _ = os.Open(stagedPath(tpc.dir, 42))
-	tpc.files[42] = readOnlyFile
+	var readOnlyFile, _ = os.Open(stagedPath(poh.dir, 42))
+	poh.files[42] = readOnlyFile
 
-	var b = tpc.frame(newWriteOp(42, 0, 5))
+	var b = poh.frame(newWriteOp(42, 0, 5))
 	b = append(b, []byte("abcde")...)
-	c.Check(tpc.apply(c, b), gc.ErrorMatches, "^write .*")
+	c.Check(poh.apply(c, b), gc.ErrorMatches, "^write .*")
 
 	// Close so that a future Seek returns an error.
-	tpc.files[42].Close()
+	poh.files[42].Close()
 
-	b = tpc.frame(newWriteOp(42, 0, 5))
+	b = poh.frame(newWriteOp(42, 0, 5))
 	b = append(b, []byte("abcde")...)
-	c.Check(tpc.apply(c, b), gc.ErrorMatches, "^seek .*")
+	c.Check(poh.apply(c, b), gc.ErrorMatches, "^seek .*")
 }
 
 func (s *PlaybackSuite) TestWriteUntrackedError(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
 	// Expect writes to unknown Fnodes are consumed but ignored.
-	var b = tpc.frame(newWriteOp(15, 0, 10))
+	var b = poh.frame(newWriteOp(15, 0, 10))
 	b = append(b, []byte("0123456789")...)
-	c.Check(tpc.skips(c, b), gc.IsNil)
+	c.Check(poh.skips(c, b), gc.IsNil)
 
 	// Writes of unknown Fnodes will still produce ErrUnexpectedEOF on a short read.
-	b = tpc.frame(newWriteOp(15, 15, 10))
+	b = poh.frame(newWriteOp(15, 15, 10))
 	b = append(b, []byte("short")...)
-	c.Check(tpc.skips(c, b), gc.Equals, io.ErrUnexpectedEOF)
+	c.Check(poh.skips(c, b), gc.Equals, io.ErrUnexpectedEOF)
 }
 
 func (s *PlaybackSuite) TestMakeLive(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
-	c.Check(tpc.apply(c, tpc.frame(newCreateOp("/a/path"))), gc.IsNil)
-	c.Check(tpc.skips(c, tpc.frame(newCreateOp("/skipped/path"))), gc.IsNil)
-	c.Check(tpc.apply(c, tpc.frame(newCreateOp("/another/path"))), gc.IsNil)
-	c.Check(tpc.apply(c, tpc.frame(newLinkOp(42, "/linked/path"))), gc.IsNil)
-	c.Check(tpc.skips(c, tpc.frame(newUnlinkOp(43, "/skipped/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newCreateOp("/a/path"))), gc.IsNil)
+	c.Check(poh.skips(c, poh.frame(newCreateOp("/skipped/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newCreateOp("/another/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newLinkOp(42, "/linked/path"))), gc.IsNil)
+	c.Check(poh.skips(c, poh.frame(newUnlinkOp(43, "/skipped/path"))), gc.IsNil)
 
-	c.Check(makeLive(tpc.dir, tpc.fsm, tpc.files), gc.IsNil)
+	c.Check(makeLive(poh.dir, poh.fsm, poh.files), gc.IsNil)
 
 	var expect = func(path string, exists bool) {
 		var _, err = os.Stat(path)
@@ -361,27 +361,27 @@ func (s *PlaybackSuite) TestMakeLive(c *gc.C) {
 		}
 	}
 	// Expect staging directory has been removed.
-	expect(filepath.Join(tpc.dir, fnodeStagingDir), false)
+	expect(filepath.Join(poh.dir, fnodeStagingDir), false)
 
 	// Expect files have been linked into final locations.
-	expect(filepath.Join(tpc.dir, "a/path"), true)
-	expect(filepath.Join(tpc.dir, "another/path"), true)
-	expect(filepath.Join(tpc.dir, "linked/path"), true)
-	expect(filepath.Join(tpc.dir, "skipped/path"), false)
+	expect(filepath.Join(poh.dir, "a/path"), true)
+	expect(filepath.Join(poh.dir, "another/path"), true)
+	expect(filepath.Join(poh.dir, "linked/path"), true)
+	expect(filepath.Join(poh.dir, "skipped/path"), false)
 
 	// Expect property file was written.
-	var bytes, err = ioutil.ReadFile(filepath.Join(tpc.dir, "property/path"))
+	var bytes, err = ioutil.ReadFile(filepath.Join(poh.dir, "property/path"))
 	c.Check(err, gc.IsNil)
 	c.Check(string(bytes), gc.Equals, "prop-value")
 }
 
 func (s *PlaybackSuite) TestErrWhenHintsRemainOnMakeLive(c *gc.C) {
-	var tpc = newPlayOperationHelper(c)
-	defer tpc.destroy(c)
+	var poh = newPlayOperationHelper(c)
+	defer poh.destroy(c)
 
-	c.Check(tpc.apply(c, tpc.frame(newCreateOp("/a/path"))), gc.IsNil)
+	c.Check(poh.apply(c, poh.frame(newCreateOp("/a/path"))), gc.IsNil)
 
-	c.Check(makeLive(tpc.dir, tpc.fsm, tpc.files), gc.ErrorMatches, "FSM has remaining unused hints.*")
+	c.Check(makeLive(poh.dir, poh.fsm, poh.files), gc.ErrorMatches, "FSM has remaining unused hints.*")
 }
 
 func (s *PlaybackSuite) TestPlayerFinishAtWriteHead(c *gc.C) {
@@ -509,39 +509,39 @@ type playOperationHelper struct {
 
 func newPlayOperationHelper(c *gc.C) playOperationHelper {
 	var err error
-	var tpc = playOperationHelper{
+	var poh = playOperationHelper{
 		files: make(fnodeFileMap),
 	}
 
-	tpc.dir, err = ioutil.TempDir("", "playback-suite")
+	poh.dir, err = ioutil.TempDir("", "playback-suite")
 	c.Assert(err, gc.IsNil)
-	c.Assert(preparePlayback(tpc.dir), gc.IsNil)
+	c.Assert(preparePlayback(poh.dir), gc.IsNil)
 
-	tpc.fsm, err = NewFSM(hintsFixture())
+	poh.fsm, err = NewFSM(hintsFixture())
 	c.Assert(err, gc.IsNil)
 
-	return tpc
+	return poh
 }
 
-func (tpc playOperationHelper) frame(op RecordedOp) []byte {
+func (poh playOperationHelper) frame(op RecordedOp) []byte {
 	if op.Author == 0 {
 		op.Author = anAuthor
 	}
 	if op.SeqNo == 0 {
-		op.SeqNo = tpc.fsm.NextSeqNo
-		op.Checksum = tpc.fsm.NextChecksum
+		op.SeqNo = poh.fsm.NextSeqNo
+		op.Checksum = poh.fsm.NextChecksum
 	}
 	return frameRecordedOp(op, nil)
 }
 
-func (tpc playOperationHelper) apply(c *gc.C, b []byte) error { return tpc.playOp(c, b, anAuthor, true) }
-func (tpc playOperationHelper) skips(c *gc.C, b []byte) error {
-	return tpc.playOp(c, b, anAuthor, false)
+func (poh playOperationHelper) apply(c *gc.C, b []byte) error { return poh.playOp(c, b, anAuthor, true) }
+func (poh playOperationHelper) skips(c *gc.C, b []byte) error {
+	return poh.playOp(c, b, anAuthor, false)
 }
 
-func (tpc playOperationHelper) playOp(c *gc.C, b []byte, expectAuthor Author, expectApply bool) error {
+func (poh playOperationHelper) playOp(c *gc.C, b []byte, expectAuthor Author, expectApply bool) error {
 	var br = bufio.NewReader(bytes.NewReader(b))
-	var author, applied, err = playOperation(br, tpc.dir, tpc.fsm, tpc.files)
+	var author, applied, err = playOperation(br, poh.dir, poh.fsm, poh.files)
 
 	c.Check(author, gc.Equals, expectAuthor)
 	c.Check(applied, gc.Equals, expectApply)
@@ -552,8 +552,8 @@ func (tpc playOperationHelper) playOp(c *gc.C, b []byte, expectAuthor Author, ex
 	return err
 }
 
-func (tpc playOperationHelper) destroy(c *gc.C) {
-	c.Assert(os.RemoveAll(tpc.dir), gc.IsNil)
+func (poh playOperationHelper) destroy(c *gc.C) {
+	c.Assert(os.RemoveAll(poh.dir), gc.IsNil)
 }
 
 var _ = gc.Suite(&PlaybackSuite{})

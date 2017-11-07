@@ -76,8 +76,7 @@ func (s *IOSuite) TestReaderRetries(c *gc.C) {
 	var ctx, cancel = context.WithCancel(context.Background())
 	var getter = new(MockGetter)
 
-	var rr = NewRetryReader(Mark{"a/journal", -1}, getter)
-	rr.Context = ctx
+	var rr = NewRetryReaderContext(ctx, Mark{"a/journal", -1}, getter)
 	rr.Blocking = false
 
 	// Initial read of 3 bytes, which increments the offset from 0 -> 100 and then EOFs.
@@ -157,8 +156,7 @@ func (s *IOSuite) TestSeeking(c *gc.C) {
 
 	var getter = new(MockGetter)
 	var ctx = context.Background()
-	var rr = NewRetryReader(Mark{"a/journal", 0}, getter)
-	rr.Context = ctx
+	var rr = NewRetryReaderContext(ctx, Mark{"a/journal", 0}, getter)
 
 	var checkRead = func(expect string) {
 		var buffer = make([]byte, len(expect))

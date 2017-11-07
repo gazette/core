@@ -218,7 +218,7 @@ func (s *RecoveryLogSuite) TestPlayThenCancel(c *gc.C) {
 	c.Check(r.player.FinishAtWriteHead(), gc.IsNil)
 
 	// Expect the local directory was deleted.
-	_, err = os.Stat(r.player.localDir)
+	_, err = os.Stat(r.player.dir)
 	c.Check(os.IsNotExist(err), gc.Equals, true)
 }
 

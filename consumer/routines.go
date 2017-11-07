@@ -127,8 +127,7 @@ func maybeEtcdSet(keysAPI etcd.KeysAPI, key string, value string) error {
 	var _, err = keysAPI.Set(context.Background(), key, value, nil)
 	// Etcd Set is best-effort.
 	if err != nil {
-		log.WithFields(log.Fields{"path": hintsPath, "err": err}).
-			Warn("failed to store hints")
+		log.WithFields(log.Fields{"key": key, "err": err}).Warn("failed to set etcd key")
 		return err
 	}
 	return nil
@@ -164,7 +163,9 @@ func LoadOffsetsFromEtcd(tree *etcd.Node) (map[journal.Name]int64, error) {
 	return result, nil
 }
 
-// Deprecated. Stores legacy |offsets| in Etcd.
+// Deprecated: We are removing support for offsets written to Etcd. Rocksdb
+// will be the sole source-of-truth for read offsets.
+// Stores legacy |offsets| in Etcd.
 func StoreOffsetsToEtcd(rootPath string, offsets map[journal.Name]int64, keysAPI etcd.KeysAPI) {
 	for name, offset := range offsets {
 		maybeEtcdSet(keysAPI, OffsetPath(rootPath, name), strconv.FormatInt(offset, 16))

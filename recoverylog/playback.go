@@ -21,7 +21,7 @@ import (
 
 type Player struct {
 	hints     FSMHints
-	localDir  string
+	dir       string
 	tailingCh chan struct{}
 	handoffCh chan Author
 	exitCh    chan *FSM
@@ -32,14 +32,14 @@ type Player struct {
 
 // NewPlayer returns a new Player for recovering the log indicated by |hints|
 // into |dir|. An error is returned if |hints| are invalid.
-func NewPlayer(hints FSMHints, localDir string) (*Player, error) {
+func NewPlayer(hints FSMHints, dir string) (*Player, error) {
 	if _, err := NewFSM(hints); err != nil {
 		return nil, err
 	}
 
 	return &Player{
 		hints:     hints,
-		localDir:  localDir,
+		dir:       dir,
 		tailingCh: make(chan struct{}),
 		handoffCh: make(chan Author, 1),
 		exitCh:    make(chan *FSM),
@@ -50,7 +50,7 @@ func NewPlayer(hints FSMHints, localDir string) (*Player, error) {
 // first encountered unrecoverable error, including context cancellation, or
 // upon a successful MakeLive or Handoff.
 func (p *Player) PlayContext(ctx context.Context, client journal.Client) error {
-	return playLog(ctx, p.hints, p.localDir, client, p.tailingCh, p.handoffCh, p.exitCh)
+	return playLog(ctx, p.hints, p.dir, client, p.tailingCh, p.handoffCh, p.exitCh)
 }
 
 // FinishAtWriteHead requests that playback complete upon reaching the current write
@@ -59,6 +59,7 @@ func (p *Player) PlayContext(ctx context.Context, client journal.Client) error {
 // InjectHandoff may be made of a Player instance.
 func (p *Player) FinishAtWriteHead() *FSM {
 	p.handoffCh <- 0
+	close(p.handoffCh)
 	return <-p.exitCh
 }
 
@@ -72,6 +73,7 @@ func (p *Player) InjectHandoff(author Author) *FSM {
 		log.WithField("author", author).Panic("author must be non-zero")
 	}
 	p.handoffCh <- author
+	close(p.handoffCh)
 	return <-p.exitCh
 }
 
@@ -211,13 +213,13 @@ const (
 	// Player is reading historical log content.
 	playerStateBackfill playerState = iota
 	// Player is tailing new log content as it is written.
-	playerStateTailing playerState = iota
+	playerStateTail playerState = iota
 	// Player will exit after reading through the current log head.
-	playerStateExitingAtHead playerState = iota
+	playerStateExitAtHead playerState = iota
 	// Player will inject a write barrier to attempt hand-off after reading through the log head.
-	playerStateHandoffInjectAtHead playerState = iota
+	playerStateInjectHandoffAtHead playerState = iota
 	// Player previously injected a write barrier, and is waiting to read it & determine if hand-off was successful.
-	playerStateHandoffReadBarrier playerState = iota
+	playerStateReadHandoffBarrier playerState = iota
 	// Player has completed playback (terminal state).
 	playerStateComplete playerState = iota
 )
@@ -277,7 +279,7 @@ func playLog(ctx context.Context, hints FSMHints, dir string, client journal.Cli
 			fsm.LogMark.Offset = s[0].FirstOffset
 		} else if state == playerStateBackfill && fsm.LogMark.Offset == writeHead {
 			// We've completed back-fill and are now tailing the journal.
-			state = playerStateTailing
+			state = playerStateTail
 			close(tailingCh)
 		} else if fsm.LogMark.Offset == -1 {
 			// In the absence of hinted segments, read from the current log head.
@@ -285,10 +287,10 @@ func playLog(ctx context.Context, hints FSMHints, dir string, client journal.Cli
 		}
 
 		switch state {
-		case playerStateBackfill, playerStateTailing, playerStateHandoffReadBarrier:
+		case playerStateBackfill, playerStateTail, playerStateReadHandoffBarrier:
 			// Always perform blocking reads from these states.
 			reader = prepareRead(ctx, reader, fsm.LogMark.Offset, true)
-		case playerStateExitingAtHead, playerStateHandoffInjectAtHead:
+		case playerStateExitAtHead, playerStateInjectHandoffAtHead:
 			// If we believe we're at the log head and want to do something once we confirm it
 			// (exit, or inject a no-op), use non-blocking reads.
 			reader = prepareRead(ctx, reader, fsm.LogMark.Offset, fsm.LogMark.Offset < writeHead)
@@ -304,15 +306,16 @@ func playLog(ctx context.Context, hints FSMHints, dir string, client journal.Cli
 		case handoff = <-handoffCh:
 			// We've been signaled to complete playback and exit when we're able.
 			switch state {
-			case playerStateBackfill, playerStateTailing:
+			case playerStateBackfill, playerStateTail:
 				if handoff == 0 {
-					state = playerStateExitingAtHead
+					state = playerStateExitAtHead
 				} else {
-					state = playerStateHandoffInjectAtHead
+					state = playerStateInjectHandoffAtHead
 				}
 			default:
 				log.WithField("state", state).Panic("unexpected state")
 			}
+			handoffCh = nil // Do not select again.
 			continue
 		}
 
@@ -325,12 +328,12 @@ func playLog(ctx context.Context, hints FSMHints, dir string, client journal.Cli
 			}
 
 			switch state {
-			case playerStateExitingAtHead:
+			case playerStateExitAtHead:
 				state = playerStateComplete
 				err = makeLive(dir, fsm, files)
 				return
 
-			case playerStateHandoffInjectAtHead:
+			case playerStateInjectHandoffAtHead:
 				var noop = frameRecordedOp(RecordedOp{
 					SeqNo:    fsm.NextSeqNo,
 					Checksum: fsm.NextChecksum,
@@ -343,7 +346,7 @@ func playLog(ctx context.Context, hints FSMHints, dir string, client journal.Cli
 				<-asyncAppend.Ready
 
 				// We next must read through the op we just wrote.
-				state, writeHead = playerStateHandoffReadBarrier, asyncAppend.WriteHead
+				state, writeHead = playerStateReadHandoffBarrier, asyncAppend.WriteHead
 
 			default:
 				log.WithField("state", state).Panic("invalid state")
@@ -375,7 +378,7 @@ func playLog(ctx context.Context, hints FSMHints, dir string, client journal.Cli
 		fsm.LogMark = reader.rr.AdjustedMark(reader.br)
 
 		if handoff != 0 && opAuthor == handoff {
-			if state != playerStateHandoffReadBarrier {
+			if state != playerStateReadHandoffBarrier {
 				log.WithField("state", state).Panic("unexpected state")
 			}
 
@@ -388,7 +391,7 @@ func playLog(ctx context.Context, hints FSMHints, dir string, client journal.Cli
 			}
 
 			// We lost the race to inject our write operation, and must try again.
-			state = playerStateHandoffInjectAtHead
+			state = playerStateInjectHandoffAtHead
 		}
 	}
 }

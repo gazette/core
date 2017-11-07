@@ -69,14 +69,21 @@ type RetryReader struct {
 	Context context.Context
 }
 
-// NewRetryReader returns a RetryReader at |mark|, and using the provided
-// |getter| and |ctx| for all operations.
+// Deprecated: Use NewRetryReaderContext instead.
+// NewRetryReader returns a RetryReader at |mark|, using the provided
+// |getter| for all operations.
 func NewRetryReader(mark Mark, getter Getter) *RetryReader {
+	return NewRetryReaderContext(context.TODO(), mark, getter)
+}
+
+// NewRetryReaderContext returns a RetryReader at |mark|, using the provided
+// |getter| and |ctx| for all operations.
+func NewRetryReaderContext(ctx context.Context, mark Mark, getter Getter) *RetryReader {
 	return &RetryReader{
 		MarkedReader: MarkedReader{Mark: mark},
 		Blocking:     true,
 		Getter:       getter,
-		Context:      context.TODO(),
+		Context:      ctx,
 	}
 }
 

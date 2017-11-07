@@ -72,7 +72,7 @@ func (j *MemoryBroker) Get(args ReadArgs) (ReadResult, io.ReadCloser) {
 		args.Offset = int64(buf.Len())
 	}
 
-	for i := 0; true; i++ {
+	for {
 		if int(args.Offset) < buf.Len() {
 			return ReadResult{
 				Offset:    args.Offset,
