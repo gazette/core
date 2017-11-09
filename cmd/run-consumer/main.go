@@ -18,7 +18,7 @@ var (
 	dir             = flag.String("dir", "", "Path into which Shards should be staged")
 	etcdEndpoint    = flag.String("etcd", "", "Etcd endpoint")
 	gazetteEndpoint = flag.String("gazette", "", "Gazette endpoint")
-	root            = flag.String("root", "", "Path to Etcd consumer root")
+	name            = flag.String("name", "", "Etcd consumer name")
 	standbys        = flag.Int("standbys", 0, "Number of warm stand-bys per shard")
 	pluginPath      = flag.String("plugin", "", "Path to consumer plugin")
 )
@@ -31,7 +31,7 @@ func main() {
 		"etcd":     *etcdEndpoint,
 		"gazette":  *gazetteEndpoint,
 		"plugin":   *pluginPath,
-		"root":     *root,
+		"name":     *name,
 		"standbys": *standbys,
 	}).Info("using flags")
 
@@ -87,8 +87,8 @@ func main() {
 		Consumer:        instance,
 		LocalRouteKey:   routeKey,
 		LocalDir:        *dir,
-		ConsumerRoot:    *root,
-		RecoveryLogRoot: filepath.Join(*root, "recovery-logs")[1:], // TODO(johnny): Fix me.
+		ConsumerRoot:    filepath.Join("/gazette/consumers/", *name),
+		RecoveryLogRoot: filepath.Join("/recovery-logs/", *name)[1:], // Strip leading '/'.
 		ReplicaCount:    *standbys,
 
 		Etcd: etcdClient,

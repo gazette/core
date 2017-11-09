@@ -1,7 +1,6 @@
 FROM golang:latest AS builder
 
-ENV ROCKSDB_VERSION 5.3.5
-ENV PROTO_VERSION 3.4.0
+ENV ROCKSDB_VERSION=5.3.5 PROTO_VERSION=3.4.0
 
 # Install dependencies for building & running RocksDB.
 RUN apt-get update -y \

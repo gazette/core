@@ -12,7 +12,7 @@ import (
 
 type counter struct{}
 
-func (c *counter) Topics() []*topic.Description {
+func (counter) Topics() []*topic.Description {
 	return []*topic.Description{word_count.Deltas}
 }
 
@@ -20,14 +20,14 @@ type shardCache struct {
 	pendingCounts map[string]int
 }
 
-func (c *counter) InitShard(s consumer.Shard) error {
+func (counter) InitShard(s consumer.Shard) error {
 	s.SetCache(&shardCache{
 		pendingCounts: make(map[string]int),
 	})
 	return nil
 }
 
-func (c *counter) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publisher) error {
+func (counter) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publisher) error {
 	var cache = s.Cache().(*shardCache)
 	var record = env.Message.(*word_count.Record)
 
@@ -47,7 +47,7 @@ func (c *counter) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publi
 	return nil
 }
 
-func (c *counter) Flush(s consumer.Shard, pub *topic.Publisher) error {
+func (counter) Flush(s consumer.Shard, pub *topic.Publisher) error {
 	var cache = s.Cache().(*shardCache)
 	var writeBatch = s.Transaction()
 
@@ -64,5 +64,4 @@ func (c *counter) Flush(s consumer.Shard, pub *topic.Publisher) error {
 }
 
 func main() {} // Not called.
-var Consumer consumer.Consumer = new(counter)
-
+var Consumer consumer.Consumer = counter{}

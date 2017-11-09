@@ -29,7 +29,7 @@ var (
 )
 
 func init() {
-	Sentences.Framing = new(sentenceFraming)
+	Sentences.Framing = sentenceFraming{}
 	Sentences.GetMessage = func() topic.Message { return new(Sentence) }
 	Sentences.PutMessage = func(m topic.Message) {}
 	Sentences.Partitions = func() []journal.Name { return []journal.Name{journal.Name(Sentences.Name)} }
@@ -54,18 +54,18 @@ func init() {
 type sentenceFraming struct{}
 
 // Encode implements topic.Framing.
-func (*sentenceFraming) Encode(msg topic.Message, b []byte) ([]byte, error) {
+func (sentenceFraming) Encode(msg topic.Message, b []byte) ([]byte, error) {
 	var s = msg.(*Sentence)
 	return append(b[:0], s.Str...), nil
 }
 
 // Unpack implements topic.Framing.
-func (*sentenceFraming) Unpack(r *bufio.Reader) ([]byte, error) {
+func (sentenceFraming) Unpack(r *bufio.Reader) ([]byte, error) {
 	return topic.UnpackLine(r)
 }
 
 // Unmarshal implements topic.Framing.
-func (*sentenceFraming) Unmarshal(line []byte, msg topic.Message) error {
+func (sentenceFraming) Unmarshal(line []byte, msg topic.Message) error {
 	msg.(*Sentence).Str = string(line)
 	return nil
 }

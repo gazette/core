@@ -64,12 +64,11 @@ COPY cmd /go/src/github.com/LiveRamp/gazette/cmd
 COPY gazetted/main.go /go/src/github.com/LiveRamp/gazette/cmd/gazette/main.go
 
 # Install all targets.
-# TODO(johnny): Use a recursive go install gazette/pkg/...
-RUN go install github.com/LiveRamp/gazette/cmd/gazette
-RUN go install github.com/LiveRamp/gazette/cmd/run-consumer
+# TODO(johnny): RUN go install github.com/LiveRamp/gazette/pkg/...
+RUN go install github.com/LiveRamp/gazette/cmd/...
 
 # Test all packages.
-# TODO(johnny): Use a recursive go test gazette/pkg/...
+# TODO(johnny): RUN go test github.com/LiveRamp/gazette/pkg/...
 RUN go test github.com/LiveRamp/gazette/async
 RUN go test github.com/LiveRamp/gazette/cloudstore
 RUN go test github.com/LiveRamp/gazette/consensus
@@ -84,3 +83,4 @@ RUN go test github.com/LiveRamp/gazette/mainboilerplate
 RUN go test github.com/LiveRamp/gazette/metrics
 RUN go test github.com/LiveRamp/gazette/recoverylog
 RUN go test github.com/LiveRamp/gazette/topic
+RUN go test github.com/LiveRamp/gazette/cmd/...

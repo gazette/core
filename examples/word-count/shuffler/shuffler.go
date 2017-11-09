@@ -13,11 +13,11 @@ import (
 
 type shuffler struct{}
 
-func (c *shuffler) Topics() []*topic.Description {
+func (shuffler) Topics() []*topic.Description {
 	return []*topic.Description{word_count.Sentences}
 }
 
-func (c *shuffler) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publisher) error {
+func (shuffler) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publisher) error {
 	var words = strings.FieldsFunc(env.Message.(*word_count.Sentence).Str,
 		func(r rune) bool { return !unicode.IsLetter(r) })
 
@@ -29,7 +29,7 @@ func (c *shuffler) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publ
 	return nil
 }
 
-func (c *shuffler) Flush(s consumer.Shard, pub *topic.Publisher) error { return nil }
+func (shuffler) Flush(s consumer.Shard, pub *topic.Publisher) error { return nil }
 
 func main() {} // Not called.
-var Consumer consumer.Consumer = new(shuffler)
+var Consumer consumer.Consumer = shuffler{}
