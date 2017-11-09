@@ -24,6 +24,6 @@ spec:
           "-dir", "/var/tmp",
           "-etcd", "{{ .Values.etcd }}",
           "-gazette", "{{ .Values.gazette }}",
+          "-name", "examples/word-count/shuffler",
           "-plugin", "/usr/local/lib/shuffler.so",
-          "-root", "/examples/word-count/shuffler",
           ]

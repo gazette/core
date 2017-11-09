@@ -24,6 +24,6 @@ spec:
           "-dir", "/var/tmp",
           "-etcd", "{{ .Values.etcd }}",
           "-gazette", "{{ .Values.gazette }}",
+          "-name", "examples/word-count/counter",
           "-plugin", "/usr/local/lib/counter.so",
-          "-root", "/examples/word-count/counter",
           ]
