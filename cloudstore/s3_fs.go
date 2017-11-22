@@ -31,6 +31,7 @@ const (
 // Maps Amazon S3 into an API compatible with cloudstore.FileSystem.
 type s3Fs struct {
 	properties Properties
+	compress   bool
 	// Prefix roots all files within this filesystem.
 	prefix string
 }
@@ -41,9 +42,10 @@ func (s S3Properties) Get(key string) string {
 	return s[key]
 }
 
-func newS3FS(properties Properties, prefix string) (*s3Fs, error) {
+func newS3FS(properties Properties, prefix string, compress bool) (*s3Fs, error) {
 	return &s3Fs{
 		properties: properties,
+		compress:   compress,
 		prefix:     prefix,
 	}, nil
 }
