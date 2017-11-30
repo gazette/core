@@ -122,9 +122,10 @@ func (fs *s3Fs) OpenFile(name string, flag int, perm os.FileMode) (File, error) 
 			return nil, errors.New("unsupported directory flags")
 		}
 		return &s3File{
-			svc:    svc,
-			bucket: aws.String(bucket),
-			key:    aws.String(path),
+			svc:      svc,
+			bucket:   aws.String(bucket),
+			key:      aws.String(path),
+			compress: fs.compress,
 		}, nil
 	}
 
@@ -135,10 +136,11 @@ func (fs *s3Fs) OpenFile(name string, flag int, perm os.FileMode) (File, error) 
 	} else if flag == os.O_RDONLY {
 		// Read which exists. Return a file which will lazily open a reader.
 		return &s3File{
-			svc:    svc,
-			bucket: aws.String(bucket),
-			object: statObject,
-			key:    aws.String(path),
+			svc:      svc,
+			bucket:   aws.String(bucket),
+			object:   statObject,
+			key:      aws.String(path),
+			compress: fs.compress,
 		}, nil
 	} else if flag == os.O_WRONLY|os.O_TRUNC && !exists {
 		return nil, os.ErrNotExist // Write which doesn't exist. Map to os error.
@@ -177,6 +179,7 @@ func (fs *s3Fs) OpenFile(name string, flag int, perm os.FileMode) (File, error) 
 			bucket:   aws.String(bucket),
 			key:      aws.String(path),
 			uploadId: resp.UploadId,
+			compress: fs.compress,
 		}, nil
 	} else {
 		return nil, errors.New("unsupported file flags")

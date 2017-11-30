@@ -346,9 +346,10 @@ func (f *s3File) listObjects() ([]os.FileInfo, error) {
 				continue
 			}
 			var f = &s3File{
-				svc:    f.svc,
-				bucket: f.bucket,
-				key:    objects.CommonPrefixes[i].Prefix,
+				svc:      f.svc,
+				bucket:   f.bucket,
+				key:      objects.CommonPrefixes[i].Prefix,
+				compress: f.compress,
 			}
 			results = append(results, f)
 		}
@@ -359,10 +360,11 @@ func (f *s3File) listObjects() ([]os.FileInfo, error) {
 				continue
 			}
 			var f = &s3File{
-				svc:    f.svc,
-				bucket: f.bucket,
-				key:    objects.Contents[i].Key,
-				object: objects.Contents[i],
+				svc:      f.svc,
+				bucket:   f.bucket,
+				key:      objects.Contents[i].Key,
+				object:   objects.Contents[i],
+				compress: f.compress,
 			}
 			results = append(results, f)
 		}
