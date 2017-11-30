@@ -50,6 +50,7 @@ type s3File struct {
 	uploadId      *string
 	uploadedParts []*s3.CompletedPart
 	spool         bytes.Buffer
+	compress      bool
 
 	// Global error state for this file.
 	err error
@@ -73,9 +74,12 @@ func (f *s3File) Read(p []byte) (int, error) {
 // File interface method.
 func (f *s3File) Write(p []byte) (int, error) {
 	var buf = &f.spool
+	var compressor = gzip.newWriter(&buf)
+
+	defer compressor.Close()
 
 	// Write to in-memory spool.
-	n, err := buf.Write(p)
+	n, err := compressor.Write(p)
 	if err != nil {
 		return n, err
 	}
