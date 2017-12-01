@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	log "github.com/sirupsen/logrus"
+	gzip "github.com/youtube/vitess/go/cgzip"
 )
 
 const (
@@ -74,7 +75,7 @@ func (f *s3File) Read(p []byte) (int, error) {
 // File interface method.
 func (f *s3File) Write(p []byte) (int, error) {
 	var buf = &f.spool
-	var compressor = gzip.newWriter(&buf)
+	var compressor = gzip.NewWriter(buf)
 
 	defer compressor.Close()
 
