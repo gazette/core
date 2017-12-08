@@ -3,6 +3,8 @@ package consensus
 import (
 	etcd "github.com/coreos/etcd/client"
 	gc "github.com/go-check/check"
+
+	"github.com/LiveRamp/gazette/consensus/mocks"
 )
 
 type RouteSuite struct{}
@@ -26,7 +28,7 @@ func (s *RouteSuite) TestIndex(c *gc.C) {
 
 func (s *RouteSuite) TestReadyForHandoff(c *gc.C) {
 	rt := s.fixture()
-	alloc := &MockAllocator{}
+	alloc := &mocks.Allocator{}
 
 	// No replicas required: always ready for handoff.
 	alloc.On("Replicas").Return(0).Once()

@@ -13,6 +13,7 @@ import (
 	gc "github.com/go-check/check"
 
 	"github.com/LiveRamp/gazette/journal"
+	"github.com/LiveRamp/gazette/journal/mocks"
 )
 
 type PlaybackSuite struct{}
@@ -20,7 +21,7 @@ type PlaybackSuite struct{}
 func (s *PlaybackSuite) TestPlayerReader(c *gc.C) {
 	var ctx, cancelFn = context.WithCancel(context.Background())
 
-	var getter = new(journal.MockGetter)
+	var getter = new(mocks.Getter)
 	var pr = newPlayerReader(ctx, journal.Mark{Journal: "a/journal", Offset: 100}, getter)
 
 	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 100, Context: pr.rr.Context}).
@@ -109,7 +110,7 @@ func (r *fixtureReader) Read(p []byte) (n int, err error) {
 func (s *PlaybackSuite) TestReadPrepCases(c *gc.C) {
 	var ctx = context.Background()
 	var mark = journal.Mark{Journal: "a/journal", Offset: 100}
-	var getter = new(journal.MockGetter)
+	var getter = new(mocks.Getter)
 
 	var cases = []struct {
 		offset                  int64

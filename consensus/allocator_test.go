@@ -7,12 +7,14 @@ import (
 	etcd "github.com/coreos/etcd/client"
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/LiveRamp/gazette/consensus/mocks"
 )
 
 type AllocSuite struct{}
 
 func (s *AllocSuite) TestAllocParamExtraction(c *gc.C) {
-	alloc := &MockAllocator{}
+	alloc := &mocks.Allocator{}
 	alloc.On("InstanceKey").Return("my-key")
 	alloc.On("Replicas").Return(1)
 	alloc.On("FixedItems").Return([]string{"a-master", "b-created"})
@@ -100,7 +102,7 @@ func (s *AllocSuite) TestAllocParamExtraction(c *gc.C) {
 }
 
 func (s *AllocSuite) TestAllocParamExtractionEmptyTree(c *gc.C) {
-	alloc := &MockAllocator{}
+	alloc := &mocks.Allocator{}
 
 	alloc.On("InstanceKey").Return("my-key")
 	alloc.On("FixedItems").Return([]string{"a-item"})
@@ -132,7 +134,7 @@ func (s *AllocSuite) TestAllocParamExtractionEmptyTree(c *gc.C) {
 }
 
 func (s *AllocSuite) TestDesiredCounts(c *gc.C) {
-	var mockAlloc MockAllocator
+	var mockAlloc mocks.Allocator
 	var p = allocParams{Allocator: &mockAlloc}
 
 	mockAlloc.On("Replicas").Return(2)
@@ -159,8 +161,8 @@ func (s *AllocSuite) TestDesiredCounts(c *gc.C) {
 }
 
 func (s *AllocSuite) TestAllocationActions(c *gc.C) {
-	var mockKV MockKeysAPI
-	var mockAlloc MockAllocator
+	var mockKV mocks.KeysAPI
+	var mockAlloc mocks.Allocator
 
 	var model allocParams
 	model.Allocator = &mockAlloc

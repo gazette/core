@@ -7,6 +7,8 @@ import (
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
+
+	"github.com/LiveRamp/gazette/consumer/mocks"
 )
 
 type ClientSuite struct{}
@@ -80,7 +82,7 @@ func (s *ClientSuite) TestClientInitializationAndUpdate(c *gc.C) {
 
 type mockConsumerServer struct {
 	srv  *grpc.Server
-	mock *MockConsumerServer
+	mock *mocks.ConsumerServer
 	addr string
 }
 

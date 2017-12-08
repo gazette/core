@@ -11,17 +11,17 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github.com/LiveRamp/gazette/cloudstore"
-	"github.com/LiveRamp/gazette/consensus"
+	"github.com/LiveRamp/gazette/consensus/mocks"
 )
 
 type CreateAPISuite struct {
-	keys *consensus.MockKeysAPI
+	keys *mocks.KeysAPI
 	cfs  cloudstore.FileSystem
 	mux  *mux.Router
 }
 
 func (s *CreateAPISuite) SetUpTest(c *gc.C) {
-	s.keys = new(consensus.MockKeysAPI)
+	s.keys = new(mocks.KeysAPI)
 	s.mux = mux.NewRouter()
 	s.cfs = cloudstore.NewTmpFileSystem()
 	NewCreateAPI(s.cfs, s.keys, 2).Register(s.mux)
@@ -38,7 +38,7 @@ func (s *CreateAPISuite) TestCreateSuccess(c *gc.C) {
 			PrevExist: etcd.PrevNoExist}).
 		Return(&etcd.Response{Index: 1234}, nil)
 
-	var watcher consensus.MockWatcher
+	var watcher mocks.Watcher
 
 	s.keys.On("Watcher", ServiceRoot+"/items/journal%2Fname",
 		&etcd.WatcherOptions{

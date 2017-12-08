@@ -10,6 +10,8 @@ import (
 
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/LiveRamp/gazette/journal/mocks"
 )
 
 type IOSuite struct{}
@@ -74,7 +76,7 @@ func (s *IOSuite) TestReaderRetries(c *gc.C) {
 	}
 
 	var ctx, cancel = context.WithCancel(context.Background())
-	var getter = new(MockGetter)
+	var getter = new(mocks.Getter)
 
 	var rr = NewRetryReaderContext(ctx, Mark{"a/journal", -1}, getter)
 	rr.Blocking = false
@@ -154,7 +156,7 @@ func (s *IOSuite) TestSeeking(c *gc.C) {
 		{strings.NewReader("xyz"), make(closeCh)},
 	}
 
-	var getter = new(MockGetter)
+	var getter = new(mocks.Getter)
 	var ctx = context.Background()
 	var rr = NewRetryReaderContext(ctx, Mark{"a/journal", 0}, getter)
 
