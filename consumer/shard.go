@@ -3,10 +3,10 @@ package consumer
 import (
 	"path/filepath"
 
-	"github.com/LiveRamp/gazette/consumer/service"
 	etcd "github.com/coreos/etcd/client"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/topic"
 )
 

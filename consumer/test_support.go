@@ -6,10 +6,10 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/LiveRamp/gazette/consumer/service"
 	log "github.com/sirupsen/logrus"
 	rocks "github.com/tecbot/gorocksdb"
 
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/recoverylog"
 	"github.com/LiveRamp/gazette/topic"

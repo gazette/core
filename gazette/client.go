@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LiveRamp/gazette/gazette/client"
 	"github.com/hashicorp/golang-lru"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/LiveRamp/gazette/gazette/client"
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/keepalive"
 	"github.com/LiveRamp/gazette/metrics"

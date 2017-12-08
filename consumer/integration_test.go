@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LiveRamp/gazette/consumer/service"
 	etcd "github.com/coreos/etcd/client"
 	gc "github.com/go-check/check"
 	uuid "github.com/satori/go.uuid"
 
 	"github.com/LiveRamp/gazette/consensus"
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/envflag"
 	"github.com/LiveRamp/gazette/envflagfactory"
 	"github.com/LiveRamp/gazette/gazette"

@@ -4,8 +4,9 @@ import (
 	"path"
 	"sort"
 
-	"github.com/LiveRamp/gazette/consensus/allocator"
 	etcd "github.com/coreos/etcd/client"
+
+	"github.com/LiveRamp/gazette/consensus/allocator"
 )
 
 // route implements allocator.Route

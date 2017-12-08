@@ -3,8 +3,9 @@ package consumer
 import (
 	"sync"
 
-	"github.com/LiveRamp/gazette/consumer/service"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/LiveRamp/gazette/consumer/service"
 )
 
 // ShardIndex tracks Shard instances by ShardID. It provides for acquisition
