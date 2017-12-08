@@ -8,13 +8,14 @@ import (
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/LiveRamp/gazette/consensus/mocks"
+	allocatormocks "github.com/LiveRamp/gazette/consensus/allocator/mocks"
+	consensusmocks "github.com/LiveRamp/gazette/consensus/mocks"
 )
 
 type AllocSuite struct{}
 
 func (s *AllocSuite) TestAllocParamExtraction(c *gc.C) {
-	alloc := &mocks.Allocator{}
+	alloc := &allocatormocks.Allocator{}
 	alloc.On("InstanceKey").Return("my-key")
 	alloc.On("Replicas").Return(1)
 	alloc.On("FixedItems").Return([]string{"a-master", "b-created"})
@@ -64,15 +65,15 @@ func (s *AllocSuite) TestAllocParamExtraction(c *gc.C) {
 	}
 	for k, v := range routeExpectations {
 		name, exp := k, v // Copy and retain for closure.
-		alloc.On("ItemRoute", name, mock.AnythingOfType("Route"), exp.ind, params.Input.Tree).
+		alloc.On("ItemRoute", name, mock.AnythingOfType("route"), exp.ind, params.Input.Tree).
 			Run(func(args mock.Arguments) {
-				rt := args.Get(1).(Route)
+				rt := args.Get(1).(route)
 
-				c.Check(rt.Item.Key, gc.Equals, "/foo/items/"+name)
+				c.Check(rt.item.Key, gc.Equals, "/foo/items/"+name)
 
-				c.Check(len(rt.Entries), gc.Equals, len(exp.keys))
+				c.Check(len(rt.entries), gc.Equals, len(exp.keys))
 				for j := range exp.keys {
-					c.Check(rt.Entries[j].Key, gc.Equals, rt.Item.Key+"/"+exp.keys[j])
+					c.Check(rt.entries[j].Key, gc.Equals, rt.item.Key+"/"+exp.keys[j])
 				}
 			}).Once()
 	}
@@ -102,7 +103,7 @@ func (s *AllocSuite) TestAllocParamExtraction(c *gc.C) {
 }
 
 func (s *AllocSuite) TestAllocParamExtractionEmptyTree(c *gc.C) {
-	alloc := &mocks.Allocator{}
+	alloc := &allocatormocks.Allocator{}
 
 	alloc.On("InstanceKey").Return("my-key")
 	alloc.On("FixedItems").Return([]string{"a-item"})
@@ -112,9 +113,9 @@ func (s *AllocSuite) TestAllocParamExtractionEmptyTree(c *gc.C) {
 	params.Input.Index = 4567
 	params.Input.Tree = &etcd.Node{Dir: true, Key: "/foo"}
 
-	alloc.On("ItemRoute", "a-item", mock.MatchedBy(func(rt Route) bool {
-		c.Check(rt.Item.Key, gc.Equals, "/foo/items/a-item")
-		c.Check(rt.Entries, gc.HasLen, 0)
+	alloc.On("ItemRoute", "a-item", mock.MatchedBy(func(rt route) bool {
+		c.Check(rt.item.Key, gc.Equals, "/foo/items/a-item")
+		c.Check(rt.entries, gc.HasLen, 0)
 		return true
 	}), -1, params.Input.Tree)
 
@@ -134,7 +135,7 @@ func (s *AllocSuite) TestAllocParamExtractionEmptyTree(c *gc.C) {
 }
 
 func (s *AllocSuite) TestDesiredCounts(c *gc.C) {
-	var mockAlloc mocks.Allocator
+	var mockAlloc allocatormocks.Allocator
 	var p = allocParams{Allocator: &mockAlloc}
 
 	mockAlloc.On("Replicas").Return(2)
@@ -161,8 +162,8 @@ func (s *AllocSuite) TestDesiredCounts(c *gc.C) {
 }
 
 func (s *AllocSuite) TestAllocationActions(c *gc.C) {
-	var mockKV mocks.KeysAPI
-	var mockAlloc mocks.Allocator
+	var mockKV consensusmocks.KeysAPI
+	var mockAlloc allocatormocks.Allocator
 
 	var model allocParams
 	model.Allocator = &mockAlloc

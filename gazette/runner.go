@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/LiveRamp/gazette/consensus"
+	"github.com/LiveRamp/gazette/consensus/allocator"
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/metrics"
 )
@@ -59,7 +60,7 @@ func (r *Runner) ItemIsReadyForPromotion(item, state string) bool {
 	return r.router.HasServedAppend(name)
 }
 
-func (r *Runner) ItemRoute(item string, route consensus.Route, index int, tree *etcd.Node) {
+func (r *Runner) ItemRoute(item string, route allocator.Route, index int, tree *etcd.Node) {
 	defer func(start time.Time) {
 		var s = time.Since(start).Seconds()
 		metrics.ItemRouteDurationSeconds.Observe(s)
@@ -90,20 +91,20 @@ func journalToItem(j journal.Name) string {
 	return url.QueryEscape(string(j))
 }
 
-// Converts a unique consensus.Route into a correponding journal.RouteToken.
+// Converts a unique allocator.route into a correponding journal.RouteToken.
 // In particular, given a route of parent `/path/to/item` and ordered Entries
 // `/path/to/item/http%3A%2F%2Ffoo` & `/path/to/item/http%3A%2F%2Fbar`, returns
 // RouteToken `http://foo|http://bar`.
-func routeToToken(rt consensus.Route) (journal.RouteToken, error) {
+func routeToToken(rt allocator.Route) (journal.RouteToken, error) {
 	var buf bytes.Buffer
-	var prefix = len(rt.Item.Key) + 1
+	var prefix = len(rt.Item().Key) + 1
 
-	if len(rt.Entries) == 0 {
+	if len(rt.Entries()) == 0 {
 		return "", nil
 	}
 
-	for i := range rt.Entries {
-		if url, err := url.QueryUnescape(rt.Entries[i].Key[prefix:]); err != nil {
+	for i := range rt.Entries() {
+		if url, err := url.QueryUnescape(rt.Entries()[i].Key[prefix:]); err != nil {
 			return "", err
 		} else {
 			buf.WriteString(url)

@@ -4,7 +4,7 @@ import (
 	etcd "github.com/coreos/etcd/client"
 	gc "github.com/go-check/check"
 
-	"github.com/LiveRamp/gazette/consensus/mocks"
+	"github.com/LiveRamp/gazette/consensus/allocator/mocks"
 )
 
 type RouteSuite struct{}
@@ -12,9 +12,9 @@ type RouteSuite struct{}
 func (s *RouteSuite) TestOrdering(c *gc.C) {
 	rt := s.fixture()
 
-	c.Check(rt.Entries[0].Key, gc.Equals, "/foo/bar/ccc")
-	c.Check(rt.Entries[1].Key, gc.Equals, "/foo/bar/aaa")
-	c.Check(rt.Entries[2].Key, gc.Equals, "/foo/bar/bbb")
+	c.Check(rt.entries[0].Key, gc.Equals, "/foo/bar/ccc")
+	c.Check(rt.entries[1].Key, gc.Equals, "/foo/bar/aaa")
+	c.Check(rt.entries[2].Key, gc.Equals, "/foo/bar/bbb")
 }
 
 func (s *RouteSuite) TestIndex(c *gc.C) {
@@ -54,13 +54,13 @@ func (s *RouteSuite) TestCopy(c *gc.C) {
 	rt1 := s.fixture()
 	rt2 := rt1.Copy()
 
-	// Expect |rt2| has distinct Entries storage from |rt1|.
+	// Expect |rt2| has distinct entries storage from |rt1|.
 	c.Check(rt1, gc.DeepEquals, rt2)
-	rt1.Entries[0], rt1.Entries[1] = rt1.Entries[1], rt1.Entries[0]
+	rt1.entries[0], rt1.entries[1] = rt1.entries[1], rt1.entries[0]
 	c.Check(rt1, gc.Not(gc.DeepEquals), rt2)
 }
 
-func (s *RouteSuite) fixture() Route {
+func (s *RouteSuite) fixture() route {
 	item := &etcd.Node{
 		Key: "/foo/bar",
 		Nodes: []*etcd.Node{
@@ -70,9 +70,9 @@ func (s *RouteSuite) fixture() Route {
 		},
 	}
 
-	rt := Route{
-		Item:    item,
-		Entries: append([]*etcd.Node{}, item.Nodes...),
+	rt := route{
+		item:    item,
+		entries: append([]*etcd.Node{}, item.Nodes...),
 	}
 	rt.init()
 

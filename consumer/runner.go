@@ -9,6 +9,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/LiveRamp/gazette/consensus"
+	"github.com/LiveRamp/gazette/consensus/allocator"
 	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/topic"
@@ -74,7 +75,7 @@ func (r *Runner) CurrentConsumerState(context.Context, *service.Empty) (*service
 			// Member Nodes are already sorted on node Key.
 			out.Endpoints = append(out.Endpoints, path.Base(n.Key))
 		}
-		consensus.WalkItems(tree, r.FixedItems(), func(name string, route consensus.Route) {
+		consensus.WalkItems(tree, r.FixedItems(), func(name string, route allocator.Route) {
 			var shardID = service.ShardID(name)
 
 			var partition, ok = r.allShards[shardID]
@@ -88,7 +89,7 @@ func (r *Runner) CurrentConsumerState(context.Context, *service.Empty) (*service
 				Partition: partition.Journal,
 			}
 
-			for _, e := range route.Entries {
+			for _, e := range route.Entries() {
 				var replica = service.ConsumerState_Replica{
 					Endpoint: path.Base(e.Key),
 				}
@@ -199,7 +200,7 @@ func (r *Runner) ItemIsReadyForPromotion(item, state string) bool {
 	return state == Ready
 }
 
-func (r *Runner) ItemRoute(name string, rt consensus.Route, index int, tree *etcd.Node) {
+func (r *Runner) ItemRoute(name string, rt allocator.Route, index int, tree *etcd.Node) {
 	var id = service.ShardID(name)
 	var current, exists = r.liveShards[id]
 
