@@ -91,13 +91,13 @@ func journalToItem(j journal.Name) string {
 	return url.QueryEscape(string(j))
 }
 
-// Converts a unique allocator.Route into a correponding journal.RouteToken.
+// Converts a unique allocator.route into a correponding journal.RouteToken.
 // In particular, given a route of parent `/path/to/item` and ordered Entries
 // `/path/to/item/http%3A%2F%2Ffoo` & `/path/to/item/http%3A%2F%2Fbar`, returns
 // RouteToken `http://foo|http://bar`.
 func routeToToken(rt allocator.Route) (journal.RouteToken, error) {
 	var buf bytes.Buffer
-	var prefix = len(rt.Item2().Key) + 1
+	var prefix = len(rt.Item().Key) + 1
 
 	if len(rt.Entries2()) == 0 {
 		return "", nil

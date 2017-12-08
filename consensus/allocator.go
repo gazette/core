@@ -327,7 +327,6 @@ type allocParams struct {
 // WalkItems performs a zipped, outer-join iteration of items under ItemsPrefix
 // of |tree|, and |fixedItems| (which must be ordered). The argument callback
 // |cb| is invoked for each item, and must not retain |route| after each call.
-// TODO(rupert): This func belongs closer to Route than Allocator. (no relation to allocator)
 func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route allocator.Route)) {
 	var dir etcd.Node
 	if d := Child(tree, ItemsPrefix); d != nil {
@@ -338,13 +337,13 @@ func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route 
 	}
 
 	// Perform a zipped, outer-join iteration of |dir| items and |fixedItems|.
-	var scratch [8]*etcd.Node // Re-usable buffer for building Route.Entries.
+	var scratch [8]*etcd.Node // Re-usable buffer for building route.entries.
 	forEachChild(&dir, fixedItems, func(name string, node *etcd.Node) {
 		// Bypass NewRoute to avoid extra deep copies and because we know (per the
 		// callback contract) that |route| will not be retained.
-		var route = Route{
-			Item:    node,
-			Entries: append(scratch[:0], node.Nodes...),
+		var route = route{
+			item:    node,
+			entries: append(scratch[:0], node.Nodes...),
 		}
 		route.init()
 
