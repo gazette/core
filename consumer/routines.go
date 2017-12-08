@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/cockroachdb/cockroach/util/encoding"
 	etcd "github.com/coreos/etcd/client"
 	log "github.com/sirupsen/logrus"
@@ -41,20 +42,20 @@ const (
 // ShardIDs used in production.
 // TODO(johnny): Move to a globally unique ShardID, which is content-addressed
 // from the (Consumer, Topic, Journal)-tuple names.
-func ShardName_DEPRECATED(p topic.Partition) ShardID {
+func ShardName_DEPRECATED(p topic.Partition) service.ShardID {
 	var group = path.Base(p.Topic.Name)
 	var name = path.Base(p.Journal.String())
 
 	// Remove standard prefix for Journals created with topic.EnumeratePartitions.
 	name = strings.TrimPrefix(name, "part-")
 
-	return ShardID(fmt.Sprintf("shard-%s-%s", group, name))
+	return service.ShardID(fmt.Sprintf("shard-%s-%s", group, name))
 }
 
 // EnumerateShards returns a mapping of unique ShardIDs and their Partitions
 // implied by the Consumer and its set of consumed Topics.
-func EnumerateShards(c Consumer) map[ShardID]topic.Partition {
-	var m = make(map[ShardID]topic.Partition)
+func EnumerateShards(c service.Consumer) map[service.ShardID]topic.Partition {
+	var m = make(map[service.ShardID]topic.Partition)
 
 	for _, t := range c.Topics() {
 		for _, j := range t.Partitions() {
@@ -71,7 +72,7 @@ func EnumerateShards(c Consumer) map[ShardID]topic.Partition {
 
 // Maps a consumer |tree| and |shard| to the full path for storing FSMHints.
 // Eg, hintsPath(tree{/a/consumer}, 42) => "/a/consumer/hints/shard-042".
-func hintsPath(consumerPath string, shard ShardID) string {
+func hintsPath(consumerPath string, shard service.ShardID) string {
 	return consumerPath + "/" + hintsPrefix + "/" + shard.String()
 }
 
@@ -80,13 +81,13 @@ func OffsetPath(consumerPath string, name journal.Name) string {
 }
 
 // Maps |shard| to its recovery log journal.
-func recoveryLog(logRoot string, shard ShardID) journal.Name {
+func recoveryLog(logRoot string, shard service.ShardID) journal.Name {
 	return journal.Name(path.Join(logRoot, shard.String()))
 }
 
 // Aborts processing of |shard| by |runner|. Called only in exceptional
 // circumstances (eg, an unrecoverable local error).
-func abort(runner *Runner, shard ShardID) {
+func abort(runner *Runner, shard service.ShardID) {
 	if err := consensus.CancelItem(runner, shard.String()); err != nil {
 		log.WithField("err", err).Error("failed to cancel shard lock")
 	}
@@ -94,7 +95,7 @@ func abort(runner *Runner, shard ShardID) {
 
 // Loads JSON-encoded FSMHints from |tree| for |shard|. If hints do not exist,
 // initializes new hints using the default RecoveryLogRoot root.
-func loadHintsFromEtcd(shard ShardID, runner *Runner, tree *etcd.Node) (recoverylog.FSMHints, error) {
+func loadHintsFromEtcd(shard service.ShardID, runner *Runner, tree *etcd.Node) (recoverylog.FSMHints, error) {
 	var hints recoverylog.FSMHints
 	var key = hintsPath(tree.Key, shard)
 	var parent, i = consensus.FindNode(tree, key)

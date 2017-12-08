@@ -2,6 +2,9 @@ package consumer
 
 import (
 	gc "github.com/go-check/check"
+
+	"github.com/LiveRamp/gazette/consumer/service"
+	"github.com/LiveRamp/gazette/consumer/service/mocks"
 )
 
 type ShardIndexSuite struct{}
@@ -16,8 +19,8 @@ func (s *ShardIndexSuite) TestRegistration(c *gc.C) {
 }
 
 func (s *ShardIndexSuite) TestAcquireReleaseFlow(c *gc.C) {
-	var shard = new(MockShard)
-	shard.On("ID").Return(ShardID("shard-xyz-000"))
+	var shard = new(mocks.Shard)
+	shard.On("ID").Return(service.ShardID("shard-xyz-000"))
 
 	var ind ShardIndex
 	ind.IndexShard(shard)

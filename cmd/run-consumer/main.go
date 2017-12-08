@@ -11,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/LiveRamp/gazette/consumer"
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/gazette"
 )
 
@@ -41,10 +42,10 @@ func main() {
 	}
 	flag.Parse() // Parse again to initialize any plugin flags.
 
-	var instance consumer.Consumer
+	var instance service.Consumer
 	if i, err := module.Lookup("Consumer"); err != nil {
 		log.WithField("err", err).Fatal("failed to lookup Consumer symbol")
-	} else if c, ok := i.(*consumer.Consumer); !ok {
+	} else if c, ok := i.(*service.Consumer); !ok {
 		log.WithField("instance", i).Fatalf("symbol `Consumer` is not a consumer.Consumer: %#v", i)
 	} else {
 		instance = *c

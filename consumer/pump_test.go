@@ -8,6 +8,7 @@ import (
 	gc "github.com/go-check/check"
 
 	"github.com/LiveRamp/gazette/journal"
+	"github.com/LiveRamp/gazette/journal/mocks"
 	"github.com/LiveRamp/gazette/topic"
 )
 
@@ -23,7 +24,7 @@ func (s *PumpSuite) TestPump(c *gc.C) {
 	}{bytes.NewReader(bytes.Repeat(buffer, 3)), make(closeCh)}
 
 	// Return a result fixture which skips forward from 0 => 1234.
-	var getter journal.MockGetter
+	var getter mocks.Getter
 	getter.On("Get", journal.ReadArgs{
 		Journal:  "a/journal",
 		Offset:   0,

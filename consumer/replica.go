@@ -4,11 +4,12 @@ import (
 	etcd "github.com/coreos/etcd/client"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/recoverylog"
 )
 
 type replica struct {
-	shard     ShardID
+	shard     service.ShardID
 	player    *recoverylog.Player
 	servingCh chan struct{} // Blocks until replica.serve exists.
 }

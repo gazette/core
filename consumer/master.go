@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	rocks "github.com/tecbot/gorocksdb"
 
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/metrics"
 	"github.com/LiveRamp/gazette/recoverylog"
@@ -68,7 +69,7 @@ const (
 )
 
 type master struct {
-	shard     ShardID
+	shard     service.ShardID
 	partition topic.Partition
 	localDir  string
 
@@ -154,7 +155,7 @@ func (m *master) serve(runner *Runner, replica *replica) {
 	maybeEtcdSet(runner.KeysAPI(), m.hintsPath+".lastRecovered", hintsJSONString(fsm.BuildHints()))
 
 	var opts = rocks.NewDefaultOptions()
-	if initer, ok := runner.Consumer.(OptionsIniter); ok {
+	if initer, ok := runner.Consumer.(service.OptionsIniter); ok {
 		initer.InitOptions(opts)
 	}
 
@@ -164,13 +165,13 @@ func (m *master) serve(runner *Runner, replica *replica) {
 	}
 
 	// Let the consumer and runner perform any desired initialization or teardown.
-	if initer, ok := runner.Consumer.(ShardIniter); ok {
+	if initer, ok := runner.Consumer.(service.ShardIniter); ok {
 		if err = initer.InitShard(m); err != nil {
 			log.WithFields(log.Fields{"shard": m.shard, "err": err}).Error("failed to InitShard")
 			return
 		}
 	}
-	if halter, ok := runner.Consumer.(ShardHalter); ok {
+	if halter, ok := runner.Consumer.(service.ShardHalter); ok {
 		defer halter.HaltShard(m)
 	}
 
@@ -421,7 +422,7 @@ func (m *master) consumerLoop(runner *Runner, source <-chan topic.Envelope) erro
 }
 
 // Shard interface implementation.
-func (m *master) ID() ShardID                       { return m.shard }
+func (m *master) ID() service.ShardID               { return m.shard }
 func (m *master) Partition() topic.Partition        { return m.partition }
 func (m *master) Cache() interface{}                { return m.cache }
 func (m *master) SetCache(c interface{})            { m.cache = c }

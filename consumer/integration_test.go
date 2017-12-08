@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiveRamp/gazette/consumer/service"
 	etcd "github.com/coreos/etcd/client"
 	gc "github.com/go-check/check"
 	uuid "github.com/satori/go.uuid"
@@ -158,7 +159,7 @@ func (s *ConsumerSuite) TestConsumerState(c *gc.C) {
 	c.Check(state.Shards, gc.HasLen, len(addSubTopic.Partitions())+len(reverseInTopic.Partitions()))
 	c.Check(state.Shards[0].Topic, gc.Equals, addSubTopic.Name)
 	c.Check(state.Shards[0].Partition, gc.Equals, addSubTopic.Partitions()[0])
-	c.Check(state.Shards[0].Id, gc.Equals, ShardID("shard-add-subtract-updates-000"))
+	c.Check(state.Shards[0].Id, gc.Equals, service.ShardID("shard-add-subtract-updates-000"))
 
 	c.Check(state.Shards[0].Replicas, gc.HasLen, 1)
 	c.Check(state.Shards[0].Replicas[0].Endpoint, gc.Equals, runner.LocalRouteKey)
@@ -253,11 +254,11 @@ func (s *ConsumerSuite) TestMasterWritesLastReadHints(c *gc.C) {
 	var runner = s.buildRunner(0, 1)
 	var initCh = make(chan struct{})
 
-	runner.ShardPostInitHook = func(shard Shard) {
+	runner.ShardPostInitHook = func(shard service.Shard) {
 		close(initCh)
 	}
 	var keysAPI = runner.KeysAPI()
-	var sid = ShardID("shard-add-subtract-updates-000")
+	var sid = service.ShardID("shard-add-subtract-updates-000")
 	var shard = newShard(sid, topic.Partition{
 		Topic:   addSubTopic,
 		Journal: addSubTopic.Partitions()[0],
@@ -459,12 +460,12 @@ func (c *testConsumer) Topics() []*topic.Description {
 	return []*topic.Description{addSubTopic, reverseInTopic}
 }
 
-func (c *testConsumer) InitShard(s Shard) error {
+func (c *testConsumer) InitShard(s service.Shard) error {
 	s.SetCache(make(map[int64]int64))
 	return nil
 }
 
-func (c *testConsumer) Consume(m topic.Envelope, s Shard, pub *topic.Publisher) error {
+func (c *testConsumer) Consume(m topic.Envelope, s service.Shard, pub *topic.Publisher) error {
 	switch m.Message.(type) {
 	case *addSubMessage:
 		var event = m.Message.(*addSubMessage)
@@ -495,7 +496,7 @@ func (c *testConsumer) Consume(m topic.Envelope, s Shard, pub *topic.Publisher) 
 	return nil
 }
 
-func (c *testConsumer) Flush(s Shard, pub *topic.Publisher) error {
+func (c *testConsumer) Flush(s service.Shard, pub *topic.Publisher) error {
 	var cache = s.Cache().(map[int64]int64)
 	var writeBatch = s.Transaction()
 

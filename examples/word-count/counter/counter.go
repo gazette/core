@@ -5,7 +5,7 @@ package main
 import (
 	"strconv"
 
-	"github.com/LiveRamp/gazette/consumer"
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/examples/word-count"
 	"github.com/LiveRamp/gazette/topic"
 )
@@ -20,14 +20,14 @@ type shardCache struct {
 	pendingCounts map[string]int
 }
 
-func (counter) InitShard(s consumer.Shard) error {
+func (counter) InitShard(s service.Shard) error {
 	s.SetCache(&shardCache{
 		pendingCounts: make(map[string]int),
 	})
 	return nil
 }
 
-func (counter) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publisher) error {
+func (counter) Consume(env topic.Envelope, s service.Shard, pub *topic.Publisher) error {
 	var cache = s.Cache().(*shardCache)
 	var record = env.Message.(*word_count.Record)
 
@@ -47,7 +47,7 @@ func (counter) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publishe
 	return nil
 }
 
-func (counter) Flush(s consumer.Shard, pub *topic.Publisher) error {
+func (counter) Flush(s service.Shard, pub *topic.Publisher) error {
 	var cache = s.Cache().(*shardCache)
 	var writeBatch = s.Transaction()
 
@@ -64,4 +64,4 @@ func (counter) Flush(s consumer.Shard, pub *topic.Publisher) error {
 }
 
 func main() {} // Not called.
-var Consumer consumer.Consumer = counter{}
+var Consumer service.Consumer = counter{}

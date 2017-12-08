@@ -13,25 +13,26 @@ import (
 	"github.com/stretchr/testify/mock"
 	rocks "github.com/tecbot/gorocksdb"
 
-	"github.com/LiveRamp/gazette/consensus"
+	"github.com/LiveRamp/gazette/consensus/mocks"
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/recoverylog"
 	"github.com/LiveRamp/gazette/topic"
 )
 
 type RoutinesSuite struct {
-	keysAPI *consensus.MockKeysAPI
+	keysAPI *mocks.KeysAPI
 }
 
 var (
-	id8  = ShardID("shard-foo-008")
-	id12 = ShardID("shard-baz-012")
-	id30 = ShardID("shard-bar-030")
-	id42 = ShardID("shard-quux-042")
+	id8  = service.ShardID("shard-foo-008")
+	id12 = service.ShardID("shard-baz-012")
+	id30 = service.ShardID("shard-bar-030")
+	id42 = service.ShardID("shard-quux-042")
 )
 
 func (s *RoutinesSuite) SetUpTest(c *gc.C) {
-	s.keysAPI = new(consensus.MockKeysAPI)
+	s.keysAPI = new(mocks.KeysAPI)
 }
 
 func (s *RoutinesSuite) TestShardName(c *gc.C) {
@@ -206,7 +207,7 @@ func (s *RoutinesSuite) TestTopicShardMapping(c *gc.C) {
 	var shards = EnumerateShards(&consumer)
 	c.Check(shards, gc.HasLen, 7)
 
-	c.Check(shards, gc.DeepEquals, map[ShardID]topic.Partition{
+	c.Check(shards, gc.DeepEquals, map[service.ShardID]topic.Partition{
 		"shard-add-subtract-updates-000": {Journal: "pippio-journals/integration-tests/add-subtract-updates/part-000", Topic: addSubTopic},
 		"shard-add-subtract-updates-001": {Journal: "pippio-journals/integration-tests/add-subtract-updates/part-001", Topic: addSubTopic},
 		"shard-add-subtract-updates-002": {Journal: "pippio-journals/integration-tests/add-subtract-updates/part-002", Topic: addSubTopic},

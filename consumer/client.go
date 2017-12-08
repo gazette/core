@@ -11,6 +11,7 @@ import (
 
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/keepalive"
+	"github.com/LiveRamp/gazette/consumer/service"
 )
 
 // Client interacts with a Gazette Consumer to maintain an updated pool
@@ -28,7 +29,7 @@ type Client struct {
 	// only, allowing for unlocked concurrent use of the maps. Modifications are
 	// made by constructing new maps and swapping out the instances
 	// (guarded by |mu|).
-	state ConsumerState
+	state service.ConsumerState
 	conns poolConns
 	index partitionShards
 	mu    sync.Mutex
@@ -38,7 +39,7 @@ type Client struct {
 type poolConns map[string]*grpc.ClientConn
 
 // A collection of ConsumerState_Shard instances indexed on shard partition.
-type partitionShards map[journal.Name]ConsumerState_Shard
+type partitionShards map[journal.Name]service.ConsumerState_Shard
 
 // Used to signal Client.serve.
 type clientSignal bool
@@ -87,14 +88,14 @@ func NewClient(endpoint string) (*Client, error) {
 }
 
 // PartitionClient maps |partition| to its live endpoint and ConsumerState_Shard.
-func (c *Client) PartitionClient(partition journal.Name) (*grpc.ClientConn, ConsumerState_Shard, error) {
+func (c *Client) PartitionClient(partition journal.Name) (*grpc.ClientConn, service.ConsumerState_Shard, error) {
 	c.mu.Lock()
 	var index, conns = c.index, c.conns
 	c.mu.Unlock()
 
 	if shard, ok := index[partition]; !ok {
 		return nil, shard, ErrNoSuchConsumerPartition
-	} else if len(shard.Replicas) == 0 || shard.Replicas[0].Status != ConsumerState_Replica_PRIMARY {
+	} else if len(shard.Replicas) == 0 || shard.Replicas[0].Status != service.ConsumerState_Replica_PRIMARY {
 		return nil, shard, ErrNoReadyPartitionClient
 	} else if conn, ok := conns[shard.Replicas[0].Endpoint]; !ok {
 		return nil, shard, ErrNoReadyPartitionClient
@@ -103,7 +104,7 @@ func (c *Client) PartitionClient(partition journal.Name) (*grpc.ClientConn, Cons
 	}
 }
 
-func (c *Client) State() ConsumerState {
+func (c *Client) State() service.ConsumerState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -163,8 +164,8 @@ func (c *Client) serve() {
 }
 
 func (c *Client) update() error {
-	var state, err = NewConsumerClient(c.service).
-		CurrentConsumerState(context.Background(), &Empty{})
+	var state, err = service.NewConsumerClient(c.service).
+		CurrentConsumerState(context.Background(), &service.Empty{})
 	if err != nil {
 		return err
 	}
