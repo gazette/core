@@ -60,7 +60,7 @@ func (r *Runner) ItemIsReadyForPromotion(item, state string) bool {
 	return r.router.HasServedAppend(name)
 }
 
-func (r *Runner) ItemRoute(item string, route allocator.IRoute, index int, tree *etcd.Node) {
+func (r *Runner) ItemRoute(item string, route allocator.Route, index int, tree *etcd.Node) {
 	defer func(start time.Time) {
 		var s = time.Since(start).Seconds()
 		metrics.ItemRouteDurationSeconds.Observe(s)
@@ -91,11 +91,11 @@ func journalToItem(j journal.Name) string {
 	return url.QueryEscape(string(j))
 }
 
-// Converts a unique allocator.IRoute into a correponding journal.RouteToken.
+// Converts a unique allocator.Route into a correponding journal.RouteToken.
 // In particular, given a route of parent `/path/to/item` and ordered Entries
 // `/path/to/item/http%3A%2F%2Ffoo` & `/path/to/item/http%3A%2F%2Fbar`, returns
 // RouteToken `http://foo|http://bar`.
-func routeToToken(rt allocator.IRoute) (journal.RouteToken, error) {
+func routeToToken(rt allocator.Route) (journal.RouteToken, error) {
 	var buf bytes.Buffer
 	var prefix = len(rt.Item2().Key) + 1
 

@@ -328,7 +328,7 @@ type allocParams struct {
 // of |tree|, and |fixedItems| (which must be ordered). The argument callback
 // |cb| is invoked for each item, and must not retain |route| after each call.
 // TODO(rupert): This func belongs closer to Route than Allocator. (no relation to allocator)
-func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route allocator.IRoute)) {
+func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route allocator.Route)) {
 	var dir etcd.Node
 	if d := Child(tree, ItemsPrefix); d != nil {
 		dir = *d
@@ -356,7 +356,7 @@ func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route 
 // |p.Input|.
 func allocExtract(p *allocParams) {
 
-	WalkItems(p.Input.Tree, p.FixedItems(), func(name string, route allocator.IRoute) {
+	WalkItems(p.Input.Tree, p.FixedItems(), func(name string, route allocator.Route) {
 		p.Item.Count += 1
 
 		var index = route.Index(p.InstanceKey())

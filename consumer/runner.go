@@ -75,7 +75,7 @@ func (r *Runner) CurrentConsumerState(context.Context, *service.Empty) (*service
 			// Member Nodes are already sorted on node Key.
 			out.Endpoints = append(out.Endpoints, path.Base(n.Key))
 		}
-		consensus.WalkItems(tree, r.FixedItems(), func(name string, route allocator.IRoute) {
+		consensus.WalkItems(tree, r.FixedItems(), func(name string, route allocator.Route) {
 			var shardID = service.ShardID(name)
 
 			var partition, ok = r.allShards[shardID]
@@ -200,7 +200,7 @@ func (r *Runner) ItemIsReadyForPromotion(item, state string) bool {
 	return state == Ready
 }
 
-func (r *Runner) ItemRoute(name string, rt allocator.IRoute, index int, tree *etcd.Node) {
+func (r *Runner) ItemRoute(name string, rt allocator.Route, index int, tree *etcd.Node) {
 	var id = service.ShardID(name)
 	var current, exists = r.liveShards[id]
 

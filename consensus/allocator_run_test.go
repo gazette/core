@@ -26,7 +26,7 @@ type AllocRunSuite struct {
 
 	// Tracked state, for verification.
 	routesMu sync.Mutex
-	routes   map[string]allocator.IRoute
+	routes   map[string]allocator.Route
 
 	notifyCh chan notify
 }
@@ -57,7 +57,7 @@ func (s *AllocRunSuite) SetUpTest(c *gc.C) {
 	s.pathRoot = "/tests/" + c.TestName()
 	s.replicas = 0 // Overridden by some tests.
 	s.fixedItems = []string{"bar", "baz", "foo"}
-	s.routes = make(map[string]allocator.IRoute)
+	s.routes = make(map[string]allocator.Route)
 
 	// Clear a previous test Etcd directory (if it exists).
 	s.KeysAPI().Delete(context.Background(), s.pathRoot, &etcd.DeleteOptions{Recursive: true})
@@ -82,7 +82,7 @@ func (s *AllocRunSuite) TestSingle(c *gc.C) {
 
 	alloc.inspectCh <- func(tree *etcd.Node) {
 		var i int
-		WalkItems(tree, nil, func(name string, route allocator.IRoute) {
+		WalkItems(tree, nil, func(name string, route allocator.Route) {
 			c.Check(s.fixedItems[i], gc.Equals, name)
 			c.Check(route.Index("my-key"), gc.Equals, 0)
 			i++
@@ -416,7 +416,7 @@ func (s *AllocRunSuite) ItemIsReadyForPromotion(item, state string) bool {
 	return state == "ready"
 }
 
-func (s *AllocRunSuite) ItemRoute(item string, rt allocator.IRoute, ind int, tree *etcd.Node) {
+func (s *AllocRunSuite) ItemRoute(item string, rt allocator.Route, ind int, tree *etcd.Node) {
 	s.routesMu.Lock()
 	defer s.routesMu.Unlock()
 

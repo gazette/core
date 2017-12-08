@@ -31,15 +31,15 @@ type Allocator interface {
 	// as context: ItemRoute() will often wish to wish to inspect other state
 	// within |tree| in response to a route change. Note that |route| or |tree|
 	// must be copied if retained beyond this call
-	ItemRoute(item string, route IRoute, index int, tree *etcd.Node)
+	ItemRoute(item string, route Route, index int, tree *etcd.Node)
 }
 
-// IRoute, route interface
+// Route, route interface
 // TODO(rupert): Gross name for temporary convenience
-type IRoute interface {
+type Route interface {
 	Index(name string) int
 	IsReadyForHandoff(alloc Allocator) bool
 	Item2() *etcd.Node
 	Entries2() etcd.Nodes
-	Copy() IRoute
+	Copy() Route
 }

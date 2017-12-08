@@ -67,7 +67,7 @@ func (rt Route) IsReadyForHandoff(alloc allocator.Allocator) bool {
 }
 
 // Copy performs a deep-copy of Route.
-func (rt Route) Copy() allocator.IRoute {
+func (rt Route) Copy() allocator.Route {
 	return Route{
 		Item:    CopyNode(rt.Item),
 		Entries: CopyNodes(rt.Entries),
