@@ -81,7 +81,7 @@ func (s *AllocRunSuite) TestSingle(c *gc.C) {
 
 	alloc.inspectCh <- func(tree *etcd.Node) {
 		var i int
-		WalkItems(tree, nil, func(name string, route Route) {
+		WalkItems(tree, nil, func(name string, route IRoute) {
 			c.Check(s.fixedItems[i], gc.Equals, name)
 			c.Check(route.Index("my-key"), gc.Equals, 0)
 			i++

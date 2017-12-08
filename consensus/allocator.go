@@ -58,7 +58,7 @@ type Allocator interface {
 	// as context: ItemRoute() will often wish to wish to inspect other state
 	// within |tree| in response to a route change. Note that |route| or |tree|
 	// must be copied if retained beyond this call
-	ItemRoute(item string, route Route, index int, tree *etcd.Node)
+	ItemRoute(item string, route IRoute, index int, tree *etcd.Node)
 }
 
 // Inspector is an optional interface of an Allocator which allows for
@@ -357,7 +357,8 @@ type allocParams struct {
 // WalkItems performs a zipped, outer-join iteration of items under ItemsPrefix
 // of |tree|, and |fixedItems| (which must be ordered). The argument callback
 // |cb| is invoked for each item, and must not retain |route| after each call.
-func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route Route)) {
+// TODO(rupert): This func belongs closer to Route than Allocator. (no relation to allocator)
+func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route IRoute)) {
 	var dir etcd.Node
 	if d := Child(tree, ItemsPrefix); d != nil {
 		dir = *d
@@ -385,7 +386,7 @@ func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route 
 // |p.Input|.
 func allocExtract(p *allocParams) {
 
-	WalkItems(p.Input.Tree, p.FixedItems(), func(name string, route Route) {
+	WalkItems(p.Input.Tree, p.FixedItems(), func(name string, route IRoute) {
 		p.Item.Count += 1
 
 		var index = route.Index(p.InstanceKey())
@@ -393,26 +394,26 @@ func allocExtract(p *allocParams) {
 
 		if index == -1 {
 			// We do not hold a lock on this item.
-			if len(route.Entries) == 0 {
+			if len(route.Entries2()) == 0 {
 				p.Item.OpenMasters = append(p.Item.OpenMasters, name)
-			} else if len(route.Entries) < p.Replicas()+1 {
+			} else if len(route.Entries2()) < p.Replicas()+1 {
 				p.Item.OpenReplicas = append(p.Item.OpenReplicas, name)
 			}
 		} else if index == 0 {
 			// We act as item master.
-			p.Item.Master = append(p.Item.Master, route.Entries[0])
+			p.Item.Master = append(p.Item.Master, route.Entries2()[0])
 
 			// We always require that mastered items be ready for hand-off
 			// before we may release them, even if our member lock is gone.
 			if route.IsReadyForHandoff(p) {
-				p.Item.Releaseable = append(p.Item.Releaseable, route.Entries[0])
+				p.Item.Releaseable = append(p.Item.Releaseable, route.Entries2()[0])
 			}
 		} else if index < p.Replicas()+1 {
 			// We act as an item replica.
-			p.Item.Replica = append(p.Item.Replica, route.Entries[index])
+			p.Item.Replica = append(p.Item.Replica, route.Entries2()[index])
 		} else {
 			// We hold an extra lock (we lost a race to become a replica).
-			p.Item.Extra = append(p.Item.Extra, route.Entries[index])
+			p.Item.Extra = append(p.Item.Extra, route.Entries2()[index])
 		}
 	})
 

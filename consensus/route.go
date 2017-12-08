@@ -7,6 +7,15 @@ import (
 	etcd "github.com/coreos/etcd/client"
 )
 
+// IRoute, route interface
+// TODO(rupert): Gross name for temporary convenience
+type IRoute interface {
+	Index(name string) int
+	IsReadyForHandoff(alloc Allocator) bool
+	Item2() *etcd.Node
+	Entries2() etcd.Nodes
+}
+
 // Route represents an agreed-upon, ordered set of responsible processes for an item.
 type Route struct {
 	// Directory Node of item.
@@ -16,6 +25,14 @@ type Route struct {
 	// there may be additional temporary entries which are neither master nor
 	// replica (eg, due to a lost allocation race).
 	Entries etcd.Nodes
+}
+
+func (rt Route) Item2() *etcd.Node {
+	return rt.Item
+}
+
+func (rt Route) Entries2() etcd.Nodes {
+	return rt.Entries
 }
 
 // NewRoute initializes a new Route from the |response| and |node|.
