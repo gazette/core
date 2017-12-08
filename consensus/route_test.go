@@ -4,7 +4,7 @@ import (
 	etcd "github.com/coreos/etcd/client"
 	gc "github.com/go-check/check"
 
-	"github.com/LiveRamp/gazette/consensus/mocks"
+	"github.com/LiveRamp/gazette/consensus/allocator/mocks"
 )
 
 type RouteSuite struct{}

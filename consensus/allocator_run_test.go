@@ -12,6 +12,7 @@ import (
 	etcd "github.com/coreos/etcd/client"
 	gc "github.com/go-check/check"
 
+	"github.com/LiveRamp/gazette/consensus/allocator"
 	"github.com/LiveRamp/gazette/envflag"
 	"github.com/LiveRamp/gazette/envflagfactory"
 )
@@ -25,7 +26,7 @@ type AllocRunSuite struct {
 
 	// Tracked state, for verification.
 	routesMu sync.Mutex
-	routes   map[string]Route
+	routes   map[string]allocator.IRoute
 
 	notifyCh chan notify
 }
@@ -56,7 +57,7 @@ func (s *AllocRunSuite) SetUpTest(c *gc.C) {
 	s.pathRoot = "/tests/" + c.TestName()
 	s.replicas = 0 // Overridden by some tests.
 	s.fixedItems = []string{"bar", "baz", "foo"}
-	s.routes = make(map[string]Route)
+	s.routes = make(map[string]allocator.IRoute)
 
 	// Clear a previous test Etcd directory (if it exists).
 	s.KeysAPI().Delete(context.Background(), s.pathRoot, &etcd.DeleteOptions{Recursive: true})
@@ -72,7 +73,7 @@ func (s *AllocRunSuite) TestSingle(c *gc.C) {
 	s.wait(waitFor{idle: []string{"my-key"}})
 
 	for _, item := range s.fixedItems {
-		c.Check(s.routes[item].Entries, gc.HasLen, 1)
+		c.Check(s.routes[item].Entries2(), gc.HasLen, 1)
 		c.Check(s.routes[item].Index("my-key"), gc.Equals, 0)
 	}
 
@@ -81,7 +82,7 @@ func (s *AllocRunSuite) TestSingle(c *gc.C) {
 
 	alloc.inspectCh <- func(tree *etcd.Node) {
 		var i int
-		WalkItems(tree, nil, func(name string, route IRoute) {
+		WalkItems(tree, nil, func(name string, route allocator.IRoute) {
 			c.Check(s.fixedItems[i], gc.Equals, name)
 			c.Check(route.Index("my-key"), gc.Equals, 0)
 			i++
@@ -100,7 +101,7 @@ func (s *AllocRunSuite) TestSingle(c *gc.C) {
 	// Stage 2: Expect that the cancelled item is re-acquired.
 	s.wait(waitFor{idle: []string{"my-key"}})
 
-	c.Check(s.routes["bar"].Entries, gc.HasLen, 1)
+	c.Check(s.routes["bar"].Entries2(), gc.HasLen, 1)
 	c.Check(s.routes["bar"].Index("my-key"), gc.Equals, 0)
 	c.Check(Cancel(alloc), gc.IsNil)
 
@@ -108,7 +109,7 @@ func (s *AllocRunSuite) TestSingle(c *gc.C) {
 	s.wait(waitFor{exit: []string{"my-key"}})
 
 	for _, item := range s.fixedItems {
-		c.Check(s.routes[item].Entries, gc.HasLen, 0)
+		c.Check(s.routes[item].Entries2(), gc.HasLen, 0)
 	}
 }
 
@@ -129,7 +130,7 @@ func (s *AllocRunSuite) TestHandlingOfNestedItemDirectories(c *gc.C) {
 	s.wait(waitFor{idle: []string{"my-key"}})
 
 	c.Check(s.routes, gc.HasLen, 1)
-	c.Check(s.routes["some"].Entries, gc.HasLen, 2)
+	c.Check(s.routes["some"].Entries2(), gc.HasLen, 2)
 	c.Check(s.routes["some"].Index("my-key"), gc.Equals, 1)
 
 	c.Check(Cancel(alloc), gc.IsNil)
@@ -149,7 +150,7 @@ func (s *AllocRunSuite) TestAsyncItemCreationAndRemoval(c *gc.C) {
 
 	c.Check(s.routes, gc.HasLen, 3)
 	for _, route := range s.routes {
-		c.Check(route.Entries, gc.HasLen, 2)
+		c.Check(route.Entries2(), gc.HasLen, 2)
 	}
 
 	// Create a new item (by adding its directory).
@@ -161,7 +162,7 @@ func (s *AllocRunSuite) TestAsyncItemCreationAndRemoval(c *gc.C) {
 	s.wait(waitFor{idle: []string{"alloc-1", "alloc-2"}})
 
 	c.Check(s.routes, gc.HasLen, 4)
-	c.Check(s.routes["a-new-item"].Entries, gc.HasLen, 2)
+	c.Check(s.routes["a-new-item"].Entries2(), gc.HasLen, 2)
 
 	delete(s.routes, "a-new-item") // Expect ItemRoute("a-new-item") isn't invoked again.
 
@@ -178,7 +179,7 @@ func (s *AllocRunSuite) TestAsyncItemCreationAndRemoval(c *gc.C) {
 	s.wait(waitFor{idle: []string{"alloc-1", "alloc-2"}})
 
 	c.Check(s.routes, gc.HasLen, 3)
-	c.Check(s.routes["bar"].Entries, gc.HasLen, 2)
+	c.Check(s.routes["bar"].Entries2(), gc.HasLen, 2)
 
 	// Shut down both allocators.
 	s.replicas = 0
@@ -190,7 +191,7 @@ func (s *AllocRunSuite) TestAsyncItemCreationAndRemoval(c *gc.C) {
 	// Stage 3: Allocator exited. All items were released.
 	c.Check(s.routes, gc.HasLen, 3)
 	for _, route := range s.routes {
-		c.Check(route.Entries, gc.HasLen, 0)
+		c.Check(route.Entries2(), gc.HasLen, 0)
 	}
 }
 
@@ -207,7 +208,7 @@ func (s *AllocRunSuite) TestDeadlockSimple(c *gc.C) {
 	// Stage 1: |alloc1| & |alloc2| aquire master and replica on item-1, item-2.
 	s.wait(waitFor{idle: []string{"alloc-1", "alloc-2"}})
 	for _, item := range s.fixedItems {
-		c.Check(s.routes[item].Entries.Len(), gc.Equals, 2)
+		c.Check(s.routes[item].Entries2().Len(), gc.Equals, 2)
 	}
 
 	// Stage 2: Start |alloc3|, *then* create a third item (order is important).
@@ -224,11 +225,11 @@ func (s *AllocRunSuite) TestDeadlockSimple(c *gc.C) {
 
 	// Expect that we did not deadlock: that all items are fully replicated
 	for _, route := range s.routes {
-		c.Check(route.Entries.Len(), gc.Equals, 2)
+		c.Check(route.Entries2().Len(), gc.Equals, 2)
 	}
 
 	s.replicas = 0 // Allow allocators to exit.
-	for _, a := range []Allocator{alloc1, alloc2, alloc3} {
+	for _, a := range []allocator.Allocator{alloc1, alloc2, alloc3} {
 		c.Check(Cancel(a), gc.IsNil)
 	}
 	s.wait(waitFor{exit: []string{"alloc-1", "alloc-2", "alloc-3"}})
@@ -272,7 +273,7 @@ func (s *AllocRunSuite) TestDeadlockExtended(c *gc.C) {
 
 	// Expect all items are fully replicated.
 	for _, item := range s.fixedItems {
-		c.Check(s.routes[item].Entries.Len(), gc.Equals, 3)
+		c.Check(s.routes[item].Entries2().Len(), gc.Equals, 3)
 	}
 
 	// Regression check: experimentally |actions| is in range [2000-2400].
@@ -307,7 +308,7 @@ func (s *AllocRunSuite) TestAllocatorHandoff(c *gc.C) {
 
 	c.Check(s.routes, gc.HasLen, len(s.fixedItems))
 	for _, route := range s.routes {
-		c.Check(route.Entries, gc.HasLen, 2)
+		c.Check(route.Entries2(), gc.HasLen, 2)
 	}
 	c.Check(s.masterCounts(), gc.DeepEquals, map[string]int{
 		"alloc-1": 2, // Has larger share, because it was first.
@@ -320,7 +321,7 @@ func (s *AllocRunSuite) TestAllocatorHandoff(c *gc.C) {
 	s.wait(waitFor{exit: []string{"alloc-1"}, idle: []string{"alloc-2", "alloc-3"}})
 
 	for _, route := range s.routes {
-		c.Check(route.Entries, gc.HasLen, 2)
+		c.Check(route.Entries2(), gc.HasLen, 2)
 	}
 	c.Check(s.masterCounts(), gc.DeepEquals, map[string]int{
 		"alloc-2": 2, // Has larger share, because it was first.
@@ -332,7 +333,7 @@ func (s *AllocRunSuite) TestAllocatorHandoff(c *gc.C) {
 	s.wait(waitFor{exit: []string{"alloc-2"}, idle: []string{"alloc-3"}})
 
 	for _, route := range s.routes {
-		c.Check(route.Entries, gc.HasLen, 1)
+		c.Check(route.Entries2(), gc.HasLen, 1)
 	}
 	c.Check(s.masterCounts(), gc.DeepEquals, map[string]int{"alloc-3": 3})
 
@@ -343,7 +344,7 @@ func (s *AllocRunSuite) TestAllocatorHandoff(c *gc.C) {
 	s.wait(waitFor{exit: []string{"alloc-3"}})
 
 	for _, item := range s.fixedItems {
-		c.Check(s.routes[item].Entries, gc.HasLen, 0)
+		c.Check(s.routes[item].Entries2(), gc.HasLen, 0)
 	}
 }
 
@@ -351,7 +352,7 @@ func (t *AllocRunSuite) masterCounts() map[string]int {
 	var counts = make(map[string]int)
 	for _, item := range t.fixedItems {
 		// Group by allocator name, and count.
-		key := t.routes[item].Entries[0].Key
+		key := t.routes[item].Entries2()[0].Key
 		counts[key[strings.LastIndexByte(key, '/')+1:]] += 1
 	}
 	return counts
@@ -415,7 +416,7 @@ func (s *AllocRunSuite) ItemIsReadyForPromotion(item, state string) bool {
 	return state == "ready"
 }
 
-func (s *AllocRunSuite) ItemRoute(item string, rt Route, ind int, tree *etcd.Node) {
+func (s *AllocRunSuite) ItemRoute(item string, rt allocator.IRoute, ind int, tree *etcd.Node) {
 	s.routesMu.Lock()
 	defer s.routesMu.Unlock()
 

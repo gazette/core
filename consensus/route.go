@@ -4,17 +4,9 @@ import (
 	"path"
 	"sort"
 
+	"github.com/LiveRamp/gazette/consensus/allocator"
 	etcd "github.com/coreos/etcd/client"
 )
-
-// IRoute, route interface
-// TODO(rupert): Gross name for temporary convenience
-type IRoute interface {
-	Index(name string) int
-	IsReadyForHandoff(alloc Allocator) bool
-	Item2() *etcd.Node
-	Entries2() etcd.Nodes
-}
 
 // Route represents an agreed-upon, ordered set of responsible processes for an item.
 type Route struct {
@@ -59,7 +51,7 @@ func (rt Route) Index(name string) int {
 // IsReadyForHandoff returns whether all replicas are ready for the item
 // master to hand off item responsibility, without causing a violation of the
 // required replica count.
-func (rt Route) IsReadyForHandoff(alloc Allocator) bool {
+func (rt Route) IsReadyForHandoff(alloc allocator.Allocator) bool {
 	if wanted := alloc.Replicas() + 1; len(rt.Entries) < wanted {
 		return false
 	} else {
@@ -75,7 +67,7 @@ func (rt Route) IsReadyForHandoff(alloc Allocator) bool {
 }
 
 // Copy performs a deep-copy of Route.
-func (rt Route) Copy() Route {
+func (rt Route) Copy() allocator.IRoute {
 	return Route{
 		Item:    CopyNode(rt.Item),
 		Entries: CopyNodes(rt.Entries),

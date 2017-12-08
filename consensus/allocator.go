@@ -11,6 +11,8 @@ import (
 
 	etcd "github.com/coreos/etcd/client"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/LiveRamp/gazette/consensus/allocator"
 )
 
 //go:generate mockery -inpkg -name=Allocator
@@ -29,38 +31,6 @@ const (
 
 var ErrAllocatorInstanceExists = errors.New("Allocator member key exists")
 
-// Allocator is an interface which performs distributed allocation of items.
-type Allocator interface {
-	KeysAPI() etcd.KeysAPI
-	// Etcd path which roots shared state for this Context.
-	PathRoot() string
-	// A key uniquely identifying this Allocator within shared state.
-	InstanceKey() string
-	// The required number of replicas. Except in cases of failure, allocation
-	// changes will not be made which would violate having at least this many
-	// ready replicas of an item at all times.
-	Replicas() int
-	// Items which will be created if they do not exist. May be empty, and
-	// additional items may be added at any time out-of-band (via creation of
-	// a corresponding Etcd directory).
-	FixedItems() []string
-
-	// For |item| which is currently a local replica or master, returns a
-	// representation of the local item processing state. State is shared with
-	// other Allocators via this Allocator's |item| announcement in Etcd.
-	ItemState(item string) string
-	// For |state| of an item, which may be processed by another Allocator,
-	// returns whether the item can safely be promoted at this time.
-	ItemIsReadyForPromotion(item, state string) bool
-	// Notifies Allocator of |route| for |item|. If |index| == -1, then Allocator
-	// has no entry for |item|. Otherwise, |route.Entries[index]| is the entry
-	// of this Allocator (and will have basename InstanceKey()). |tree| is given
-	// as context: ItemRoute() will often wish to wish to inspect other state
-	// within |tree| in response to a route change. Note that |route| or |tree|
-	// must be copied if retained beyond this call
-	ItemRoute(item string, route IRoute, index int, tree *etcd.Node)
-}
-
 // Inspector is an optional interface of an Allocator which allows for
 // inspections of the Allocator state tree.
 type Inspector interface {
@@ -76,7 +46,7 @@ type Inspector interface {
 // |alloc|. If the member lock already exists, returns
 // ErrAllocatorInstanceExists. An Allocator member lock should be obtained
 // prior to an Allocate call.
-func Create(alloc Allocator) error {
+func Create(alloc allocator.Allocator) error {
 	_, err := alloc.KeysAPI().Set(context.Background(), memberKey(alloc), "",
 		&etcd.SetOptions{PrevExist: etcd.PrevNoExist, TTL: lockDuration})
 
@@ -96,7 +66,7 @@ func Create(alloc Allocator) error {
 // process, Allocate will duplicate the item allocations of that process. It is
 // the caller's responsibility to obtain and verify uniqueness of the member
 // lock (eg, via a preceeding Create).
-func Allocate(alloc Allocator) error {
+func Allocate(alloc allocator.Allocator) error {
 	// Channels for receiving & cancelling watched tree updates.
 	var watchCh = make(chan *etcd.Response)
 	var cancelWatch = make(chan struct{})
@@ -246,7 +216,7 @@ func Allocate(alloc Allocator) error {
 // items are released, Allocate() will exit. Note that mastered items will be
 // released only once they have a sufficient number of ready replicas for
 // hand-off.
-func Cancel(alloc Allocator) error {
+func Cancel(alloc allocator.Allocator) error {
 	_, err := alloc.KeysAPI().Delete(context.Background(), memberKey(alloc), nil)
 	return err
 }
@@ -255,7 +225,7 @@ func Cancel(alloc Allocator) error {
 // undertaken only under exceptional circumstances, where the local Allocator
 // is unable to service the allocated |item| (eg, because of an unrecoverable
 // local error).
-func CancelItem(alloc Allocator, item string) error {
+func CancelItem(alloc allocator.Allocator, item string) error {
 	_, err := alloc.KeysAPI().Delete(context.Background(), itemKey(alloc, item), nil)
 	return err
 }
@@ -265,7 +235,7 @@ func CancelItem(alloc Allocator, item string) error {
 // or SIGINT. Performs a polled retry of Create on ErrAllocatorInstanceExists,
 // until aquired or signaled. Top-level programs implementing an Allocator will
 // generally want to use this.
-func CreateAndAllocateWithSignalHandling(alloc Allocator) error {
+func CreateAndAllocateWithSignalHandling(alloc allocator.Allocator) error {
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGTERM, syscall.SIGINT)
 	shutdownCh := make(chan struct{})
@@ -311,19 +281,19 @@ func CreateAndAllocateWithSignalHandling(alloc Allocator) error {
 
 // memberKey returns the member announcement key for |alloc|.
 // Ex: /path/root/members/my-alloc-key
-func memberKey(alloc Allocator) string {
+func memberKey(alloc allocator.Allocator) string {
 	return alloc.PathRoot() + "/" + MemberPrefix + "/" + alloc.InstanceKey()
 }
 
 // itemKey returns the item entry key for |item| held by |alloc|.
 // Ex: /path/root/items/an-item/my-alloc-key
-func itemKey(alloc Allocator, item string) string {
+func itemKey(alloc allocator.Allocator, item string) string {
 	return alloc.PathRoot() + "/" + ItemsPrefix + "/" + item + "/" + alloc.InstanceKey()
 }
 
 // itemOfItemKey returns the item name represented by item entry |key| held by
 // |alloc|. Ex: /path/root/items/an-item/my-alloc-key => an-item
-func itemOfItemKey(alloc Allocator, key string) string {
+func itemOfItemKey(alloc allocator.Allocator, key string) string {
 	lstrip := len(alloc.PathRoot()) + 1 + len(ItemsPrefix) + 1
 	rstrip := len(key) - len(alloc.InstanceKey()) - 1
 	return key[lstrip:rstrip]
@@ -332,7 +302,7 @@ func itemOfItemKey(alloc Allocator, key string) string {
 // POD type built by individual iterations of the Allocate() protocol,
 // to succinctly describe global allocator state.
 type allocParams struct {
-	Allocator `json:"-"`
+	allocator.Allocator `json:"-"`
 
 	Input struct {
 		Time  time.Time
@@ -358,7 +328,7 @@ type allocParams struct {
 // of |tree|, and |fixedItems| (which must be ordered). The argument callback
 // |cb| is invoked for each item, and must not retain |route| after each call.
 // TODO(rupert): This func belongs closer to Route than Allocator. (no relation to allocator)
-func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route IRoute)) {
+func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route allocator.IRoute)) {
 	var dir etcd.Node
 	if d := Child(tree, ItemsPrefix); d != nil {
 		dir = *d
@@ -386,7 +356,7 @@ func WalkItems(tree *etcd.Node, fixedItems []string, cb func(name string, route 
 // |p.Input|.
 func allocExtract(p *allocParams) {
 
-	WalkItems(p.Input.Tree, p.FixedItems(), func(name string, route IRoute) {
+	WalkItems(p.Input.Tree, p.FixedItems(), func(name string, route allocator.IRoute) {
 		p.Item.Count += 1
 
 		var index = route.Index(p.InstanceKey())

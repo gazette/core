@@ -8,13 +8,14 @@ import (
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/LiveRamp/gazette/consensus/mocks"
+	allocatormocks "github.com/LiveRamp/gazette/consensus/allocator/mocks"
+	consensusmocks "github.com/LiveRamp/gazette/consensus/mocks"
 )
 
 type AllocSuite struct{}
 
 func (s *AllocSuite) TestAllocParamExtraction(c *gc.C) {
-	alloc := &mocks.Allocator{}
+	alloc := &allocatormocks.Allocator{}
 	alloc.On("InstanceKey").Return("my-key")
 	alloc.On("Replicas").Return(1)
 	alloc.On("FixedItems").Return([]string{"a-master", "b-created"})
@@ -102,7 +103,7 @@ func (s *AllocSuite) TestAllocParamExtraction(c *gc.C) {
 }
 
 func (s *AllocSuite) TestAllocParamExtractionEmptyTree(c *gc.C) {
-	alloc := &mocks.Allocator{}
+	alloc := &allocatormocks.Allocator{}
 
 	alloc.On("InstanceKey").Return("my-key")
 	alloc.On("FixedItems").Return([]string{"a-item"})
@@ -134,7 +135,7 @@ func (s *AllocSuite) TestAllocParamExtractionEmptyTree(c *gc.C) {
 }
 
 func (s *AllocSuite) TestDesiredCounts(c *gc.C) {
-	var mockAlloc mocks.Allocator
+	var mockAlloc allocatormocks.Allocator
 	var p = allocParams{Allocator: &mockAlloc}
 
 	mockAlloc.On("Replicas").Return(2)
@@ -161,8 +162,8 @@ func (s *AllocSuite) TestDesiredCounts(c *gc.C) {
 }
 
 func (s *AllocSuite) TestAllocationActions(c *gc.C) {
-	var mockKV mocks.KeysAPI
-	var mockAlloc mocks.Allocator
+	var mockKV consensusmocks.KeysAPI
+	var mockAlloc allocatormocks.Allocator
 
 	var model allocParams
 	model.Allocator = &mockAlloc
