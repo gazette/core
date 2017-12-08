@@ -89,7 +89,7 @@ func (r *Runner) CurrentConsumerState(context.Context, *service.Empty) (*service
 				Partition: partition.Journal,
 			}
 
-			for _, e := range route.Entries2() {
+			for _, e := range route.Entries() {
 				var replica = service.ConsumerState_Replica{
 					Endpoint: path.Base(e.Key),
 				}

@@ -99,12 +99,12 @@ func routeToToken(rt allocator.Route) (journal.RouteToken, error) {
 	var buf bytes.Buffer
 	var prefix = len(rt.Item().Key) + 1
 
-	if len(rt.Entries2()) == 0 {
+	if len(rt.Entries()) == 0 {
 		return "", nil
 	}
 
-	for i := range rt.Entries2() {
-		if url, err := url.QueryUnescape(rt.Entries2()[i].Key[prefix:]); err != nil {
+	for i := range rt.Entries() {
+		if url, err := url.QueryUnescape(rt.Entries()[i].Key[prefix:]); err != nil {
 			return "", err
 		} else {
 			buf.WriteString(url)

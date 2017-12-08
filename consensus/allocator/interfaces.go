@@ -43,7 +43,7 @@ type Allocator interface {
 // Route represents an agreed-upon, ordered set of responsible processes for an
 // item.
 type Route interface {
-	// Index returns the index of |name| in |rt.Entries2()|, or -1.
+	// Index returns the index of |name| in |rt.Entries()|, or -1.
 	Index(name string) int
 
 	// IsReadyForHandoff returns whether all replicas are ready for the item
@@ -55,11 +55,11 @@ type Route interface {
 	Copy() Route
 
 	// Item is the directory Node.
-	Item2() *etcd.Node
+	Item() *etcd.Node
 
-	// Entries are |Item2().Nodes|, ordered on increasing CreatedIndex. 'Master' is
+	// Entries are |Item().Nodes|, ordered on increasing CreatedIndex. 'Master' is
 	// index 0, followed by item replicas. Depending on the target replica count,
 	// there may be additional temporary entries which are neither master nor
 	// replica (eg, due to a lost allocation race).
-	Entries2() etcd.Nodes
+	Entries() etcd.Nodes
 }

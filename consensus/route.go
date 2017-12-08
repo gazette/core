@@ -14,14 +14,6 @@ type route struct {
 	entries etcd.Nodes
 }
 
-func (rt route) Item2() *etcd.Node {
-	return rt.item
-}
-
-func (rt route) Entries2() etcd.Nodes {
-	return rt.entries
-}
-
 // NewRoute initializes a new route from the |response| and |node|.
 func NewRoute(response *etcd.Response, node *etcd.Node) allocator.Route {
 	rt := route{
@@ -65,6 +57,16 @@ func (rt route) Copy() allocator.Route {
 		item:    CopyNode(rt.item),
 		entries: CopyNodes(rt.entries),
 	}
+}
+
+// Item implements allocator.Route
+func (rt route) Item() *etcd.Node {
+	return rt.item
+}
+
+// Entries implements allocator.Route
+func (rt route) Entries() etcd.Nodes {
+	return rt.entries
 }
 
 func (rt route) init() {

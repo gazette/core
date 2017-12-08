@@ -363,26 +363,26 @@ func allocExtract(p *allocParams) {
 
 		if index == -1 {
 			// We do not hold a lock on this item.
-			if len(route.Entries2()) == 0 {
+			if len(route.Entries()) == 0 {
 				p.Item.OpenMasters = append(p.Item.OpenMasters, name)
-			} else if len(route.Entries2()) < p.Replicas()+1 {
+			} else if len(route.Entries()) < p.Replicas()+1 {
 				p.Item.OpenReplicas = append(p.Item.OpenReplicas, name)
 			}
 		} else if index == 0 {
 			// We act as item master.
-			p.Item.Master = append(p.Item.Master, route.Entries2()[0])
+			p.Item.Master = append(p.Item.Master, route.Entries()[0])
 
 			// We always require that mastered items be ready for hand-off
 			// before we may release them, even if our member lock is gone.
 			if route.IsReadyForHandoff(p) {
-				p.Item.Releaseable = append(p.Item.Releaseable, route.Entries2()[0])
+				p.Item.Releaseable = append(p.Item.Releaseable, route.Entries()[0])
 			}
 		} else if index < p.Replicas()+1 {
 			// We act as an item replica.
-			p.Item.Replica = append(p.Item.Replica, route.Entries2()[index])
+			p.Item.Replica = append(p.Item.Replica, route.Entries()[index])
 		} else {
 			// We hold an extra lock (we lost a race to become a replica).
-			p.Item.Extra = append(p.Item.Extra, route.Entries2()[index])
+			p.Item.Extra = append(p.Item.Extra, route.Entries()[index])
 		}
 	})
 

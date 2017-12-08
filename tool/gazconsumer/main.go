@@ -242,10 +242,10 @@ func getHeads(itemsRoot *etcd.Response, cdata *consumerData) (map[string]int64, 
 	var writeHeadWg = new(sync.WaitGroup)
 	for _, node := range itemsRoot.Node.Nodes {
 		var route = consensus.NewRoute(itemsRoot, node)
-		var prefix = len(route.Item.Key) + 1
+		var prefix = len(route.Item().Key) + 1
 
 		// Derive journal name from item name.
-		var parts = strings.Split(path.Base(route.Item.Key), "-")
+		var parts = strings.Split(path.Base(route.Item().Key), "-")
 		var journal = fmt.Sprintf("pippio-journals/%s/part-%s",
 			strings.Join(parts[1:len(parts)-1], "-"), parts[len(parts)-1])
 
@@ -253,12 +253,12 @@ func getHeads(itemsRoot *etcd.Response, cdata *consumerData) (map[string]int64, 
 		writeHeadWg.Add(1)
 		go fetchWriteHead(journal, gazetteClient, writeHeadOutput, writeHeadWg)
 
-		if len(route.Entries) == 0 {
+		if len(route.Entries()) == 0 {
 			// Item has no master. This is normal if the consumer is not running.
 			continue
 		}
 
-		for i, member := range route.Entries {
+		for i, member := range route.Entries() {
 			var memberID = member.Key[prefix:]
 			var info, ok = cdata.members[memberID]
 
