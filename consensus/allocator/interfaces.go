@@ -2,6 +2,8 @@ package allocator
 
 import etcd "github.com/coreos/etcd/client"
 
+//go:generate mockery -name=Allocator
+
 // Allocator is an interface which performs distributed allocation of items.
 type Allocator interface {
 	KeysAPI() etcd.KeysAPI

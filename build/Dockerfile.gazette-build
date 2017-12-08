@@ -35,7 +35,7 @@ COPY topic /go/src/github.com/LiveRamp/gazette/topic
 RUN base=github.com/LiveRamp/gazette ; \
     set -x ; \
     for tgt in \
-      $base/consumer/service.proto \
+      $base/consumer/service/service.proto \
       $base/recoverylog/recorded_op.proto \
     ; do \
       protoc -I src/ -I src/$base/vendor/ --plugin=/go/bin/protoc-gen-gogo \
