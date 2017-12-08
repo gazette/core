@@ -1,4 +1,4 @@
-package journal
+package journal_test
 
 import (
 	"bufio"
@@ -11,6 +11,7 @@ import (
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
 
+	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/journal/mocks"
 )
 
@@ -22,7 +23,7 @@ func (s *IOSuite) TestMarkedReaderUpdates(c *gc.C) {
 		closeCh
 	}{iotest.TimeoutReader(iotest.HalfReader(strings.NewReader("afixture"))), make(closeCh)}
 
-	var mr = NewMarkedReader(Mark{Journal: "a/journal", Offset: 1234}, reader)
+	var mr = journal.NewMarkedReader(journal.Mark{Journal: "a/journal", Offset: 1234}, reader)
 	var buffer [8]byte
 
 	// First read: read succeeds at half of the request size.
@@ -30,7 +31,7 @@ func (s *IOSuite) TestMarkedReaderUpdates(c *gc.C) {
 	c.Check(n, gc.Equals, 3)
 	c.Check(err, gc.IsNil)
 
-	c.Check(mr.Mark.Journal, gc.Equals, Name("a/journal"))
+	c.Check(mr.Mark.Journal, gc.Equals, journal.Name("a/journal"))
 	c.Check(mr.Mark.Offset, gc.Equals, int64(1237))
 
 	// Second read: error is encountered & passed through.
@@ -50,7 +51,7 @@ func (s *IOSuite) TestBufferedMarkAdjustment(c *gc.C) {
 		closeCh
 	}{strings.NewReader("foobar\nbaz\n"), make(closeCh)}
 
-	var mr = NewMarkedReader(Mark{Journal: "a/journal", Offset: 1234}, reader)
+	var mr = journal.NewMarkedReader(journal.Mark{Journal: "a/journal", Offset: 1234}, reader)
 	var br = bufio.NewReader(mr)
 
 	var b, err = br.ReadBytes('\n')
@@ -78,48 +79,48 @@ func (s *IOSuite) TestReaderRetries(c *gc.C) {
 	var ctx, cancel = context.WithCancel(context.Background())
 	var getter = new(mocks.Getter)
 
-	var rr = NewRetryReaderContext(ctx, Mark{"a/journal", -1}, getter)
+	var rr = journal.NewRetryReaderContext(ctx, journal.Mark{"a/journal", -1}, getter)
 	rr.Blocking = false
 
 	// Initial read of 3 bytes, which increments the offset from 0 -> 100 and then EOFs.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: -1, Blocking: false, Context: ctx}).
-		Return(ReadResult{Offset: 100}, readers[0]).Once()
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: -1, Blocking: false, Context: ctx}).
+		Return(journal.ReadResult{Offset: 100}, readers[0]).Once()
 
 	// Next open fails.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 103, Blocking: false, Context: ctx}).
-		Return(ReadResult{Error: ErrNotBroker}, ioutil.NopCloser(nil)).Once()
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 103, Blocking: false, Context: ctx}).
+		Return(journal.ReadResult{Error: journal.ErrNotBroker}, ioutil.NopCloser(nil)).Once()
 
 	// Read is retried, and the ErrNotYetAvailable is surfaced to the caller.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 103, Blocking: false, Context: ctx}).
-		Return(ReadResult{Error: ErrNotYetAvailable}, ioutil.NopCloser(nil)).Once()
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 103, Blocking: false, Context: ctx}).
+		Return(journal.ReadResult{Error: journal.ErrNotYetAvailable}, ioutil.NopCloser(nil)).Once()
 
 	// Expect |rr| is switched to blocking. Next ErrNotYetAvailable is swallowed and retried.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 103, Blocking: true, Context: ctx}).
-		Return(ReadResult{Error: ErrNotYetAvailable}, ioutil.NopCloser(nil)).Once()
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 103, Blocking: true, Context: ctx}).
+		Return(journal.ReadResult{Error: journal.ErrNotYetAvailable}, ioutil.NopCloser(nil)).Once()
 
 	// Next open jumps the offset, reads 5 bytes, then times out.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 103, Blocking: true, Context: ctx}).
-		Return(ReadResult{Offset: 203}, readers[1]).Once()
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 103, Blocking: true, Context: ctx}).
+		Return(journal.ReadResult{Offset: 203}, readers[1]).Once()
 
 	// Next open returns a reader which EOFs without content.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 208, Blocking: true, Context: ctx}).
-		Return(ReadResult{Offset: 208}, readers[2]).Once()
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 208, Blocking: true, Context: ctx}).
+		Return(journal.ReadResult{Offset: 208}, readers[2]).Once()
 
 	// Next open reads remaining 5 bytes at the updated offset.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 208, Blocking: true, Context: ctx}).
-		Return(ReadResult{Offset: 208}, readers[3]).Once()
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 208, Blocking: true, Context: ctx}).
+		Return(journal.ReadResult{Offset: 208}, readers[3]).Once()
 
 	// All subsequent reads return an error.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 216, Blocking: true, Context: ctx}).
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 216, Blocking: true, Context: ctx}).
 		Run(func(mock.Arguments) { cancel() }). // Side effect: cancel the Context.
-		Return(ReadResult{Error: ErrNotBroker}, ioutil.NopCloser(nil))
+		Return(journal.ReadResult{Error: journal.ErrNotBroker}, ioutil.NopCloser(nil))
 
 	var recovered [13]byte
 
 	// ReadFull drives required Gets. Expect the non-blocking ErrNotYetAvailable was surfaced.
 	var n, err = io.ReadFull(rr, recovered[:])
 	c.Check(n, gc.Equals, 3)
-	c.Check(err, gc.Equals, ErrNotYetAvailable)
+	c.Check(err, gc.Equals, journal.ErrNotYetAvailable)
 	c.Check(rr.Mark.Offset, gc.Equals, int64(103))
 
 	rr.Blocking = true
@@ -158,7 +159,7 @@ func (s *IOSuite) TestSeeking(c *gc.C) {
 
 	var getter = new(mocks.Getter)
 	var ctx = context.Background()
-	var rr = NewRetryReaderContext(ctx, Mark{"a/journal", 0}, getter)
+	var rr = journal.NewRetryReaderContext(ctx, journal.Mark{"a/journal", 0}, getter)
 
 	var checkRead = func(expect string) {
 		var buffer = make([]byte, len(expect))
@@ -175,10 +176,10 @@ func (s *IOSuite) TestSeeking(c *gc.C) {
 	c.Check(err, gc.IsNil)
 
 	// Initial read opens reader.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 100, Blocking: true, Context: ctx}).
-		Return(ReadResult{
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 100, Blocking: true, Context: ctx}).
+		Return(journal.ReadResult{
 			Offset:   100,
-			Fragment: Fragment{End: 111},
+			Fragment: journal.Fragment{End: 111},
 		}, readers[0]).Once()
 
 	// Read first three bytes.
@@ -200,10 +201,10 @@ func (s *IOSuite) TestSeeking(c *gc.C) {
 	c.Check(rr.ReadCloser, gc.IsNil)
 
 	// Next Read issues a new request.
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 111, Blocking: true, Context: ctx}).
-		Return(ReadResult{
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 111, Blocking: true, Context: ctx}).
+		Return(journal.ReadResult{
 			Offset:   111,
-			Fragment: Fragment{End: 117},
+			Fragment: journal.Fragment{End: 117},
 		}, readers[1]).Once()
 
 	checkRead("foo")
@@ -214,8 +215,8 @@ func (s *IOSuite) TestSeeking(c *gc.C) {
 	c.Check(err, gc.IsNil)
 	c.Check(rr.ReadCloser, gc.IsNil)
 
-	getter.On("Get", ReadArgs{Journal: "a/journal", Offset: 113, Blocking: true, Context: ctx}).
-		Return(ReadResult{Offset: 113, Fragment: Fragment{End: 116}}, readers[2]).Once()
+	getter.On("Get", journal.ReadArgs{Journal: "a/journal", Offset: 113, Blocking: true, Context: ctx}).
+		Return(journal.ReadResult{Offset: 113, Fragment: journal.Fragment{End: 116}}, readers[2]).Once()
 
 	checkRead("xyz")
 
