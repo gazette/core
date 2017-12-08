@@ -13,6 +13,7 @@ import (
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
 
+	"github.com/LiveRamp/gazette/gazette/client/mocks"
 	"github.com/LiveRamp/gazette/journal"
 )
 
@@ -98,7 +99,7 @@ func (s *WriteServiceSuite) TestWriteLifecycle(c *gc.C) {
 	writeServiceCoolOffTimeout = time.Millisecond
 	defer func() { writeServiceCoolOffTimeout = actualTimeout }()
 
-	var mockClient mockHttpClient
+	var mockClient mocks.HttpClient
 
 	client, _ := NewClient("http://server")
 	client.httpClient = &mockClient
