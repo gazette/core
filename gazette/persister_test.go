@@ -12,22 +12,23 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github.com/LiveRamp/gazette/cloudstore"
-	"github.com/LiveRamp/gazette/consensus"
+	consensusmocks "github.com/LiveRamp/gazette/consensus/mocks"
 	"github.com/LiveRamp/gazette/journal"
+	journalmocks "github.com/LiveRamp/gazette/journal/mocks"
 )
 
 type PersisterSuite struct {
-	keysAPI   *consensus.MockKeysAPI
+	keysAPI   *consensusmocks.KeysAPI
 	cfs       cloudstore.FileSystem
-	file      *journal.MockFragmentFile
+	file      *journalmocks.FragmentFile
 	fragment  journal.Fragment
 	persister *Persister
 }
 
 func (s *PersisterSuite) SetUpTest(c *gc.C) {
-	s.keysAPI = new(consensus.MockKeysAPI)
+	s.keysAPI = new(consensusmocks.KeysAPI)
 	s.cfs = cloudstore.NewTmpFileSystem()
-	s.file = &journal.MockFragmentFile{}
+	s.file = &journalmocks.FragmentFile{}
 	s.fragment = journal.Fragment{
 		Journal: "a/journal",
 		Begin:   1000,
@@ -173,7 +174,7 @@ func (s *PersisterSuite) TestEmptyFragment(c *gc.C) {
 		Begin:   1000,
 		End:     1000,
 		Sum:     [20]byte{},
-		File:    &journal.MockFragmentFile{},
+		File:    &journalmocks.FragmentFile{},
 	}
 
 	// Intercept and validate the call to os.Remove.

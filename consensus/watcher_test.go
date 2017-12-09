@@ -6,14 +6,16 @@ import (
 
 	etcd "github.com/coreos/etcd/client"
 	gc "github.com/go-check/check"
+
+	"github.com/LiveRamp/gazette/consensus/mocks"
 )
 
 type ModelSuite struct{}
 
 func (s *ModelSuite) TestBlockUntilModified(c *gc.C) {
 	var ctx = context.Background()
-	var keys MockKeysAPI
-	var watcher MockWatcher
+	var keys mocks.KeysAPI
+	var watcher mocks.Watcher
 
 	var modelWatcher = RetryWatcher(&keys, "foo",
 		&etcd.GetOptions{}, &etcd.WatcherOptions{})

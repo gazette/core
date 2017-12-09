@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/LiveRamp/gazette/journal/mocks"
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
 	rocks "github.com/tecbot/gorocksdb"
@@ -31,7 +32,7 @@ func (s *DatabaseSuite) TestDatabase(c *gc.C) {
 	}
 	close(result.Ready)
 
-	var writer = &journal.MockWriter{}
+	var writer = &mocks.Writer{}
 	writer.On("Write", logName, mock.AnythingOfType("[]uint8")).Return(&result, nil)
 	writer.On("ReadFrom", logName, mock.Anything).Return(&result, nil)
 

@@ -9,6 +9,8 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/LiveRamp/gazette/consensus"
+	"github.com/LiveRamp/gazette/consensus/allocator"
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/topic"
 )
@@ -27,7 +29,7 @@ const (
 )
 
 type Runner struct {
-	Consumer Consumer
+	Consumer service.Consumer
 	// An identifier for this particular runner. Eg, the hostname.
 	LocalRouteKey string
 	// Base local directory into which shards should be staged.
@@ -44,23 +46,23 @@ type Runner struct {
 
 	// Optional hooks for notification of Shard lifecycle. These are largely
 	// intended to facilitate testing cases.
-	ShardPostInitHook    func(Shard)
-	ShardPostConsumeHook func(topic.Envelope, Shard)
-	ShardPostCommitHook  func(Shard)
-	ShardPostStopHook    func(Shard)
+	ShardPostInitHook    func(service.Shard)
+	ShardPostConsumeHook func(topic.Envelope, service.Shard)
+	ShardPostCommitHook  func(service.Shard)
+	ShardPostStopHook    func(service.Shard)
 
 	partitions map[journal.Name]*topic.Description // Previously enumerated topic partitions.
 	shardNames []string                            // Allocator FixedItems support.
 
-	allShards    map[ShardID]topic.Partition // All shards and their Partition, by name.
-	liveShards   map[ShardID]*shard          // Live shards, by name.
-	zombieShards map[*shard]struct{}         // Cancelled shards which are shutting down.
+	allShards    map[service.ShardID]topic.Partition // All shards and their Partition, by name.
+	liveShards   map[service.ShardID]*shard          // Live shards, by name.
+	zombieShards map[*shard]struct{}                 // Cancelled shards which are shutting down.
 
 	inspectCh chan func(*etcd.Node)
 }
 
-func (r *Runner) CurrentConsumerState(context.Context, *Empty) (*ConsumerState, error) {
-	var out = &ConsumerState{
+func (r *Runner) CurrentConsumerState(context.Context, *service.Empty) (*service.ConsumerState, error) {
+	var out = &service.ConsumerState{
 		Root:          r.ConsumerRoot,
 		LocalRouteKey: r.LocalRouteKey,
 		ReplicaCount:  int32(r.ReplicaCount),
@@ -73,34 +75,34 @@ func (r *Runner) CurrentConsumerState(context.Context, *Empty) (*ConsumerState, 
 			// Member Nodes are already sorted on node Key.
 			out.Endpoints = append(out.Endpoints, path.Base(n.Key))
 		}
-		consensus.WalkItems(tree, r.FixedItems(), func(name string, route consensus.Route) {
-			var shardID = ShardID(name)
+		consensus.WalkItems(tree, r.FixedItems(), func(name string, route allocator.Route) {
+			var shardID = service.ShardID(name)
 
 			var partition, ok = r.allShards[shardID]
 			if !ok {
 				return
 			}
 
-			var shard = ConsumerState_Shard{
+			var shard = service.ConsumerState_Shard{
 				Id:        shardID,
 				Topic:     partition.Topic.Name,
 				Partition: partition.Journal,
 			}
 
-			for _, e := range route.Entries {
-				var replica = ConsumerState_Replica{
+			for _, e := range route.Entries() {
+				var replica = service.ConsumerState_Replica{
 					Endpoint: path.Base(e.Key),
 				}
 
 				switch e.Value {
 				case Primary:
-					replica.Status = ConsumerState_Replica_PRIMARY
+					replica.Status = service.ConsumerState_Replica_PRIMARY
 				case Ready:
-					replica.Status = ConsumerState_Replica_READY
+					replica.Status = service.ConsumerState_Replica_READY
 				case Recovering:
-					replica.Status = ConsumerState_Replica_RECOVERING
+					replica.Status = service.ConsumerState_Replica_RECOVERING
 				default:
-					replica.Status = ConsumerState_Replica_INVALID
+					replica.Status = service.ConsumerState_Replica_INVALID
 				}
 				shard.Replicas = append(shard.Replicas, replica)
 			}
@@ -145,8 +147,8 @@ func (r *Runner) Run() error {
 	}
 
 	r.partitions = make(map[journal.Name]*topic.Description)
-	r.allShards = make(map[ShardID]topic.Partition)
-	r.liveShards = make(map[ShardID]*shard)
+	r.allShards = make(map[service.ShardID]topic.Partition)
+	r.liveShards = make(map[service.ShardID]*shard)
 	r.zombieShards = make(map[*shard]struct{})
 	r.inspectCh = make(chan func(*etcd.Node))
 
@@ -183,7 +185,7 @@ func (r *Runner) PathRoot() string      { return r.ConsumerRoot }
 func (r *Runner) Replicas() int         { return r.ReplicaCount }
 
 func (r *Runner) ItemState(name string) string {
-	if shard, ok := r.liveShards[ShardID(name)]; !ok {
+	if shard, ok := r.liveShards[service.ShardID(name)]; !ok {
 		return UnknownShard
 	} else if shard.master != nil && shard.master.didFinishInit() {
 		return Primary
@@ -198,8 +200,8 @@ func (r *Runner) ItemIsReadyForPromotion(item, state string) bool {
 	return state == Ready
 }
 
-func (r *Runner) ItemRoute(name string, rt consensus.Route, index int, tree *etcd.Node) {
-	var id = ShardID(name)
+func (r *Runner) ItemRoute(name string, rt allocator.Route, index int, tree *etcd.Node) {
+	var id = service.ShardID(name)
 	var current, exists = r.liveShards[id]
 
 	// |index| captures the allocator's role in processing |current|.

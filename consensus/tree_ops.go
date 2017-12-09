@@ -10,8 +10,8 @@ import (
 	"golang.org/x/net/context"
 )
 
-//go:generate mockery -inpkg -name=KeysAPI
-//go:generate mockery -inpkg -name=Watcher
+//go:generate mockery -name=KeysAPI
+//go:generate mockery -name=Watcher
 
 var (
 	etcdUpsertOps = map[string]struct{}{

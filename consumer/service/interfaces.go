@@ -1,4 +1,4 @@
-package consumer
+package service
 
 import (
 	rocks "github.com/tecbot/gorocksdb"
@@ -6,7 +6,12 @@ import (
 	"github.com/LiveRamp/gazette/topic"
 )
 
-//go:generate mockery -inpkg -name=Shard
+//go:generate mockery -name=Shard
+
+// ConsumerServer is generated from service.proto. This go:generate directive
+// is placed here to avoid relying on the protobuf compiler to propagate it to
+// generated Go source.
+//go:generate mockery -name=ConsumerServer
 
 // ShardID uniquely identifies a specific Shard. A ShardID must be consistent
 // across processes for the entire duration of the Consumer lifetime.

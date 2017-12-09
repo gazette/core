@@ -5,15 +5,15 @@ import (
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/LiveRamp/gazette/consensus"
+	"github.com/LiveRamp/gazette/consensus/mocks"
 )
 
 type CommonSuite struct {
-	keys *consensus.MockKeysAPI
+	keys *mocks.KeysAPI
 }
 
 func (s *CommonSuite) SetUpSuite(c *gc.C) {
-	s.keys = new(consensus.MockKeysAPI)
+	s.keys = new(mocks.KeysAPI)
 
 	var awsEndpoint = &etcd.Response{
 		Node: &etcd.Node{Value: testAWSEndpoint},

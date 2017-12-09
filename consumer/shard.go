@@ -6,6 +6,7 @@ import (
 	etcd "github.com/coreos/etcd/client"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/topic"
 )
 
@@ -21,7 +22,7 @@ const (
 // Models the state-machine of how a shard transitions from replica, to master,
 // to cancelled. Delegates out the interesting bits to `replica` and `master`.
 type shard struct {
-	id        ShardID
+	id        service.ShardID
 	partition topic.Partition
 
 	localDir string
@@ -40,7 +41,7 @@ type shard struct {
 	cancelCh chan struct{}
 }
 
-func newShard(id ShardID, partition topic.Partition, runner *Runner, zombie *shard) *shard {
+func newShard(id service.ShardID, partition topic.Partition, runner *Runner, zombie *shard) *shard {
 	return &shard{
 		cancelCh:  make(chan struct{}),
 		id:        id,

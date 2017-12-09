@@ -4,17 +4,18 @@ import (
 	"context"
 	"errors"
 
+	etcd "github.com/coreos/etcd/client"
 	gc "github.com/go-check/check"
 
-	etcd "github.com/coreos/etcd/client"
+	"github.com/LiveRamp/gazette/consensus/mocks"
 )
 
 type RetryWatcherSuite struct{}
 
 func (s *RetryWatcherSuite) TestFoo(c *gc.C) {
 	var ctx = context.Background()
-	var keys MockKeysAPI
-	var watcher MockWatcher
+	var keys mocks.KeysAPI
+	var watcher mocks.Watcher
 
 	var rwatcher = RetryWatcher(&keys, "/key",
 		&etcd.GetOptions{Recursive: true},

@@ -7,6 +7,9 @@ import (
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
+
+	"github.com/LiveRamp/gazette/consumer/service"
+	"github.com/LiveRamp/gazette/consumer/service/mocks"
 )
 
 type ClientSuite struct{}
@@ -16,7 +19,7 @@ func (s *ClientSuite) TestClientInitializationAndUpdate(c *gc.C) {
 	defer s0.srv.GracefulStop()
 	defer s1.srv.GracefulStop()
 
-	s0.mock.On("CurrentConsumerState", mock.Anything, &Empty{}).Return(
+	s0.mock.On("CurrentConsumerState", mock.Anything, &service.Empty{}).Return(
 		buildConsumerStateFixture(s0.addr, s1.addr), nil).Once()
 
 	var client, err = NewClient(s0.addr)
@@ -28,17 +31,17 @@ func (s *ClientSuite) TestClientInitializationAndUpdate(c *gc.C) {
 	conn, shard, err := client.PartitionClient("partition/zero")
 	c.Check(err, gc.IsNil)
 	c.Check(conn, gc.NotNil)
-	c.Check(shard.Id, gc.Equals, ShardID("shard-zero"))
+	c.Check(shard.Id, gc.Equals, service.ShardID("shard-zero"))
 
 	conn, shard, err = client.PartitionClient("partition/one")
 	c.Check(err, gc.Equals, ErrNoReadyPartitionClient)
 	c.Check(conn, gc.IsNil)
-	c.Check(shard.Id, gc.Equals, ShardID("shard-one"))
+	c.Check(shard.Id, gc.Equals, service.ShardID("shard-one"))
 
 	conn, shard, err = client.PartitionClient("partition/two")
 	c.Check(err, gc.Equals, ErrNoReadyPartitionClient)
 	c.Check(conn, gc.IsNil)
-	c.Check(shard.Id, gc.Equals, ShardID("shard-two"))
+	c.Check(shard.Id, gc.Equals, service.ShardID("shard-two"))
 
 	conn, shard, err = client.PartitionClient("partition/three")
 	c.Check(err, gc.Equals, ErrNoSuchConsumerPartition)
@@ -51,18 +54,18 @@ func (s *ClientSuite) TestClientInitializationAndUpdate(c *gc.C) {
 	var fixture = buildConsumerStateFixture(s0.addr, s1.addr)
 
 	fixture.Endpoints = sortStrings([]string{s0.addr, s1.addr, s2.addr})
-	fixture.Shards = append(fixture.Shards, ConsumerState_Shard{
+	fixture.Shards = append(fixture.Shards, service.ConsumerState_Shard{
 		Id:        "shard-three",
 		Topic:     "a/topic",
 		Partition: "partition/three",
-		Replicas: []ConsumerState_Replica{
+		Replicas: []service.ConsumerState_Replica{
 			{
 				Endpoint: s2.addr,
-				Status:   ConsumerState_Replica_PRIMARY,
+				Status:   service.ConsumerState_Replica_PRIMARY,
 			},
 		},
 	})
-	s0.mock.On("CurrentConsumerState", mock.Anything, &Empty{}).Return(fixture, nil).Once()
+	s0.mock.On("CurrentConsumerState", mock.Anything, &service.Empty{}).Return(fixture, nil).Once()
 
 	c.Check(client.update(), gc.IsNil)
 
@@ -70,25 +73,25 @@ func (s *ClientSuite) TestClientInitializationAndUpdate(c *gc.C) {
 	conn, shard, err = client.PartitionClient("partition/zero")
 	c.Check(err, gc.IsNil)
 	c.Check(conn, gc.NotNil)
-	c.Check(shard.Id, gc.Equals, ShardID("shard-zero"))
+	c.Check(shard.Id, gc.Equals, service.ShardID("shard-zero"))
 
 	conn, shard, err = client.PartitionClient("partition/three")
 	c.Check(err, gc.IsNil)
 	c.Check(conn, gc.NotNil)
-	c.Check(shard.Id, gc.Equals, ShardID("shard-three"))
+	c.Check(shard.Id, gc.Equals, service.ShardID("shard-three"))
 }
 
 type mockConsumerServer struct {
 	srv  *grpc.Server
-	mock *MockConsumerServer
+	mock *mocks.ConsumerServer
 	addr string
 }
 
 func buildMockServer(c *gc.C) mockConsumerServer {
 	var srv = grpc.NewServer()
-	var m = new(MockConsumerServer)
+	var m = new(mocks.ConsumerServer)
 
-	RegisterConsumerServer(srv, m)
+	service.RegisterConsumerServer(srv, m)
 
 	var l, err = net.Listen("tcp", "127.0.0.1:0")
 	c.Assert(err, gc.IsNil)
@@ -102,26 +105,26 @@ func buildMockServer(c *gc.C) mockConsumerServer {
 	}
 }
 
-func buildConsumerStateFixture(addr0, addr1 string) *ConsumerState {
-	return &ConsumerState{
+func buildConsumerStateFixture(addr0, addr1 string) *service.ConsumerState {
+	return &service.ConsumerState{
 		Root:          "a/root",
 		LocalRouteKey: addr0,
 		ReplicaCount:  1,
 		Endpoints:     []string{addr0, addr1},
-		Shards: []ConsumerState_Shard{
+		Shards: []service.ConsumerState_Shard{
 			// shard-zero is PRIMARY and addressable.
 			{
 				Id:        "shard-zero",
 				Topic:     "a/topic",
 				Partition: "partition/zero",
-				Replicas: []ConsumerState_Replica{
+				Replicas: []service.ConsumerState_Replica{
 					{
 						Endpoint: addr1,
-						Status:   ConsumerState_Replica_PRIMARY,
+						Status:   service.ConsumerState_Replica_PRIMARY,
 					},
 					{
 						Endpoint: addr0,
-						Status:   ConsumerState_Replica_RECOVERING,
+						Status:   service.ConsumerState_Replica_RECOVERING,
 					},
 				},
 			},
@@ -130,10 +133,10 @@ func buildConsumerStateFixture(addr0, addr1 string) *ConsumerState {
 				Id:        "shard-one",
 				Topic:     "a/topic",
 				Partition: "partition/one",
-				Replicas: []ConsumerState_Replica{
+				Replicas: []service.ConsumerState_Replica{
 					{
 						Endpoint: addr0,
-						Status:   ConsumerState_Replica_RECOVERING,
+						Status:   service.ConsumerState_Replica_RECOVERING,
 					},
 				},
 			},
@@ -142,10 +145,10 @@ func buildConsumerStateFixture(addr0, addr1 string) *ConsumerState {
 				Id:        "shard-two",
 				Topic:     "a/topic",
 				Partition: "partition/two",
-				Replicas: []ConsumerState_Replica{
+				Replicas: []service.ConsumerState_Replica{
 					{
 						Endpoint: "[100::1]:1234", // RFC 6666 black-hole IP.
-						Status:   ConsumerState_Replica_PRIMARY,
+						Status:   service.ConsumerState_Replica_PRIMARY,
 					},
 				},
 			},

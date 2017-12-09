@@ -9,15 +9,11 @@ import (
 	log "github.com/sirupsen/logrus"
 	rocks "github.com/tecbot/gorocksdb"
 
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/recoverylog"
 	"github.com/LiveRamp/gazette/topic"
 )
-
-// ConsumerServer is generated from service.proto. This go:generate directive
-// is placed here to avoid relying on the protobuf compiler to propagate it to
-// generated Go source.
-//go:generate mockery -inpkg -name=ConsumerServer
 
 // Test support function. Initializes all shards of |runner| to empty database
 // which begin consumption from the current write-head of each topic journal.
@@ -30,7 +26,7 @@ func ResetShardsToJournalHeads(runner *Runner) error {
 	return nil
 }
 
-func resetShard(runner *Runner, id ShardID, partition topic.Partition) error {
+func resetShard(runner *Runner, id service.ShardID, partition topic.Partition) error {
 	// Determine the write head of the partition Journal.
 	if err := runner.Gazette.Create(partition.Journal); err != nil && err != journal.ErrExists {
 		return err

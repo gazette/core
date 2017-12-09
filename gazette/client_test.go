@@ -15,6 +15,7 @@ import (
 	gc "github.com/go-check/check"
 	"github.com/stretchr/testify/mock"
 
+	"github.com/LiveRamp/gazette/gazette/client/mocks"
 	"github.com/LiveRamp/gazette/journal"
 )
 
@@ -69,7 +70,7 @@ func newReadResponseFixture() *http.Response {
 }
 
 func (s *ClientSuite) TestHeadRequestWithInvalidation(c *gc.C) {
-	var mockClient = &mockHttpClient{}
+	var mockClient = &mocks.HttpClient{}
 
 	// Note we use a slightly non-standard fixture of "a/journal/path"
 	// (vs "a/journal") to excercise handling of URL.Path re-writes
@@ -117,7 +118,7 @@ func (s *ClientSuite) TestHeadRequestWithInvalidation(c *gc.C) {
 }
 
 func (s *ClientSuite) TestDirectGet(c *gc.C) {
-	mockClient := &mockHttpClient{}
+	mockClient := &mocks.HttpClient{}
 
 	responseFixture := newReadResponseFixture()
 	mockClient.On("Do", mock.MatchedBy(func(request *http.Request) bool {
@@ -141,7 +142,7 @@ func (s *ClientSuite) TestDirectGet(c *gc.C) {
 }
 
 func (s *ClientSuite) TestDirectGetFails(c *gc.C) {
-	mockClient := &mockHttpClient{}
+	mockClient := &mocks.HttpClient{}
 
 	mockClient.On("Do", mock.MatchedBy(func(request *http.Request) bool {
 		return request.Method == "GET" &&
@@ -163,7 +164,7 @@ func (s *ClientSuite) TestDirectGetFails(c *gc.C) {
 }
 
 func (s *ClientSuite) TestGetWithoutFragmentLocation(c *gc.C) {
-	mockClient := &mockHttpClient{}
+	mockClient := &mocks.HttpClient{}
 
 	responseFixture := newReadResponseFixture()
 	responseFixture.Header.Del(FragmentLocationHeader)
@@ -209,7 +210,7 @@ func (s *ClientSuite) TestGetWithoutFragmentLocation(c *gc.C) {
 }
 
 func (s *ClientSuite) TestGetWithFragmentLocation(c *gc.C) {
-	mockClient := &mockHttpClient{}
+	mockClient := &mocks.HttpClient{}
 
 	// Expect an initial HEAD request to the default endpoint.
 	mockClient.On("Do", mock.MatchedBy(func(request *http.Request) bool {
@@ -241,7 +242,7 @@ func (s *ClientSuite) TestGetWithFragmentLocation(c *gc.C) {
 }
 
 func (s *ClientSuite) TestGetWithFragmentLocationFails(c *gc.C) {
-	mockClient := &mockHttpClient{}
+	mockClient := &mocks.HttpClient{}
 
 	// Expect an initial HEAD request to the default endpoint.
 	mockClient.On("Do", mock.MatchedBy(func(request *http.Request) bool {
@@ -267,7 +268,7 @@ func (s *ClientSuite) TestGetWithFragmentLocationFails(c *gc.C) {
 }
 
 func (s *ClientSuite) TestGetPersistedErrorCases(c *gc.C) {
-	mockClient := &mockHttpClient{}
+	mockClient := &mocks.HttpClient{}
 	s.client.httpClient = mockClient
 
 	location := newURL("http://cloud/location")
@@ -303,7 +304,7 @@ func (s *ClientSuite) TestGetPersistedErrorCases(c *gc.C) {
 }
 
 func (s *ClientSuite) TestCreate(c *gc.C) {
-	mockClient := &mockHttpClient{}
+	mockClient := &mocks.HttpClient{}
 
 	// Expect a POST of the journal. Fail with a conflict.
 	mockClient.On("Do", mock.MatchedBy(func(request *http.Request) bool {
@@ -332,7 +333,7 @@ func (s *ClientSuite) TestCreate(c *gc.C) {
 
 func (s *ClientSuite) TestPut(c *gc.C) {
 	content := strings.NewReader("foobar")
-	mockClient := &mockHttpClient{}
+	mockClient := &mocks.HttpClient{}
 
 	// Expect a HEAD request at offset=-1 (not satisfiable) to fill the location cache.
 	// Return an error, and expect it's passed through.
@@ -518,7 +519,7 @@ func (s *ClientSuite) TestDialerIsNonNil(c *gc.C) {
 }
 
 func (s *ClientSuite) TestFragmentBeforeTime(c *gc.C) {
-	var mockClient = new(mockHttpClient)
+	var mockClient = new(mocks.HttpClient)
 	var response = newReadResponseFixture()
 	var baseDate = time.Date(2016, 7, 12, 23, 0, 0, 0, time.UTC)
 
@@ -564,7 +565,7 @@ func (s *ClientSuite) TestFragmentBeforeTimeNoMatch(c *gc.C) {
 	response.Header.Del(FragmentNameHeader)
 	response.Header.Del(FragmentLastModifiedHeader)
 
-	var mockClient = new(mockHttpClient)
+	var mockClient = new(mocks.HttpClient)
 	mockClient.On("Do", mock.MatchedBy(func(request *http.Request) bool {
 		c.Log(request.Method + " " + request.URL.String())
 		return request.Method == "HEAD"
@@ -579,7 +580,7 @@ func (s *ClientSuite) TestFragmentBeforeTimeNoMatch(c *gc.C) {
 }
 
 func (s *ClientSuite) TestFragmentsInRange(c *gc.C) {
-	var mockClient = new(mockHttpClient)
+	var mockClient = new(mocks.HttpClient)
 	var response = newReadResponseFixture()
 
 	mockClient.On("Do", mock.MatchedBy(func(request *http.Request) bool {

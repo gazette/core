@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/LiveRamp/gazette/consumer"
+	"github.com/LiveRamp/gazette/consumer/service"
 	"github.com/LiveRamp/gazette/examples/word-count"
 	"github.com/LiveRamp/gazette/topic"
 )
@@ -17,7 +17,7 @@ func (shuffler) Topics() []*topic.Description {
 	return []*topic.Description{word_count.Sentences}
 }
 
-func (shuffler) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publisher) error {
+func (shuffler) Consume(env topic.Envelope, s service.Shard, pub *topic.Publisher) error {
 	var words = strings.FieldsFunc(env.Message.(*word_count.Sentence).Str,
 		func(r rune) bool { return !unicode.IsLetter(r) })
 
@@ -29,7 +29,7 @@ func (shuffler) Consume(env topic.Envelope, s consumer.Shard, pub *topic.Publish
 	return nil
 }
 
-func (shuffler) Flush(s consumer.Shard, pub *topic.Publisher) error { return nil }
+func (shuffler) Flush(s service.Shard, pub *topic.Publisher) error { return nil }
 
 func main() {} // Not called.
-var Consumer consumer.Consumer = shuffler{}
+var Consumer service.Consumer = shuffler{}

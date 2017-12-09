@@ -18,12 +18,11 @@ import (
 	"github.com/hashicorp/golang-lru"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/LiveRamp/gazette/gazette/client"
 	"github.com/LiveRamp/gazette/journal"
 	"github.com/LiveRamp/gazette/keepalive"
 	"github.com/LiveRamp/gazette/metrics"
 )
-
-//go:generate mockery -inpkg -name=httpClient
 
 const (
 	// By default, all client operations are applied against the default
@@ -36,11 +35,6 @@ const (
 	statsJournalBytes = "bytes"
 	statsJournalHead  = "head"
 )
-
-type httpClient interface {
-	Do(*http.Request) (*http.Response, error)
-	Get(url string) (*http.Response, error)
-}
 
 type requestData struct {
 	Method    string
@@ -74,7 +68,7 @@ type Client struct {
 	requests *currentRequestList
 
 	// Underlying HTTP Client to use for all requests.
-	httpClient httpClient
+	httpClient client.HttpClient
 	// Test support: allow time.Now() to be swapped out.
 	timeNow func() time.Time
 }
