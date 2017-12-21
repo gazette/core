@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	oneMb = 1024 * 1024
+	oneMb          = 1024 * 1024
+	retryThreshold = 4
 )
 
 var (
@@ -102,7 +103,11 @@ func deleteExpiredFrags(expFrags []*cfsFragment, cfs cloudstore.FileSystem) erro
 			for frag := range f {
 				if err := cfs.Remove(frag.path); err != nil {
 					atomic.AddInt64(&numErrs, 1)
-					log.WithField("err", err).Error("error deleting file.")
+					if err == os.ErrNotExist {
+						log.WithField("err", err).Info("file deleted already.")
+					} else if err != nil {
+						log.WithField("err", err).Error("error deleting file.")
+					}
 				} else {
 					metrics.GazretentionDeletedFragmentsTotal.
 						WithLabelValues(frag.prefix).Inc()
@@ -183,6 +188,7 @@ func main() {
 		log.WithField("err", err).Fatal("cannot initialize cloudstore.")
 	}
 
+	var retries = 0
 	for pref, duration := range confMap {
 		log.WithField("prefix", pref).
 			Info("Gathering expired journal fragments...")
@@ -191,9 +197,22 @@ func main() {
 			log.WithField("err", err).Error("invalid retention duration.")
 			continue
 		}
-		expFrags, err = appendExpiredFragments(pref, tdur, expFrags, cfs)
+		for retries < retryThreshold {
+			// Create placeholder fragments array in case we need to retry.
+			var tmpFrags []*cfsFragment
+			copy(tmpFrags, expFrags)
+			expFrags, err = appendExpiredFragments(pref, tdur, expFrags, cfs)
+			if err == nil {
+				break
+			} else {
+				log.WithField("err", err).
+					Info("parsing filesystem, most likely a transient error, retrying...")
+				retries++
+				expFrags = tmpFrags
+			}
+		}
 		if err != nil {
-			log.WithField("err", err).Error("cannot parse filesystem.")
+			log.WithField("err", err).Error("cannot parse filesystem despite retries.")
 		}
 	}
 
