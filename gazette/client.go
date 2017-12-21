@@ -23,6 +23,8 @@ import (
 	"github.com/LiveRamp/gazette/metrics"
 )
 
+//go:generate mockery -inpkg -name=httpClient
+
 const (
 	// By default, all client operations are applied against the default
 	// endpoint. However, the client will cache the last |kClientRouteCacheSize|
@@ -154,6 +156,9 @@ func (c *Client) Head(args journal.ReadArgs) (journal.ReadResult, *url.URL) {
 	if err != nil {
 		return journal.ReadResult{Error: err}, nil
 	}
+	if args.Context != nil {
+		request = request.WithContext(args.Context)
+	}
 	response, err := c.Do(request)
 	if err != nil {
 		return journal.ReadResult{Error: err}, nil
@@ -168,6 +173,9 @@ func (c *Client) GetDirect(args journal.ReadArgs) (journal.ReadResult, io.ReadCl
 	request, err := http.NewRequest("GET", c.buildReadURL(args).String(), nil)
 	if err != nil {
 		return journal.ReadResult{Error: err}, nil
+	}
+	if args.Context != nil {
+		request = request.WithContext(args.Context)
 	}
 	response, err := c.Do(request)
 	if err != nil {

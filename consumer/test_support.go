@@ -14,6 +14,11 @@ import (
 	"github.com/LiveRamp/gazette/topic"
 )
 
+// ConsumerServer is generated from service.proto. This go:generate directive
+// is placed here to avoid relying on the protobuf compiler to propagate it to
+// generated Go source.
+//go:generate mockery -inpkg -name=ConsumerServer
+
 // Test support function. Initializes all shards of |runner| to empty database
 // which begin consumption from the current write-head of each topic journal.
 func ResetShardsToJournalHeads(runner *Runner) error {
@@ -57,8 +62,13 @@ func resetShard(runner *Runner, id ShardID, partition topic.Partition) error {
 	}
 	defer os.RemoveAll(localDir)
 
+	author, err := recoverylog.NewRandomAuthorID()
+	if err != nil {
+		return err
+	}
+
 	// Open the database & store offsets,
-	db, err := newDatabase(options, fsm, localDir, runner.Gazette)
+	db, err := newDatabase(options, fsm, author, localDir, runner.Gazette)
 	if err != nil {
 		return err
 	}

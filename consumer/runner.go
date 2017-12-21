@@ -3,7 +3,6 @@ package consumer
 import (
 	"path"
 	"sort"
-	"time"
 
 	etcd "github.com/coreos/etcd/client"
 	log "github.com/sirupsen/logrus"
@@ -45,7 +44,7 @@ type Runner struct {
 
 	// Optional hooks for notification of Shard lifecycle. These are largely
 	// intended to facilitate testing cases.
-	ShardPreInitHook     func(Shard)
+	ShardPostInitHook    func(Shard)
 	ShardPostConsumeHook func(topic.Envelope, Shard)
 	ShardPostCommitHook  func(Shard)
 	ShardPostStopHook    func(Shard)
@@ -74,7 +73,7 @@ func (r *Runner) CurrentConsumerState(context.Context, *Empty) (*ConsumerState, 
 			// Member Nodes are already sorted on node Key.
 			out.Endpoints = append(out.Endpoints, path.Base(n.Key))
 		}
-		consensus.WalkItems(tree, r.FixedItems(), time.Now(), func(name string, route consensus.Route) {
+		consensus.WalkItems(tree, r.FixedItems(), func(name string, route consensus.Route) {
 			var shardID = ShardID(name)
 
 			var partition, ok = r.allShards[shardID]
@@ -188,7 +187,7 @@ func (r *Runner) ItemState(name string) string {
 		return UnknownShard
 	} else if shard.master != nil && shard.master.didFinishInit() {
 		return Primary
-	} else if shard.replica.player.IsAtLogHead() {
+	} else if shard.replica.player.IsTailing() {
 		return Ready
 	} else {
 		return Recovering

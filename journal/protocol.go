@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -46,6 +47,17 @@ type ReplicateArgs struct {
 	RouteToken
 	// Flags whether replicas should begin a new spool for this transaction.
 	NewSpool bool
+	// Context which may trace, cancel or supply a deadline for the operation.
+	Context context.Context
+}
+
+func (a ReplicateArgs) String() string {
+	return fmt.Sprintf("%+v", struct {
+		Journal   Name
+		WriteHead int64
+		RouteToken
+		NewSpool bool
+	}{a.Journal, a.WriteHead, a.RouteToken, a.NewSpool})
 }
 
 type ReplicateResult struct {
@@ -57,6 +69,13 @@ type ReplicateResult struct {
 	Writer WriteCommitter
 }
 
+func (a ReplicateResult) String() string {
+	return fmt.Sprintf("%+v", struct {
+		Error          error
+		ErrorWriteHead int64
+	}{a.Error, a.ErrorWriteHead})
+}
+
 type ReplicateOp struct {
 	ReplicateArgs
 
@@ -66,24 +85,37 @@ type ReplicateOp struct {
 
 type ReadArgs struct {
 	Journal Name
-	// Offset to begin reading from. Values 0 and -1 have special handling:
-	//  * If 0, the read is performed at the first available journal offset.
-	//  * If -1, then the read is performed from the current write head.
-	// All other values specify an exact byte offset which must be read from.
+	// Desired offset to begin reading from. Value -1 has special handling, where
+	// the read is performed from the current write head. All other positive
+	// values specify a desired exact byte offset to read from. If the offset is
+	// not available (eg, because it represents a portion of Journal which has
+	// been permantently deleted), the broker will return the next available
+	// offset. Callers should therefore always inspect the ReadResult Offset.
 	Offset int64
-	// DEPRECATED.  To be replaced by |Deadline|.  Whether this operation should
-	// block until the requested offset becomes available.
+	// Whether the operation should block until content becomes available.
+	// ErrNotYetAvailable is returned if a non-blocking read has no ready content.
 	Blocking bool
+	// Context which may trace, cancel or supply a deadline for the operation.
+	Context context.Context
+
+	// Deprecated: Server-side support for deadlines will be removed. Use
+	// context.WithDeadline instead.
 	// The time at which blocking will expire
 	Deadline time.Time
 }
 
+func (a ReadArgs) String() string {
+	return fmt.Sprintf("%+v", struct {
+		Journal  Name
+		Offset   int64
+		Blocking bool
+		Deadline time.Time
+	}{a.Journal, a.Offset, a.Blocking, a.Deadline})
+}
+
 type ReadResult struct {
 	Error error
-	// The effective |Offset| of the operation. It will differ from
-	// ReadOp.Offset only for special requested values 0 and -1:
-	//  * If 0, |Offset| reflects the first available offset.
-	//  * If -1, |Offset| reflects the write head at operation start.
+	// The effective offset of the operation.
 	Offset int64
 	// Write head at the completion of the operation.
 	WriteHead int64
@@ -91,6 +123,18 @@ type ReadResult struct {
 	RouteToken
 	// Result fragment, set iff |Error| is nil.
 	Fragment Fragment
+}
+
+func (a ReadResult) String() string {
+	return fmt.Sprintf("%+v", struct {
+		Error     error
+		Offset    int64
+		WriteHead int64
+		RouteToken
+		Fragment string
+		IsLocal  bool
+	}{a.Error, a.Offset, a.WriteHead, a.RouteToken,
+		a.Fragment.ContentPath(), a.Fragment.File != nil})
 }
 
 type ReadOp struct {
@@ -106,6 +150,14 @@ type AppendArgs struct {
 	// until io.EOF, and abort the append (without committing any content)
 	// if any other error is returned by |Content.Read()|.
 	Content io.Reader
+	// Context which may trace, cancel or supply a deadline for the operation.
+	Context context.Context
+}
+
+func (a AppendArgs) String() string {
+	return fmt.Sprintf("%+v", struct {
+		Journal Name
+	}{a.Journal})
 }
 
 type AppendResult struct {
@@ -115,6 +167,14 @@ type AppendResult struct {
 	WriteHead int64
 	// RouteToken of the Journal. Set on ErrNotBroker.
 	RouteToken
+}
+
+func (a AppendResult) String() string {
+	return fmt.Sprintf("%+v", struct {
+		Error     error
+		WriteHead int64
+		RouteToken
+	}{a.Error, a.WriteHead, a.RouteToken})
 }
 
 type AppendOp struct {
