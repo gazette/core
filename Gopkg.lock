@@ -393,11 +393,9 @@
     "iterator",
     "option",
     "storage/v1",
-    "transport",
-    "transport/grpc",
-    "transport/http"
+    "transport"
   ]
-  revision = "167592a6a784880141ec6f1d98e3f3ed132b98b2"
+  revision = "a53f28dc539c26b08a77fc5ae954e02917686ef4"
 
 [[projects]]
   name = "google.golang.org/appengine"
