@@ -1,4 +1,4 @@
-FROM rupertchen/gazette-base:0.1.0 AS builder
+FROM rupertchen/gazette-base:1.0.0 AS builder
 
 ENV DEP_VERSION=v0.3.2
 
