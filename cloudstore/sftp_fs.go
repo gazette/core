@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiveRamp/gazette/envflagfactory"
 	"github.com/pkg/sftp"
 	"github.com/samuel/go-socks/socks"
 	log "github.com/sirupsen/logrus"
@@ -52,6 +53,8 @@ const (
 	SSHErrFileNotFound = 2
 	SSHErrFileExists   = 4
 )
+
+var socksEndpoint = envflagfactory.NewSocksServerServiceEndpoint()
 
 // Luckily sftp.File already meets most of the File interface.
 type sftpFile struct {
@@ -429,7 +432,7 @@ func makeSSHClient(addr string, config *ssh.ClientConfig, reqProxy bool) (*ssh.C
 	var err error
 
 	if reqProxy {
-		var proxy = &socks.Proxy{socksEndpoint(), "", ""}
+		var proxy = &socks.Proxy{*socksEndpoint, "", ""}
 		baseConnection, err = proxy.Dial("tcp", addr)
 	} else {
 		baseConnection, err = net.Dial("tcp", addr)
@@ -451,16 +454,6 @@ func makeSSHClient(addr string, config *ssh.ClientConfig, reqProxy bool) (*ssh.C
 		return nil, err
 	}
 	return ssh.NewClient(conn, newCh, reqCh), nil
-}
-
-func socksEndpoint() string {
-	var socksHost = os.Getenv("SOCKS_SERVER_SERVICE_HOST")
-	var socksPort = os.Getenv("SOCKS_SERVER_SERVICE_PORT")
-	if socksHost == "" || socksPort == "" {
-		return "127.0.0.1:1080"
-	} else {
-		return socksHost + ":" + socksPort
-	}
 }
 
 func isSSHError(err error, sshCode uint32) bool {
