@@ -22,6 +22,14 @@ func NewEtcdServiceEndpoint() *string {
 		"Etcd network service host:port.")
 }
 
+// NewSocksServerServiceEndpoint defines the socks server service endpoint flag.
+func NewSocksServerServiceEndpoint() *string {
+	return envflag.CommandLine.ServiceEndpoint(
+		"socks_server",
+		"127.0.0.1:1080",
+		"Socks server network service host:port.")
+}
+
 // NewCloudFSURL defines the cloudFS URL flag.
 func NewCloudFSURL() *string {
 	return envflag.CommandLine.String(
