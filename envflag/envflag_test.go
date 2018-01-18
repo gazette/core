@@ -26,11 +26,11 @@ func (s *envflagSuite) TestServiceEndpoint(c *check.C) {
 	var actualFlag = fs.Lookup("dummyNameEndpoint")
 	c.Assert(actualFlag, check.NotNil)
 	c.Check(actualFlag.DefValue, check.Equals, "default value")
-	c.Check(actualFlag.Usage, check.Equals, "Foo bar baz (DUMMYNAME_SERVICE_HOST, DUMMYNAME_SERVICE_PORT)")
+	c.Check(actualFlag.Usage, check.Equals, "Foo bar baz (DUMMYNAME_HOST, DUMMYNAME_PORT)")
 
 	// Service endpoint flags parse from a pair of environment variables
-	defer assertAndSetenv(c, "DUMMYNAME_SERVICE_HOST", "dummy.example")()
-	defer assertAndSetenv(c, "DUMMYNAME_SERVICE_PORT", "1234")()
+	defer assertAndSetenv(c, "DUMMYNAME_HOST", "dummy.example")()
+	defer assertAndSetenv(c, "DUMMYNAME_PORT", "1234")()
 
 	// Verify pre- and post-Parse values.
 	c.Check(*sut, check.Equals, "default value")

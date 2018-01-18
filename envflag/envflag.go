@@ -65,13 +65,13 @@ func NewFlagSet(fs *flag.FlagSet) *FlagSet {
 
 // ServiceEndpoint defines a service endpoint flag. A service endpoint is a
 // host-port value, parsed either from a pair of environment variables
-// "<NAME>_SERVICE_HOST", "<NAME>_SERVICE_PORT" or a single colon-delimited
-// command-line argument "-oss<name>Endpoint". The return value is the address
+// "<NAME>_HOST", "<NAME>_PORT" or a single colon-delimited
+// command-line argument "-<name>Endpoint". The return value is the address
 // of a string variable that stores the value of the flag.
 func (fs *FlagSet) ServiceEndpoint(name, value, usage string) *string {
 	var prefix = strings.ToUpper(name)
-	var evHost = prefix + "_SERVICE_HOST"
-	var evPort = prefix + "_SERVICE_PORT"
+	var evHost = prefix + "_HOST"
+	var evPort = prefix + "_PORT"
 
 	var ptr = fs.fs.String(name+"Endpoint", value, fmt.Sprintf("%s (%s, %s)", usage, evHost, evPort))
 	fs.addFlag(name, serviceEndpointFlag{evHost, evPort, ptr})
@@ -80,7 +80,7 @@ func (fs *FlagSet) ServiceEndpoint(name, value, usage string) *string {
 
 // String defines a string flag. A string flag is a single string value, parsed
 // either from an environment variable "<envvarName>" or a command-line
-// argument "-oss<flagName". The return value is the address of a string
+// argument "-<flagName". The return value is the address of a string
 // variable that stores the value of the flag.
 //
 // This is a general flag creation utility which is why flagName and
