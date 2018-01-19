@@ -7,30 +7,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 )
 
 type parseableFromEnv interface {
 	parseFromEnv()
-}
-
-// serviceEndpointFlag holds the metadata for an envflag representing a service
-// endpoint. A service endpoint is a host-port pair.
-type serviceEndpointFlag struct {
-	// host and port are the pair of names of the environment variables.
-	host, port string
-	// ptr is the address of the string variable that stores the value of the
-	// flag. This typically is the return value of a flag.String call.
-	ptr *string
-}
-
-// parseFromEnv implements parseableFromEnv
-func (f serviceEndpointFlag) parseFromEnv() {
-	if h := os.Getenv(f.host); h != "" {
-		if p := os.Getenv(f.port); p != "" {
-			*f.ptr = h + ":" + p
-		}
-	}
 }
 
 // stringFlag holds the metadata for an envflag representing a simple string. A
@@ -61,21 +41,6 @@ type FlagSet struct {
 // NewFlagSet returns a new, empty flag set.
 func NewFlagSet(fs *flag.FlagSet) *FlagSet {
 	return &FlagSet{fs: fs}
-}
-
-// ServiceEndpoint defines a service endpoint flag. A service endpoint is a
-// host-port value, parsed either from a pair of environment variables
-// "<NAME>_HOST", "<NAME>_PORT" or a single colon-delimited
-// command-line argument "-<name>Endpoint". The return value is the address
-// of a string variable that stores the value of the flag.
-func (fs *FlagSet) ServiceEndpoint(name, value, usage string) *string {
-	var prefix = strings.ToUpper(name)
-	var evHost = prefix + "_HOST"
-	var evPort = prefix + "_PORT"
-
-	var ptr = fs.fs.String(name+"Endpoint", value, fmt.Sprintf("%s (%s, %s)", usage, evHost, evPort))
-	fs.addFlag(name, serviceEndpointFlag{evHost, evPort, ptr})
-	return ptr
 }
 
 // String defines a string flag. A string flag is a single string value, parsed
