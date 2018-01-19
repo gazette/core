@@ -7,22 +7,20 @@ package envflagfactory
 import "github.com/LiveRamp/gazette/envflag"
 
 // NewGazetteServiceEndpoint defines the gazette service endpoint flag.
-// By default, use Kubernetes DNS for service discovery.
 func NewGazetteServiceEndpoint() *string {
 	return envflag.CommandLine.String(
 		"gazette",
 		"GAZETTE_SERVICE_ENDPOINT",
-		"gazette:8081",
+		"gazette.example:8081",
 		"Gazette network service host:port.")
 }
 
 // NewEtcdServiceEndpoint defines the Etcd service endpoint flag.
-// By default, use Kubernetes DNS for service discovery.
 func NewEtcdServiceEndpoint() *string {
 	return envflag.CommandLine.String(
 		"etcd",
 		"ETCD_SERVICE_ENDPOINT",
-		"etcd:2379",
+		"etcd.example:2379",
 		"Etcd network service host:port.")
 }
 
