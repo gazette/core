@@ -1,42 +1,19 @@
 Notes on setting up and testing via Minikube
 ============================================
 
-Bootstrap an Etcd cluster::
+Bootstrap an Etcd cluster using [Etcd operator](https://coreos.com/blog/introducing-the-etcd-operator.html) ::
 
   helm install stable/etcd-operator --name etcd-operator --set image.tag=v0.6.1
-
-Use the following `etcd-cluster.yaml`::
-
-  apiVersion: "etcd.database.coreos.com/v1beta2"
-  kind: "EtcdCluster"
-  metadata:
-    name: "etcd-cluster"
-  spec:
-    size: 3
-    version: "3.1.8"
-
-Apply via::
-
-  kubectl create -f etcd-cluster.yaml
+  kubectl create -f test/etcd-cluster.yaml
 
 Start `minio` to provide an S3-compatible cloud filesystem. Use the following values::
 
-  defaultBucket:
-    enabled: true
-    ## If enabled, must be a string with length > 0
-    name: examples
-    ## Can be one of none|download|upload|public
-    policy: public
+  helm install stable/minio --name minio -f test/minio-values.yaml
 
-Install via::
-
-  helm install stable/minio --name minio -f minio-values.yaml
-
-This will setup the `examples` bucket, but we also need an additional
-`recovery-logs` bucket. Port-forward to the minio service, and use the web
-UI and the configured access & secret key (typically the defaults of
-`AKIAIOSFODNN7EXAMPLE` and `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`)
-to create a `recovery-logs` bucket with R/W access::
+This will setup the `examples` bucket. If needed, additional buckets can be created
+by port-forwarding to the minio service, and using the web UI and the configured
+access & secret key (typically the defaults of `AKIAIOSFODNN7EXAMPLE` and
+`wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`)::
 
   alias minio_pod="kubectl get pod -l release=minio -o jsonpath={.items[0].metadata.name}"
   kubectl port-forward $(minio_pod) 9000:9000
@@ -45,6 +22,10 @@ to create a `recovery-logs` bucket with R/W access::
 Start a Gazette cluster::
 
   helm install charts/gazette --name gazette
+
+Start the `stream-sum` example, which also doubles as an end-to-end integration test::
+
+  helm install charts/examples/stream-sum --name stream-sum
 
 Start the `word-count` application::
 
