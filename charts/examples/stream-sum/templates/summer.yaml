@@ -1,9 +1,9 @@
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
-  name: {{ template "word-count.fullname" . }}-counter
+  name: {{ template "stream-sum.fullname" . }}-summer
   labels:
-    app: {{ template "word-count.name" . }}-counter
+    app: {{ template "stream-sum.name" . }}-summer
     chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
@@ -12,11 +12,11 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ template "word-count.name" . }}-counter
+        app: {{ template "stream-sum.name" . }}-summer
         release: {{ .Release.Name }}
     spec:
       containers:
-        - name: {{ .Chart.Name }}-counter
+        - name: {{ .Chart.Name }}-summer
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: [
@@ -28,16 +28,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-            - name: SERVICE_ALLOCATORROOT
-              value: "/examples/word-count/counter"
             - name: SERVICE_LOCALROUTEKEY
               value: "$(POD_IP):8080"
-            - name: SERVICE_PLUGIN
-              value: "/go/bin/counter.so"
           volumeMounts:
             - mountPath: /etc/config
               name: config-volume
       volumes:
         - name: config-volume
           configMap:
-            name: {{ template "word-count.fullname" . }}
+            name: {{ template "stream-sum.fullname" . }}
