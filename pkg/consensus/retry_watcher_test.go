@@ -3,6 +3,7 @@ package consensus
 import (
 	"context"
 	"errors"
+	"time"
 
 	gc "github.com/go-check/check"
 
@@ -15,10 +16,11 @@ func (s *RetryWatcherSuite) TestFoo(c *gc.C) {
 	var ctx = context.Background()
 	var keys MockKeysAPI
 	var watcher MockWatcher
+	var refreshPeriod = time.Minute * 10
 
 	var rwatcher = RetryWatcher(&keys, "/key",
 		&etcd.GetOptions{Recursive: true},
-		&etcd.WatcherOptions{Recursive: true})
+		&etcd.WatcherOptions{Recursive: true}, refreshPeriod)
 
 	// Expect first Next is mapped to a Get, and builds a Watcher.
 	keys.On("Get", ctx, "/key", &etcd.GetOptions{Recursive: true}).
@@ -67,6 +69,23 @@ func (s *RetryWatcherSuite) TestFoo(c *gc.C) {
 
 	resp, err = rwatcher.Next(ctx)
 	c.Check(resp.Node, gc.DeepEquals, &etcd.Node{Key: "/key", Value: "three"})
+	c.Check(err, gc.IsNil)
+
+	// After refresh period, a full refresh is forced
+	// and a new Watcher is started.
+	rwatcher.(*retryWatcher).now = func() time.Time {
+		return time.Now().Add(refreshPeriod)
+	}
+	keys.On("Get", ctx, "/key", &etcd.GetOptions{Recursive: true}).
+		Return(&etcd.Response{
+			Action: "get",
+			Index:  3456,
+			Node:   &etcd.Node{Key: "/key", Value: "four"},
+		}, nil).Once()
+	keys.On("Watcher", "/key",
+		&etcd.WatcherOptions{Recursive: true, AfterIndex: 3456}).Return(&watcher).Once()
+	resp, err = rwatcher.Next(ctx)
+	c.Check(resp.Node, gc.DeepEquals, &etcd.Node{Key: "/key", Value: "four"})
 	c.Check(err, gc.IsNil)
 
 	watcher.AssertExpectations(c)

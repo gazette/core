@@ -106,7 +106,8 @@ func Allocate(alloc Allocator) error {
 
 	watcher := RetryWatcher(alloc.KeysAPI(), alloc.PathRoot(),
 		&etcd.GetOptions{Recursive: true, Sort: true},
-		&etcd.WatcherOptions{Recursive: true})
+		&etcd.WatcherOptions{Recursive: true},
+		time.Minute*10)
 
 	// Load initial tree. Fail-fast on any error.
 	if r, err := watcher.Next(context.Background()); err != nil {
