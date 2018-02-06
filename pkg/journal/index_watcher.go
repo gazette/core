@@ -1,8 +1,6 @@
 package journal
 
 import (
-	"io"
-	"os"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -89,50 +87,8 @@ func (w *IndexWatcher) loop() {
 }
 
 func (w *IndexWatcher) onRefresh() error {
-	// Open the fragment directory.
-	var dir, err = w.cfs.Open(w.journal.String() + "/")
-	if os.IsNotExist(err) {
-		// Non-existent directories are permitted. In theory, we should be stricter
-		// here because the CreateAPI first makes the journal fragment directory.
-		// In practice, cloud filesystems don't universally support POSIX directory
-		// semantics, so tolerate implementations which return "does not exist".
+	return w.cfs.Walk(w.journal.String()+"/", NewWalkFuncAdapter(func(fragment Fragment) error {
+		w.updates <- fragment
 		return nil
-	} else if err != nil {
-		return err
-	}
-
-	// Perform iterative incremental loads until no new fragments are available.
-	for {
-		files, err := dir.Readdir(indexWatcherIncrementalLoadSize)
-
-		for _, file := range files {
-			if file.IsDir() {
-				log.WithField("path", file.Name()).
-					Warning("unexpected directory in fragment index")
-				continue
-			}
-
-			fragment, err := ParseFragment(w.journal, file.Name())
-			if err != nil {
-				log.WithFields(log.Fields{"path": file.Name(), "err": err}).
-					Warning("failed to parse content-name")
-				continue
-			}
-
-			if file.Size() == 0 && fragment.Size() > 0 {
-				log.WithField("path", file.Name()).Error("zero-length fragment")
-				continue
-			}
-
-			fragment.RemoteModTime = file.ModTime()
-			w.updates <- fragment
-		}
-
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return err
-		}
-	}
-	return nil
+	}))
 }
