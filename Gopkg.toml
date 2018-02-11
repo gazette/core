@@ -36,7 +36,7 @@
 
 [[constraint]]
   name = "github.com/coreos/etcd"
-  revision = "377f19b0031f9c0aafe2aec28b6f9019311f52f9"
+  version = "3.3.0"
 
 [[override]]
   name = "github.com/ugorji/go"

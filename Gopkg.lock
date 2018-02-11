@@ -91,10 +91,19 @@
     "client",
     "error",
     "pkg/pathutil",
+    "pkg/srv",
     "pkg/types",
-    "store"
+    "store",
+    "version"
   ]
-  revision = "377f19b0031f9c0aafe2aec28b6f9019311f52f9"
+  revision = "c23606781f63d09917a1e7abfcefeb337a9608ea"
+  version = "v3.3.0"
+
+[[projects]]
+  name = "github.com/coreos/go-semver"
+  packages = ["semver"]
+  revision = "8ab6407b697782a06568d4b7f1db25550ec2e4c6"
+  version = "v0.2.0"
 
 [[projects]]
   name = "github.com/davecgh/go-spew"
@@ -541,6 +550,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a4c79944bc191ae022d035a55e0add3a8b68c373a45667490ad20f400b35a19e"
+  inputs-digest = "086749680de230654b7a3ed996f65b11a52fe4fea68c64f3d51868784b0ec186"
   solver-name = "gps-cdcl"
   solver-version = 1
