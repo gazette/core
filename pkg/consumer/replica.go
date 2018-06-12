@@ -4,6 +4,7 @@ import (
 	etcd "github.com/coreos/etcd/client"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/LiveRamp/gazette/pkg/metrics"
 	"github.com/LiveRamp/gazette/pkg/recoverylog"
 )
 
@@ -39,7 +40,7 @@ func (r *replica) serve(runner *Runner) {
 	defer close(r.servingCh)
 
 	if err := r.player.Play(runner.Gazette); err != nil {
-		log.WithFields(log.Fields{"shard": r.shard, "err": err}).Error("replication failed")
+		metrics.GazetteConsumerFailedReplications.Inc()
 		abort(runner, r.shard)
 	} else {
 		log.WithFields(log.Fields{"shard": r.shard}).Info("finished serving replica")

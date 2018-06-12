@@ -190,3 +190,28 @@ func GazetteConsumerCollectors() []prometheus.Collector {
 		GazetteConsumerTxStalledSecondsTotal,
 	}
 }
+
+// Keys for gazette consumer health metrics.
+const (
+	GazetteConsumerFailedShardLocksKey   = "gazette_failed_shard_locks_total"
+	GazetteConsumerFailedReplicationsKey = "gazette_failed_replications_total"
+)
+
+// Collectors for gazette consumer health metrics.
+var (
+	GazetteConsumerFailedShardLock = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: GazetteConsumerFailedShardLocksKey,
+		Help: "Cumulative number of shard lock failures.",
+	})
+	GazetteConsumerFailedReplications = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: GazetteConsumerFailedReplicationsKey,
+		Help: "Cumulative number of replication failures.",
+	})
+)
+
+func GazetteConsumerHealthCollectors() []prometheus.Collector {
+	return []prometheus.Collector{
+		GazetteConsumerFailedShardLock,
+		GazetteConsumerFailedReplications,
+	}
+}
