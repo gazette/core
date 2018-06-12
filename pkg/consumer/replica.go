@@ -1,10 +1,10 @@
 package consumer
 
 import (
+	"context"
+
 	etcd "github.com/coreos/etcd/client"
 	log "github.com/sirupsen/logrus"
-
-	"context"
 
 	"github.com/LiveRamp/gazette/pkg/metrics"
 	"github.com/LiveRamp/gazette/pkg/recoverylog"
