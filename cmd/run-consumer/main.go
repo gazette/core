@@ -54,7 +54,6 @@ func (cfg Config) Validate() error {
 func main() {
 	prometheus.MustRegister(metrics.GazetteClientCollectors()...)
 	prometheus.MustRegister(metrics.GazetteConsumerCollectors()...)
-	prometheus.MustRegister(metrics.GazetteConsumerHealthCollectors()...)
 	flag.Parse()
 
 	if *configFile != "" {
