@@ -89,7 +89,7 @@ func recoveryLog(logRoot string, shard ShardID) journal.Name {
 // circumstances (eg, an unrecoverable local error).
 func abort(runner *Runner, shard ShardID) {
 	if err := consensus.CancelItem(runner, shard.String()); err != nil {
-		metrics.GazetteConsumerFailedShardLock.Inc()
+		metrics.GazetteConsumerFailedShardLocksTotal.Inc()
 	}
 }
 

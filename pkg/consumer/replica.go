@@ -44,7 +44,7 @@ func (r *replica) serve(runner *Runner) {
 	if err := r.player.Play(runner.Gazette); err != nil {
 		switch err {
 		case context.Canceled:
-			metrics.GazetteConsumerFailedReplications.Inc()
+			metrics.GazetteConsumerCanceledContextsTotal.Inc()
 		default:
 			log.WithFields(log.Fields{"shard": r.shard, "err": err}).Error("replication failed")
 		}
