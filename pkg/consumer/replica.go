@@ -6,7 +6,6 @@ import (
 	etcd "github.com/coreos/etcd/client"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/LiveRamp/gazette/pkg/metrics"
 	"github.com/LiveRamp/gazette/pkg/recoverylog"
 )
 
@@ -44,7 +43,7 @@ func (r *replica) serve(runner *Runner) {
 	if err := r.player.Play(runner.Gazette); err != nil {
 		switch err {
 		case context.Canceled:
-			metrics.GazetteConsumerCanceledContextsTotal.Inc()
+			// Do nothing, the shard is no longer being processed by this pod.
 		default:
 			log.WithFields(log.Fields{"shard": r.shard, "err": err}).Error("replication failed")
 		}

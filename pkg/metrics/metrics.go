@@ -159,8 +159,7 @@ const (
 	GazetteConsumerTxMessagesTotalKey       = "gazette_consumer_tx_messages_total"
 	GazetteConsumerTxSecondsTotalKey        = "gazette_consumer_tx_seconds_total"
 	GazetteConsumerTxStalledSecondsTotalKey = "gazette_consumer_tx_stalled_seconds_total"
-	GazetteConsumerFailedShardLocksKey      = "gazette_failed_shard_locks_total"
-	GazetteConsumerCanceledContextsKey      = "gazette_failed_replications_total"
+	GazetteConsumerFailedShardLocksKey      = "gazette_consumer_failed_shard_locks_total"
 )
 
 // Collectors for consumer.Runner metrics.
@@ -185,10 +184,6 @@ var (
 		Name: GazetteConsumerFailedShardLocksKey,
 		Help: "Cumulative number of shard lock failures.",
 	})
-	GazetteConsumerCanceledContextsTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: GazetteConsumerCanceledContextsKey,
-		Help: "Cumulative number of canceled contexts.",
-	})
 )
 
 // GazetteConsumerCollectors returns the metrics used by the consumer package.
@@ -199,6 +194,5 @@ func GazetteConsumerCollectors() []prometheus.Collector {
 		GazetteConsumerTxSecondsTotal,
 		GazetteConsumerTxStalledSecondsTotal,
 		GazetteConsumerFailedShardLocksTotal,
-		GazetteConsumerCanceledContextsTotal,
 	}
 }
