@@ -151,6 +151,29 @@ func mergePlugin() Merge {
 	return lazyMergePlugin
 }
 
+func splitPlugin() Split {
+	if lazySplitPlugin == nil {
+		var path = viper.GetString("split.plugin")
+		if path == "" {
+			return nil
+		}
+
+		var module, err = plugin.Open(path)
+		if err != nil {
+			log.WithFields(log.Fields{"path": path, "err": err}).Fatal("failed to open split plugin module")
+		}
+
+		if i, err := module.Lookup("Split"); err != nil {
+			log.WithField("err", err).Fatal("failed to lookup Split symbol")
+		} else if split, ok := i.(*Split); !ok {
+			log.WithField("instance", i).Fatalf("symbol `Split` is not a plugin_types.Split: %#v", i)
+		} else {
+			lazySplitPlugin = *split
+		}
+	}
+	return lazySplitPlugin
+}
+
 func writeService() *gazette.WriteService {
 	if lazyWriteService == nil {
 		lazyWriteService = gazette.NewWriteService(gazetteClient())
@@ -226,6 +249,7 @@ var (
 	lazyCFS            cloudstore.FileSystem
 	lazyConsumerPlugin consumer.Consumer
 	lazyMergePlugin    Merge
+	lazySplitPlugin    Split
 	lazyEtcdClient     etcd.Client
 	lazyGazetteClient  *gazette.Client
 	lazyWriteService   *gazette.WriteService
