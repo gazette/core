@@ -85,9 +85,12 @@ func appendKeyValue(kv KeyValues, decode KeyValueDecoder, cur *mvccpb.KeyValue) 
 // words, human errors in crafting values which fail to decode must not break the
 // overall consistency of a KeyValues instance, updated incrementally over time.
 func updateKeyValuesTail(kv KeyValues, decode KeyValueDecoder, event clientv3.Event) (KeyValues, error) {
-	var tail, cmp = len(kv) - 1, -1
-	if tail >= 0 {
+	var tail, cmp int
+
+	if tail = len(kv) - 1; tail >= 0 {
 		cmp = bytes.Compare(kv[tail].Raw.Key, event.Kv.Key)
+	} else {
+		cmp = -1 // Event key is ordered after empty KeyValues.
 	}
 
 	if cmp > 0 {
@@ -112,11 +115,11 @@ func updateKeyValuesTail(kv KeyValues, decode KeyValueDecoder, event clientv3.Ev
 		}
 
 		if event.Kv.CreateRevision != event.Kv.ModRevision {
-			// Etcd creation events have matched Create & Mod revisions. Generally, we
-			// If this if the key is not already present in KeyValues. However, a
-			// creation with a bad value (which is not applied) may be fixed by a future
-			// modification, in which case the revisions may differ. Applying the
-			// update as if it were a creation brings KeyValues back to consistency.
+			// Etcd creation events have matched Create & Mod revisions. We might then
+			// expect this key to be present in the KeyValues. However, a creation with
+			// a bad value (which is not applied) may be fixed by a future modification,
+			// in which case the revisions may differ. Applying the update as if it were
+			// a creation brings KeyValues back to consistency.
 			return kv, fmt.Errorf("unexpected modification of unknown key (applied anyway)")
 		} else if event.Kv.Version != 1 {
 			// Etcd Versions should always be 1 at creation; this case should really never happen.

@@ -27,7 +27,7 @@ func (s *AllocatorSuite) TestRemoveDeadAssignments(c *gc.C) {
 	// transaction (which wouldn't actually succeed, since Items exist).
 	c.Check(removeDeadAssignments(&txn, ks, assignments), gc.IsNil)
 
-	// Expect Assignments are grouped by Item. The none-existence of the Item is
+	// Expect Assignments are grouped by Item. The non-existence of the Item is
 	// verified, as well as that each Assignment is unchanged.
 	c.Check(txn.cmps, gc.DeepEquals, []clientv3.Cmp{
 		clientv3.Compare(clientv3.CreateRevision("/root/items/item-1"), "=", 0),
@@ -167,7 +167,7 @@ func (s *AllocatorSuite) TestTxnBatching(c *gc.C) {
 		nil,
 	))
 
-	// Commit that fails checks. Expect its mapped to an error.
+	// Commit that fails checks. Expect it's mapped to an error.
 	txnResp.Succeeded = false
 
 	r, err = txn.Commit()

@@ -134,8 +134,7 @@ func (s *State) observe() {
 	}
 }
 
-// shouldExit returns true iff the termination condition is met: our local
-// Member ItemLimit is zero, and no local Assignments remain.
+// shouldExit returns true iff the local Member is able to safely exit.
 func (s *State) shouldExit() bool {
 	return memberAt(s.Members, s.LocalMemberInd).ItemLimit() == 0 && len(s.LocalItems) == 0
 }

@@ -47,8 +47,8 @@ type KeySpace struct {
 // This check limits the space of possible prefixes somewhat, but guards against
 // many common and unintentional errors (eg, mixed use of trailing slashes).
 func NewKeySpace(prefix string, decoder KeyValueDecoder) *KeySpace {
-	if path.Clean(prefix) != prefix {
-		panic("expected prefix to be a cleaned path")
+	if c := path.Clean(prefix); c != prefix {
+		panic(fmt.Sprintf("expected prefix to be a cleaned path (%s != %s)", c, prefix))
 	}
 	var ks = &KeySpace{
 		Root:     prefix,
@@ -89,7 +89,7 @@ func (ks *KeySpace) Load(ctx context.Context, client *clientv3.Client, rev int64
 				for _, kv := range resp.Kvs {
 					if ks.KeyValues, err = appendKeyValue(ks.KeyValues, ks.decode, kv); err != nil {
 						log.WithFields(log.Fields{"key": string(kv.Key), "err": err}).
-							Error("inconsistent key/value while loading")
+							Error("key/value decode failed while loading")
 					}
 				}
 			}
@@ -101,9 +101,10 @@ func (ks *KeySpace) Load(ctx context.Context, client *clientv3.Client, rev int64
 			}
 		}
 	}
-	// Response headers reference the *current* Revision of the store, not of our
-	// requested Revision (which may now be in the past). Maintain our Header
-	// as the effective Revision of the KeySpace.
+	// Etcd defines `ResponseHeader.Revision` to be the store revision when the
+	// request was applied (and importantly, not of the revision of the request).
+	// We deviate from this and record the requested revision. In other words, we
+	// maintain our Header as the effective Revision of the KeySpace.
 	ks.Header.Revision = rev
 
 	ks.onUpdate()
@@ -137,6 +138,9 @@ func (ks *KeySpace) Watch(ctx context.Context, client clientv3.Watcher) error {
 	var applyTimer = time.NewTimer(time.Hour) // Not possible to create an idle Timer.
 
 	for {
+		// Queue a new WatchResponse or, if |applyTimer| has fired, apply previously
+		// queued responses. Go's uniform psuedo-random selection among select cases
+		// prevents starvation.
 		select {
 		case resp, ok := <-watchCh:
 			if !ok {

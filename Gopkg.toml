@@ -20,6 +20,9 @@
 #  name = "github.com/x/y"
 #  version = "2.4.0"
 
+required = [
+  "github.com/coreos/bbolt", # Transitive dependency of etcd, further constrained below.
+]
 
 [[constraint]]
   name = "github.com/aws/aws-sdk-go"
@@ -30,14 +33,12 @@
   branch = "master"
   source = "https://github.com/jgraettinger/cockroach-encoding.git"
 
-
 # bbolt is a transitive dependency from coreos/etcd. At this time, the current
-# version of etcd (v3.3.2) has a dependency on this version of bbolt which is
+# version of etcd (v3.3.9) has a dependency on this version of bbolt which is
 # not part of etcd's Gopkg.toml.
-[[override]]
+[[constraint]]
   name = "github.com/coreos/bbolt"
   version = "v1.3.1-coreos.6"
-
 
 [[constraint]]
   name = "github.com/pkg/sftp"

@@ -21,7 +21,7 @@ type Announcement struct {
 }
 
 // Announce a key and value to etcd under the LeaseID, asserting the key doesn't
-// already exist. If the key does exists, Announce will retry until it disappears
+// already exist. If the key does exist, Announce will retry until it disappears
 // (eg, due to a former lease timeout) or the Context is cancelled.
 func Announce(ctx context.Context, etcd *clientv3.Client, key, value string,
 	lease clientv3.LeaseID) (*Announcement, error) {

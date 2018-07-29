@@ -17,6 +17,15 @@ const (
 	MembersPrefix = "/members/"
 	// Assignment keys are structured as "prefix/assign/item-id#zone#member-suffix#slot"
 	AssignmentsPrefix = "/assign/"
+	// '#' is selected as separator, because it's the first visual ASCII character
+	// which is not interpreted by shells (preceding visual characters are " and !).
+	// The fact that it's lowest-value ensures that the natural ordering of KeySpace
+	// entities like Member and Assignment agrees with the lexicographic ordering of
+	// their encoded Etcd keys. As fallout, this means ", !, and other non-visual
+	// characters below ord('#') = 35 are disallowed (such as ' ', '\t', '\r', '\n'),
+	// but everything else is fair game. Note that includes UTF-8, which by design
+	// does not collide with the first 128 ASCII code-points.
+	Sep, SepByte = "#", '#'
 )
 
 // MemberValue is a user-defined Member representation which also supports
@@ -257,18 +266,8 @@ func (j *leftJoin) next() (cursor, bool) {
 
 func assertAboveSep(s string) {
 	for i := range s {
-		if s[i] <= '#' {
-			panic(fmt.Sprintf("invalid char <= '#' (ind %d of %+q)", i, s))
+		if s[i] <= SepByte {
+			panic(fmt.Sprintf("invalid char <= '%c' (ind %d of %+q)", SepByte, i, s))
 		}
 	}
 }
-
-// '#' is selected as separator, because it's the first visual ASCII character
-// which is not interpreted by shells (preceding visual characters are " and !).
-// The fact that it's lowest-value ensures that the natural ordering of KeySpace
-// entities like Member and Assignment agrees with the lexicographic ordering of
-// their encoded Etcd keys. As fallout, this means ", !, and other non-visual
-// characters below ord('#') = 35 are disallowed (such as ' ', '\t', '\r', '\n'),
-// but everything else is fair game. Note that includes UTF-8, which by design
-// does not collide with the first 128 ASCII code-points.
-const Sep = "#"

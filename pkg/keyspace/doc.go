@@ -7,9 +7,11 @@
 //
 // KeySpace instances may be "observed", which allows additional states to be
 // derived from and updated by the KeySpace while being protected by the
-// KeySpace Mutex. In other words, supposing a value updated by observing a
-// KeySpace, readers are guaranteed atomicity of a combined update to the
-// KeySpace and the derived value.
+// KeySpace Mutex. For example, if a value `foo` is mutated by a function of
+// KeySpace.Observers, then any reader which properly synchronizes over
+// KeySpace.Mu is guaranteed to see values of `foo` which reflect the current
+// KeySpace state. Formally, readers are assured atomicity of a combined
+// update to the KeySpace and the derived value.
 //
 // KeySpace scales efficiently to Watches over 100's of thousands of keys by
 // amortizing updates with a short Nagle-like delay, while providing fast range

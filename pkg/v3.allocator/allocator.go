@@ -83,6 +83,13 @@ func Allocate(args AllocateArgs) error {
 				for item := range state.Items {
 					desired = extractItemFlow(state, fn, item, desired)
 				}
+
+				if len(desired) < state.ItemSlots {
+					// We cannot assign each Item to the desired number of replicas. Most likely,
+					// there are too few Members or they are poorly distributed across zones.
+					log.WithField("unattainable_replicas", state.ItemSlots-len(desired)).
+						Warn("cannot reach desired replication for all items")
+				}
 			}
 
 			// Use batched transactions to amortize the network cost of Etcd updates,
@@ -273,7 +280,7 @@ func (b *batchedTxn) Checkpoint() error {
 
 func (b *batchedTxn) Commit() (*clientv3.TxnResponse, error) {
 	if len(b.nextCmps) != 0 || len(b.nextOps) != 0 {
-		panic("must call Checkpoint before flush")
+		panic("must call Checkpoint before Commit")
 	}
 
 	if r, err := b.txnDo(clientv3.OpTxn(b.cmps, b.ops, nil)); err != nil {

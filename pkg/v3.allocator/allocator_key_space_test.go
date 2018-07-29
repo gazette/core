@@ -13,11 +13,53 @@ import (
 
 type AllocKeySpaceSuite struct{}
 
+// buildAllocKeySpaceFixture constructs a KeySpace fixture used by a number
+// of tests across this package.
+func buildAllocKeySpaceFixture(c *gc.C, ctx context.Context, client *clientv3.Client) {
+	var _, err = client.Delete(ctx, "", clientv3.WithPrefix())
+	c.Assert(err, gc.IsNil)
+
+	for k, v := range map[string]string{
+		"/root/items/item-1":   `{"R": 2}`, // Items index 0
+		"/root/items/item-two": `{"R": 1}`, // 1
+
+		// Invalid KeyValues which are omitted.
+		"/root/items/invalid#item#key": `{"R": 1}`,
+		"/root/items/valid-id":         `invalid value`,
+
+		"/root/members/us-east#bar": `{"R": 1}`, // Members index 0
+		"/root/members/us-east#foo": `{"R": 2}`, // 1
+		"/root/members/us-west#baz": `{"R": 3}`, // 2.
+
+		// Invalid KeyValues which are omitted.
+		"/root/members/invalid-key":       `{"R": 1}`,
+		"/root/members/us-west#valid-key": `invalid value`,
+
+		"/root/assign/item-1#us-east#foo#1":       `consistent`, // Assignments index 0
+		"/root/assign/item-1#us-west#baz#0":       `consistent`, // 1
+		"/root/assign/item-missing#us-west#baz#0": ``,           // 2
+		"/root/assign/item-two#missing#member#2":  ``,           // 3
+		"/root/assign/item-two#us-east#bar#0":     `consistent`, // 4
+		"/root/assign/item-two#us-west#baz#1":     ``,           // 5
+
+		// Invalid KeyValues which are omitted.
+		"/root/assign/item-1#us-east#foo#invalid-slot": ``,
+		"/root/assign/item-two#valid#key#2":            `invalid value`,
+
+		"/root/aaaaa/unknown#prefix": ``,
+		"/root/jjjjj/unknown#prefix": ``,
+		"/root/zzzzz/unknown#prefix": ``,
+	} {
+		var _, err = client.Put(ctx, k, v)
+		c.Assert(err, gc.IsNil)
+	}
+}
+
 func (s *AllocKeySpaceSuite) TestKeyOrderingEdgeCases(c *gc.C) {
 	var ks = NewAllocatorKeySpace("/root", testAllocDecoder{})
 
-	// Expect the choice of "#" as separator means we handle prefix cases
-	// appropriately while maintaining the key ordering invariant.
+	// Expect MemberKey and AssignmentKey encodings are able to handle prefix
+	// cases appropriately, such that key ordering matches natural ordering.
 	var cases = []string{
 		MemberKey(ks, "11", "XX"),
 		MemberKey(ks, "111", "XX"),
@@ -45,7 +87,21 @@ func (s *AllocKeySpaceSuite) TestKeyOrderingEdgeCases(c *gc.C) {
 }
 
 func (s *AllocKeySpaceSuite) TestKeyConstructorsAssertSepOrdering(c *gc.C) {
+	var ks = NewAllocatorKeySpace("/root", testAllocDecoder{})
 
+	var cases = []func(){
+		func() { MemberKey(ks, "zone\x00", "suffix") },
+		func() { MemberKey(ks, "zone", "suffix\x00") },
+
+		func() { ItemKey(ks, "item\x00") },
+
+		func() { AssignmentKey(ks, Assignment{ItemID: "item\x00", MemberZone: "zone", MemberSuffix: "suffix"}) },
+		func() { AssignmentKey(ks, Assignment{ItemID: "item", MemberZone: "zone\x00", MemberSuffix: "suffix"}) },
+		func() { AssignmentKey(ks, Assignment{ItemID: "item", MemberZone: "zone", MemberSuffix: "suffix\x00"}) },
+	}
+	for _, fn := range cases {
+		c.Check(fn, gc.PanicMatches, `invalid char <= '#' \(ind \d of ".*"\)`)
+	}
 }
 
 func (s *AllocKeySpaceSuite) TestAllocKeySpaceDecoding(c *gc.C) {
@@ -264,46 +320,6 @@ func (s *AllocKeySpaceSuite) TestLeftJoin(c *gc.C) {
 	}
 	_, ok = lj.next()
 	c.Check(ok, gc.Equals, false)
-}
-
-func buildAllocKeySpaceFixture(c *gc.C, ctx context.Context, client *clientv3.Client) {
-	var _, err = client.Delete(ctx, "", clientv3.WithPrefix())
-	c.Assert(err, gc.IsNil)
-
-	for k, v := range map[string]string{
-		"/root/items/item-1":   `{"R": 2}`, // Items index 0
-		"/root/items/item-two": `{"R": 1}`, // 1
-
-		// Invalid KeyValues which are omitted.
-		"/root/items/invalid#item#key": `{"R": 1}`,
-		"/root/items/valid-id":         `invalid value`,
-
-		"/root/members/us-east#bar": `{"R": 1}`, // Members index 0
-		"/root/members/us-east#foo": `{"R": 2}`, // 1
-		"/root/members/us-west#baz": `{"R": 3}`, // 2.
-
-		// Invalid KeyValues which are omitted.
-		"/root/members/invalid-key":       `{"R": 1}`,
-		"/root/members/us-west#valid-key": `invalid value`,
-
-		"/root/assign/item-1#us-east#foo#1":       `consistent`, // Assignments index 0
-		"/root/assign/item-1#us-west#baz#0":       `consistent`, // 1
-		"/root/assign/item-missing#us-west#baz#0": ``,           // 2
-		"/root/assign/item-two#missing#member#2":  ``,           // 3
-		"/root/assign/item-two#us-east#bar#0":     `consistent`, // 4
-		"/root/assign/item-two#us-west#baz#1":     ``,           // 5
-
-		// Invalid KeyValues which are omitted.
-		"/root/assign/item-1#us-east#foo#invalid-slot": ``,
-		"/root/assign/item-two#valid#key#2":            `invalid value`,
-
-		"/root/aaaaa/unknown#prefix": ``,
-		"/root/jjjjj/unknown#prefix": ``,
-		"/root/zzzzz/unknown#prefix": ``,
-	} {
-		var _, err = client.Put(ctx, k, v)
-		c.Assert(err, gc.IsNil)
-	}
 }
 
 type testAllocDecoder struct{}
