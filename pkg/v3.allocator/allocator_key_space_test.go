@@ -226,27 +226,28 @@ func (s *AllocKeySpaceSuite) TestAssignmentCompare(c *gc.C) {
 func (s *AllocKeySpaceSuite) TestLeftJoin(c *gc.C) {
 	var L1 = []float32{
 		1.01, // 0
-		1.05, // 1
-		3.00, // 2
+		1.02, // 1
+		3.03, // 2
 		4.04, // 3
 		4.05, // 4
-		5.02, // 5
-		7.01, // 6
+		5.06, // 5
+		7.07, // 6
 		9.08, // 7
 		9.09, // 8
 	}
 	var L2 = []float32{
-		1.3, // 0
-		4.5, // 1
-		4.7, // 2
-		4.9, // 3
-		5.1, // 4
-		5.2, // 5
-		6.1, // 6
-		6.2, // 7
-		7.6, // 8
+		1.1, // 0
+		4.2, // 1
+		4.3, // 2
+		4.4, // 3
+		5.5, // 4
+		5.6, // 5
+		6.7, // 6
+		6.8, // 7
+		7.9, // 8
 	}
-	// Compare the integer portions of L1, L2 items.
+	// Compare the integer portions of L1, L2 items. Decimal portions are not
+	// functionally meaningful, and serve only to clarify comments below.
 	var compare = func(l, r int) int {
 		switch li, ri := int(L1[l]), int(L2[r]); {
 		case li < ri:
@@ -259,17 +260,17 @@ func (s *AllocKeySpaceSuite) TestLeftJoin(c *gc.C) {
 	}
 
 	var expect = []cursor{
-		// 1.01, 1.05 <=> 1.3
+		// 1.01, 1.02 <=> 1.1
 		{left: 0, rightBegin: 0, rightEnd: 1},
 		{left: 1, rightBegin: 0, rightEnd: 1},
-		// 3.00 <=> empty
+		// 3.03 <=> empty
 		{left: 2, rightBegin: 1, rightEnd: 1},
-		// 4.04, 4.05 <=> 4.5, 4.7, 4.9
+		// 4.04, 4.05 <=> 4.2, 4.3, 4.4
 		{left: 3, rightBegin: 1, rightEnd: 4},
 		{left: 4, rightBegin: 1, rightEnd: 4},
-		// 5.02 <=> 5.1, 5.2
+		// 5.06 <=> 5.5, 5.6
 		{left: 5, rightBegin: 4, rightEnd: 6},
-		// 7.01 <=> 7.6
+		// 7.07 <=> 7.9
 		{left: 6, rightBegin: 8, rightEnd: 9},
 		// 9.08, 9.09 <=> empty
 		{left: 7, rightBegin: 9, rightEnd: 9},
@@ -292,19 +293,19 @@ func (s *AllocKeySpaceSuite) TestLeftJoin(c *gc.C) {
 	// Run again, this time reverse L1/L2 left/right side order.
 
 	expect = []cursor{
-		// 1.3 <=> 1.01, 1.05
+		// 1.1 <=> 1.01, 1.05
 		{left: 0, rightBegin: 0, rightEnd: 2},
-		// 4.5, 4.7, 4.9 <=> 4.04, 4.05
+		// 4.2, 4.3, 4.4 <=> 4.04, 4.05
 		{left: 1, rightBegin: 3, rightEnd: 5},
 		{left: 2, rightBegin: 3, rightEnd: 5},
 		{left: 3, rightBegin: 3, rightEnd: 5},
-		// 5.1, 5.2 <=> 5.02
+		// 5.5, 5.6 <=> 5.06
 		{left: 4, rightBegin: 5, rightEnd: 6},
 		{left: 5, rightBegin: 5, rightEnd: 6},
-		// 6.1, 6.2 <=> empty
+		// 6.7, 6.8 <=> empty
 		{left: 6, rightBegin: 6, rightEnd: 6},
 		{left: 7, rightBegin: 6, rightEnd: 6},
-		// 7.6 <=> empty
+		// 7.9 <=> empty
 		{left: 8, rightBegin: 6, rightEnd: 7},
 	}
 

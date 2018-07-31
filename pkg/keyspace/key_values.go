@@ -104,7 +104,8 @@ func updateKeyValuesTail(kv KeyValues, decode KeyValueDecoder, event clientv3.Ev
 			// brings KeyValues back to consistency.
 			return kv, fmt.Errorf("unexpected deletion of unknown key")
 		} else if event.Type != clientv3.EventTypePut {
-			panic(event.Type) // Only Delete and Put are allowed.
+			// DELETE & PUT are the only defined types in Etcd's `mvccpb` package kv.proto.
+			panic(event.Type)
 		}
 
 		if decoded, err := decode(event.Kv); err != nil {
@@ -140,7 +141,7 @@ func updateKeyValuesTail(kv KeyValues, decode KeyValueDecoder, event clientv3.Ev
 		// Remove the current tail.
 		return kv[:tail], nil
 	} else if event.Type != clientv3.EventTypePut {
-		panic(event.Type) // Only Delete and Put are allowed.
+		panic(event.Type) // Only DELETE and PUT are defined.
 	}
 
 	var decoded, err = decode(event.Kv)

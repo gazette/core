@@ -139,8 +139,8 @@ func (s *State) shouldExit() bool {
 	return memberAt(s.Members, s.LocalMemberInd).ItemLimit() == 0 && len(s.LocalItems) == 0
 }
 
-// isLeader returns true iff the local Member key has the earliest
-// CreateRevision of all Member keys.
+// isLeader returns true iff the local Member key is ordered first on
+// (CreateRevision, Key) among all Member keys.
 func (s *State) isLeader() bool {
 	var leader keyspace.KeyValue
 	for _, kv := range s.Members {
