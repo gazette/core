@@ -139,10 +139,10 @@ func (s *AllocStateSuite) TestLoadRatio(c *gc.C) {
 	// 	 item-two/us-east/bar/0     (R: 1)
 	//   item-two/us-west/baz/1     (R: 3)
 	for i, f := range []float32{1.0 / 2.0, 2.0 / 3.0, 2.0 / 3.0, math.MaxFloat32, 1.0 / 1.0, 2.0 / 3.0} {
-		c.Check(memberLoadRatio(state.KS, state.Assignments[i], state.MemberTotalCount), gc.Equals, f)
+		c.Check(state.memberLoadRatio(state.Assignments[i], state.MemberTotalCount), gc.Equals, f)
 	}
 	for i, f := range []float32{0, 1.0 / 3.0, 1.0 / 3.0, math.MaxFloat32, 1.0 / 1.0, 1.0 / 3.0} {
-		c.Check(memberLoadRatio(state.KS, state.Assignments[i], state.MemberPrimaryCount), gc.Equals, f)
+		c.Check(state.memberLoadRatio(state.Assignments[i], state.MemberPrimaryCount), gc.Equals, f)
 	}
 }
 

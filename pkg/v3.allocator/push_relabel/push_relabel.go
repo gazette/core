@@ -1,11 +1,14 @@
 // Package push_relabel implements a greedy variant of the push/relabel algorithm.
 // Specifically, it is a standard variant of the algorithm using node "discharge"
 // operations with height-based node prioritization (see [1]), but additionally
-// introduces a notion of Arc "Priority" with greedy selection at each step. While
-// providing no formal guarantee (as min-cost/max-flow would, for example), in
-// practice it does a good job of minimizing departures -- especially when
-// priorities encode a previous max-flow of a closely related, incrementally
-// updated flow network.
+// introduces a notion of Arc "Priority" with greedy selection at each step.
+// Since push/relabel specifies no order over admissible arcs, this does not
+// change the properties of the algorithm. Use of priorities provide no formal
+// guarantees (as min-cost/max-flow would, for example). However in practice,
+// where priorities encode a previous max-flow solution of a closely related,
+// incrementally updated flow network, push/relabel-with-priorities does a good
+// job of minimizing departures from the prior solution at low computational
+// cost.
 //
 //  [1] https://en.wikipedia.org/wiki/Push%E2%80%93relabel_maximum_flow_algorithm#%22Current-arc%22_data_structure_and_discharge_operation )
 //
@@ -96,9 +99,10 @@ func discharge(node, sink *Node, active *heightHeap) {
 		}
 
 		var adj = node.Arcs[node.next]
+		var residual = adj.Capacity - adj.Flow
 
-		if adj.Capacity-adj.Flow > 0 && node.Height > adj.Target.Height {
-			var delta = min(node.excess, uint32(adj.Capacity-adj.Flow))
+		if residual > 0 && node.Height > adj.Target.Height {
+			var delta = min(node.excess, uint32(residual))
 
 			node.Arcs[node.next].Flow += int32(delta)
 			adj.Target.Arcs[adj.reciprocal].Flow -= int32(delta)

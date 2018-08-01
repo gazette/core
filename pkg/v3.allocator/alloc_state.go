@@ -73,7 +73,7 @@ func (s *State) observe() {
 	//  * Initialize |NetworkHash|.
 	for i := range s.Members {
 		var m = memberAt(s.Members, i)
-		var R = m.ItemLimit()
+		var l = m.ItemLimit()
 
 		if len(s.Zones) == 0 {
 			s.Zones = append(s.Zones, m.Zone)
@@ -83,8 +83,8 @@ func (s *State) observe() {
 			panic("invalid Member order")
 		}
 
-		s.MemberSlots += R
-		s.NetworkHash = foldCRC(s.NetworkHash, s.Members[i].Raw.Key, R)
+		s.MemberSlots += l
+		s.NetworkHash = foldCRC(s.NetworkHash, s.Members[i].Raw.Key, l)
 	}
 
 	// Fetch |localMember| identified by |LocalKey|.
@@ -108,10 +108,10 @@ func (s *State) observe() {
 	}
 	for cur, ok := it.next(); ok; cur, ok = it.next() {
 		var item = itemAt(s.Items, cur.left)
-		var R = item.DesiredReplication()
+		var r = item.DesiredReplication()
 
-		s.ItemSlots += R
-		s.NetworkHash = foldCRC(s.NetworkHash, s.Items[cur.left].Raw.Key, R)
+		s.ItemSlots += r
+		s.NetworkHash = foldCRC(s.NetworkHash, s.Items[cur.left].Raw.Key, r)
 
 		for r := cur.rightBegin; r != cur.rightEnd; r++ {
 			var a = assignmentAt(s.Assignments, r)
@@ -177,20 +177,19 @@ func (s *State) debugLog() {
 // memberLoadRatio maps |assignment| to a Member and, if found, returns the
 // ratio of the Member's index in |counts| to the Member's ItemLimit. If the
 // Member is not found, infinity is returned.
-func memberLoadRatio(ks *keyspace.KeySpace, assignment keyspace.KeyValue, counts []int) float32 {
+func (s *State) memberLoadRatio(assignment keyspace.KeyValue, counts []int) float32 {
 	var a = assignment.Decoded.(Assignment)
-	var members = ks.Prefixed(ks.Root + MembersPrefix)
 
-	if ind, found := members.Search(MemberKey(ks, a.MemberZone, a.MemberSuffix)); found {
-		return float32(counts[ind]) / float32(memberAt(members, ind).ItemLimit())
+	if ind, found := s.Members.Search(MemberKey(s.KS, a.MemberZone, a.MemberSuffix)); found {
+		return float32(counts[ind]) / float32(memberAt(s.Members, ind).ItemLimit())
 	}
 	return math.MaxFloat32
 }
 
-func foldCRC(crc uint64, key []byte, R int) uint64 {
+func foldCRC(crc uint64, key []byte, n int) uint64 {
 	var tmp [12]byte
 	crc = crc64.Update(crc, crcTable, key)
-	crc = crc64.Update(crc, crcTable, strconv.AppendInt(tmp[:0], int64(R), 10))
+	crc = crc64.Update(crc, crcTable, strconv.AppendInt(tmp[:0], int64(n), 10))
 	return crc
 }
 

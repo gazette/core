@@ -79,28 +79,28 @@ func (s *itemState) constrainRemovals() {
 	// Order |u.remove| on decreasing member load ratio
 	// (the ratio of the member's total Assignments, vs its item limit).
 	sort.Slice(s.remove, func(i, j int) bool {
-		var ri = memberLoadRatio(s.global.KS, s.remove[i], s.global.MemberTotalCount)
-		var rj = memberLoadRatio(s.global.KS, s.remove[j], s.global.MemberTotalCount)
+		var ri = s.global.memberLoadRatio(s.remove[i], s.global.MemberTotalCount)
+		var rj = s.global.memberLoadRatio(s.remove[j], s.global.MemberTotalCount)
 		return ri > rj
 	})
 	var item = itemAt(s.global.Items, s.item)
 
 	// Determine the current number of consistent item Assignments.
-	var N int
+	var n int
 	for _, a := range s.current {
 		if item.IsConsistent(a, s.current) {
-			N += 1
+			n += 1
 		}
 	}
 	// Release Assignments in decreasing order of member load ratio. Halt if
 	// releasing an Assignment would violate the Item replication guarantee.
 	var limit int
 
-	for R := item.DesiredReplication(); N >= R && limit != len(s.remove); limit++ {
-		if c := item.IsConsistent(s.remove[limit], s.current); c && N == R {
-			break // We cannot remove this assignment without breaking N >= R.
+	for r := item.DesiredReplication(); n >= r && limit != len(s.remove); limit++ {
+		if c := item.IsConsistent(s.remove[limit], s.current); c && n == r {
+			break // We cannot remove this assignment without breaking n >= r.
 		} else if c {
-			N -= 1
+			n -= 1
 		}
 	}
 
@@ -138,7 +138,7 @@ func (s *itemState) constrainReorders() {
 
 	for i := range s.reorder {
 		var c = item.IsConsistent(s.reorder[i], s.current)
-		var r = memberLoadRatio(s.global.KS, s.reorder[i], s.global.MemberPrimaryCount)
+		var r = s.global.memberLoadRatio(s.reorder[i], s.global.MemberPrimaryCount)
 
 		if primary.index == -1 ||
 			c == true && primary.isConsistent == false ||
