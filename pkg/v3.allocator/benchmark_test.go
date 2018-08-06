@@ -16,21 +16,21 @@ import (
 
 func BenchmarkAll(b *testing.B) {
 	var fakeT testing.T
-	var etcdCluster = integration.NewClusterV3(&fakeT, &integration.ClusterConfig{Size: 1})
-	defer etcdCluster.Terminate(&fakeT)
+	etcdCluster = integration.NewClusterV3(&fakeT, &integration.ClusterConfig{Size: 1})
 
 	var client = etcdCluster.RandClient()
 
 	b.Run("simulated-deploy", func(b *testing.B) {
 		benchmarkSimulatedDeploy(b, client)
 	})
+	etcdCluster.Terminate(&fakeT)
 }
 
 type BenchmarkHealthSuite struct{}
 
 // TestBenchmarkHealth runs benchmarks with a small N to ensure they don't bit rot.
 func (s *BenchmarkHealthSuite) TestBenchmarkHealth(c *gc.C) {
-	var fakeB testing.B
+	var fakeB = testing.B{N: 50}
 	var client = etcdCluster.RandClient()
 
 	benchmarkSimulatedDeploy(&fakeB, client)

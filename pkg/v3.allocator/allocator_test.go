@@ -85,7 +85,7 @@ func (s *AllocatorSuite) TestConvergeFixtureCases(c *gc.C) {
 	})
 
 	// Case 2: desire to flip "foo" and "bar". "bar" is at capacity, "foo" is not:
-	// expect an Assignment for "bar" (only) is created.
+	// expect an Assignment for "foo" (only) is created.
 	txn = mockTxnBuilder{}
 	converge(&txn, as, []Assignment{
 		{ItemID: "item-1", MemberZone: "us-east", MemberSuffix: "bar"},

@@ -76,7 +76,7 @@ func (s *itemState) init(item int, current keyspace.KeyValues, desired []Assignm
 // constrainRemovals prunes Assignments from |s.remove| which would otherwise violate
 // constraints, moving them to |s.reorder|.
 func (s *itemState) constrainRemovals() {
-	// Order |u.remove| on decreasing member load ratio
+	// Order |s.remove| on decreasing member load ratio
 	// (the ratio of the member's total Assignments, vs its item limit).
 	sort.Slice(s.remove, func(i, j int) bool {
 		var ri = s.global.memberLoadRatio(s.remove[i], s.global.MemberTotalCount)
@@ -113,7 +113,7 @@ func (s *itemState) constrainRemovals() {
 // constrainReorders updates the ordering of |s.reorders| to ensure the best
 // Assignment is selected as primary (which is always s.reorders[0]).
 func (s *itemState) constrainReorders() {
-	// Order |u.reorder| on ascending Assignment Slot.
+	// Order |s.reorder| on ascending Assignment Slot.
 	sort.Slice(s.reorder, func(i, j int) bool {
 		return assignmentAt(s.reorder, i).Slot < assignmentAt(s.reorder, j).Slot
 	})
@@ -193,6 +193,9 @@ func (s *itemState) buildRemoveOps(txn checkpointTxn) {
 			}
 			s.global.MemberTotalCount[ind] -= 1
 		}
+		// We allow for !found (and do not panic) to gracefully handle assignments
+		// which somehow linger after their corresponding member is deleted (note
+		// that in practice all keys of an Etcd lease are deleted in a single txn).
 	}
 }
 
@@ -210,6 +213,9 @@ func (s *itemState) buildPromoteOps(txn checkpointTxn) {
 		if ind, found := s.global.Members.Search(MemberKey(s.global.KS, a.MemberZone, a.MemberSuffix)); found {
 			s.global.MemberPrimaryCount[ind] += 1
 		}
+		// Like buildRemoveOps, we allow for the possibility of !found (and do not
+		// panic). Note that a member without a member key will have an infinite
+		// load ratio, and is therefore promoted only as a last resort.
 		s.buildMoveOps(txn, s.reorder[0], a)
 	}
 }

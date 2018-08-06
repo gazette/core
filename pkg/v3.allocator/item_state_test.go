@@ -15,7 +15,7 @@ func (s *ItemStateSuite) TestItemConstraintsSomeRemoved(c *gc.C) {
 	var ks, is = buildItemStateFixture(c, map[string]string{
 		"/root/items/item": `{"R": 1}`,
 
-		// Replica counts imply that load ratio increases with each member index.
+		// Member item limits imply that load ratio increases with each member index.
 		"/root/members/zone#member-1": `{"R": 5}`,
 		"/root/members/zone#member-2": `{"R": 4}`,
 		"/root/members/zone#member-3": `{"R": 3}`,

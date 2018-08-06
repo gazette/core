@@ -38,7 +38,7 @@ func (s *ScenariosSuite) TestInitialAllocation(c *gc.C) {
 	), gc.IsNil)
 	c.Check(serveUntilIdle(c, s.ctx, s.client, s.ks), gc.Equals, 1)
 
-	// Expect Items are fully replicated, each Item spans both Zones, and no Member ItemLimit is breached.
+	// Expect Items are fully replicated, each Item spans both zones, and no Member ItemLimit is breached.
 	c.Check(keys(s.ks.Prefixed(s.ks.Root+AssignmentsPrefix)), gc.DeepEquals, []string{
 		"/root/assign/item-1#zone-a#member-A2#0",
 		"/root/assign/item-2#zone-a#member-A1#0",
@@ -269,7 +269,7 @@ func (s *ScenariosSuite) TestUpdateDesiredReplication(c *gc.C) {
 }
 
 func (s *ScenariosSuite) TestMaxAssignmentAcrossZones(c *gc.C) {
-	// Construct a fixture across two Zones, with matched Member and Item slots.
+	// Construct a fixture across two zones, with matched Member and Item slots.
 	c.Check(insert(s.ctx, s.client,
 		"/root/items/item-1", `{"R": 1}`,
 		"/root/items/item-2", `{"R": 2}`,
@@ -329,7 +329,7 @@ func (s *ScenariosSuite) TestMaxAssignmentAcrossZones(c *gc.C) {
 }
 
 func (s *ScenariosSuite) TestAddNewZones(c *gc.C) {
-	// Initial fixture has one Zones, and equal member & item slots.
+	// Initial fixture has one zone, and equal member & item slots.
 	c.Check(insert(s.ctx, s.client,
 		"/root/items/item-1", `{"R": 1}`,
 		"/root/items/item-2", `{"R": 2}`,
@@ -455,7 +455,7 @@ func (s *ScenariosSuite) TestRecoveryOnLeaseAndZoneEviction(c *gc.C) {
 }
 
 func (s *ScenariosSuite) TestMemberSlotScaling(c *gc.C) {
-	// Initial fixture has one Zones, and equal member & item slots.
+	// Initial fixture has one zone, and equal member & item slots.
 	c.Check(insert(s.ctx, s.client,
 		"/root/items/item-1", `{"R": 1}`,
 		"/root/items/item-2", `{"R": 2}`,
@@ -483,7 +483,7 @@ func (s *ScenariosSuite) TestMemberSlotScaling(c *gc.C) {
 		"/root/members/zone-a#member-A4", `{"R": 1}`), gc.IsNil)
 	c.Check(serveUntilIdle(c, s.ctx, s.client, s.ks), gc.Equals, 0)
 
-	// Increase it's ItemLimit. The additional slots now cause A1 to have an effective
+	// Increase its ItemLimit. The additional slots now cause A1 to have an effective
 	// ItemLimit of 2 (rather than 3), which re-balances load to A4.
 	c.Check(update(s.ctx, s.client,
 		"/root/members/zone-a#member-A4", `{"R": 3}`), gc.IsNil)
@@ -536,6 +536,36 @@ func (s *ScenariosSuite) TestCleanupOfAssignmentsWithoutItems(c *gc.C) {
 		"/root/assign/item-6#zone-a#member-A#0",
 		"/root/assign/item-6#zone-b#member-B#1",
 		"/root/assign/item-6#zone-c#member-C#2",
+	})
+}
+
+func (s *ScenariosSuite) TestCleanupOfAssignmentsWithoutMember(c *gc.C) {
+	c.Check(insert(s.ctx, s.client,
+		"/root/items/item-1", `{"R": 1}`,
+		"/root/items/item-2", `{"R": 1}`,
+
+		"/root/members/zone-a#member-A", `{"R": 2}`,
+
+		"/root/assign/item-1#zone-f#member-dead#0", `consistent`,
+		"/root/assign/item-2#zone-f#member-dead#0", `consistent`,
+
+		"/root/assign/item-1#zone-a#member-A#1", `consistent`,
+	), gc.IsNil)
+
+	c.Check(serveUntilIdle(c, s.ctx, s.client, s.ks), gc.Equals, 1)
+	c.Check(markAllConsistent(s.ctx, s.client, s.ks), gc.IsNil)
+
+	c.Check(keys(s.ks.Prefixed(s.ks.Root+AssignmentsPrefix)), gc.DeepEquals, []string{
+		"/root/assign/item-1#zone-a#member-A#0", // Expect member-dead removed, and A promoted.
+
+		"/root/assign/item-2#zone-a#member-A#1",
+		"/root/assign/item-2#zone-f#member-dead#0",
+	})
+
+	c.Check(serveUntilIdle(c, s.ctx, s.client, s.ks), gc.Equals, 1)
+	c.Check(keys(s.ks.Prefixed(s.ks.Root+AssignmentsPrefix)), gc.DeepEquals, []string{
+		"/root/assign/item-1#zone-a#member-A#0",
+		"/root/assign/item-2#zone-a#member-A#0",
 	})
 }
 
@@ -600,7 +630,7 @@ func keys(kv keyspace.KeyValues) []string {
 }
 
 func serveUntilIdle(c *gc.C, ctx context.Context, client *clientv3.Client, ks *keyspace.KeySpace) int {
-	// Pluck out the key of the current Member leader. We'll assume it's identity.
+	// Pluck out the key of the current Member leader. We'll assume its identity.
 	var resp, err = client.Get(ctx, ks.Root+MembersPrefix,
 		clientv3.WithPrefix(),
 		clientv3.WithLimit(1),

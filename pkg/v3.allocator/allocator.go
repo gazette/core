@@ -311,4 +311,7 @@ func debugLogTxn(cmps []clientv3.Cmp, ops []clientv3.Op) {
 	}
 }
 
+// maxTxnOps is set to etcd's `embed/config.go.DefaultMaxTxnOps`. Etcd allows
+// configuration at runtime with --max-txn-ops. We assume the default and will
+// error if a smaller value is used.
 var maxTxnOps = 128
