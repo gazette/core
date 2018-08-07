@@ -176,6 +176,7 @@ message JournalSpec {
 
 // ProcessSpec describes a uniquely identified process and its addressable endpoint.
 message ProcessSpec {
+  // ID composes a zone and a suffix to uniquely identify a ProcessSpec.
   message ID {
     // "Zone" in which the process is running. Zones may be AWS, Azure, or Google
     // Cloud Platform zone identifiers, or rack locations within a colo, or
@@ -183,7 +184,10 @@ message ProcessSpec {
     // zones, and seeks to minimize traffic which must cross zones (for example,
     // by proxying reads to a broker in the current zone).
     string zone = 1;
-    // Unique suffix of the process within |zone|.
+    // Unique suffix of the process within |zone|. It is permissible for a
+    // suffix value to repeat across zones, but never within zones. In practice,
+    // it's recommended to use a FQDN, Kubernetes Pod name, or comparable unique
+    // and self-describing value as the ID suffix.
     string suffix = 2;
   }
   ID id = 1 [(gogoproto.nullable) = false];
@@ -242,7 +246,7 @@ message ReadRequest {
   // the read is performed from the current write head. All other positive
   // values specify a desired exact byte offset to read from. If the offset is
   // not available (eg, because it represents a portion of Journal which has
-  // been permantently deleted), the broker will return the next available
+  // been permanently deleted), the broker will return the next available
   // offset. Callers should therefore always inspect the ReadResponse offset.
   int64 offset = 3;
   // Whether the operation should block until content becomes available.
