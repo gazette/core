@@ -160,7 +160,8 @@ message JournalSpec {
       (gogoproto.moretags) = "yaml:\"refresh_interval,omitempty\""];
 
     // Retention duration for historical Fragments of this Journal within the
-    // Fragment stores. If zero, Fragments are retained indefinetely.
+    // Fragment stores. If less than or equal to zero, Fragments are retained
+    // indefinetely.
     google.protobuf.Duration retention = 5 [
       (gogoproto.stdduration) = true,
       (gogoproto.nullable) = false,
@@ -170,8 +171,28 @@ message JournalSpec {
     (gogoproto.nullable) = false,
     (gogoproto.moretags) = "yaml:\",omitempty\""];
 
-  // If true, this Journal will not accept Append requests.
-  bool read_only = 6 [(gogoproto.moretags) = "yaml:\",omitempty\""];
+  // Flags define Journal IO control behaviors. Where possible, flags are named
+  // after an equivalent POSIX flag.
+  enum Flag {
+    // NOT_SPECIFIED is considered as equivalent to O_RDWR by the broker. When
+    // JournalSpecs are union'ed (eg, by the `journalspace` pkg), NOT_SPECIFIED
+    // is considered as unset relative to any other non-zero Flag value.
+    NOT_SPECIFIED = 0x00;
+
+    // Only one of O_RDONLY, O_WRONLY, or O_RDWR may be set.
+
+    // The Journal is available for reads (only).
+    O_RDONLY = 0x01;
+    // The Journal is available for writes (only).
+    O_WRONLY = 0x02;
+    // The Journal may be used for reads or writes.
+    O_RDWR   = 0x04;
+  }
+  // Flags of the Journal, as a combination of Flag enum values. The Flag enum
+  // not used directly, as protobuf enums do not allow for or'ed bitfields.
+  uint32 flags = 6 [
+    (gogoproto.casttype) = "JournalSpec_Flag",
+    (gogoproto.moretags) = "yaml:\",omitempty\""];
 }
 
 // ProcessSpec describes a uniquely identified process and its addressable endpoint.
@@ -396,7 +417,7 @@ message UpdateResponse {
 message Route {
   option (gogoproto.goproto_unrecognized) = false;
 
-  // Members of the Route, ordered on ascending ProcessSpec.ID (zone, name).
+  // Members of the Route, ordered on ascending ProcessSpec.ID (zone, suffix).
   repeated ProcessSpec.ID members = 1 [(gogoproto.nullable) = false];
   // Index of the ProcessSpec serving as primary within |members|,
   // or -1 of no member is currently primary.

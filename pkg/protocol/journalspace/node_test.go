@@ -54,11 +54,14 @@ func (s *NodeSuite) TestFlatten(c *gc.C) {
 		},
 		Children: []Node{
 			{JournalSpec: pb.JournalSpec{
-				Name:     "root/aaa/",
-				ReadOnly: true,
+				Name:  "root/aaa/",
+				Flags: pb.JournalSpec_O_RDWR,
 			},
 				Children: []Node{
-					{JournalSpec: pb.JournalSpec{Name: "root/aaa/111"}},
+					{JournalSpec: pb.JournalSpec{
+						Name:  "root/aaa/111",
+						Flags: pb.JournalSpec_O_RDONLY, // Overrides O_RDWR.
+					}},
 					{JournalSpec: pb.JournalSpec{Name: "root/aaa/222"}},
 				}},
 			{JournalSpec: pb.JournalSpec{Name: "root/bbb/"},
@@ -78,16 +81,17 @@ func (s *NodeSuite) TestFlatten(c *gc.C) {
 					{JournalSpec: pb.JournalSpec{
 						Name:        "root/bbb/444",
 						Replication: 3, // Overrides Replication: 1
+						Flags:       pb.JournalSpec_O_WRONLY,
 					}},
 				}}}}
 
 	c.Check(root.Flatten(), gc.DeepEquals, []Node{
-		{JournalSpec: pb.JournalSpec{Name: "root/aaa/111", Replication: 1, ReadOnly: true}},
-		{JournalSpec: pb.JournalSpec{Name: "root/aaa/222", Replication: 1, ReadOnly: true}},
+		{JournalSpec: pb.JournalSpec{Name: "root/aaa/111", Replication: 1, Flags: pb.JournalSpec_O_RDONLY}},
+		{JournalSpec: pb.JournalSpec{Name: "root/aaa/222", Replication: 1, Flags: pb.JournalSpec_O_RDWR}},
 		{JournalSpec: pb.JournalSpec{Name: "root/bbb/333/a/x", Replication: 2}, Delete: true},
 		{JournalSpec: pb.JournalSpec{Name: "root/bbb/333/a/y", Replication: 2}, Delete: true},
 		{JournalSpec: pb.JournalSpec{Name: "root/bbb/333/z", Replication: 2}},
-		{JournalSpec: pb.JournalSpec{Name: "root/bbb/444", Replication: 3}},
+		{JournalSpec: pb.JournalSpec{Name: "root/bbb/444", Replication: 3, Flags: pb.JournalSpec_O_WRONLY}},
 	})
 }
 
@@ -117,12 +121,13 @@ func (s *NodeSuite) TestSpecHoisting(c *gc.C) {
 			{JournalSpec: pb.JournalSpec{
 				Name:        "node/aaa",
 				Replication: 2,
+				Flags:       pb.JournalSpec_O_RDONLY,
 				LabelSet:    labelSet("name-1", "val-1"),
 			}},
 			{JournalSpec: pb.JournalSpec{
 				Name:        "node/bbb",
 				Replication: 2,
-				ReadOnly:    true,
+				Flags:       pb.JournalSpec_O_RDONLY,
 				LabelSet:    labelSet("name-1", "val-1", "name-2", "val-2"),
 			}},
 		}}
@@ -132,6 +137,7 @@ func (s *NodeSuite) TestSpecHoisting(c *gc.C) {
 		JournalSpec: pb.JournalSpec{
 			Name:        "node/",
 			Replication: 2,
+			Flags:       pb.JournalSpec_O_RDONLY,
 			LabelSet:    labelSet("name-1", "val-1"),
 		},
 		Children: []Node{
@@ -140,7 +146,6 @@ func (s *NodeSuite) TestSpecHoisting(c *gc.C) {
 			}},
 			{JournalSpec: pb.JournalSpec{
 				Name:     "node/bbb",
-				ReadOnly: true,
 				LabelSet: labelSet("name-2", "val-2"),
 			}},
 		}})

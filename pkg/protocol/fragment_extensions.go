@@ -127,7 +127,7 @@ func (m CompressionCodec) Validate() error {
 	return nil
 }
 
-// ToExension returns the file extension of the CompressionCodec.
+// ToExtension returns the file extension of the CompressionCodec.
 func (m CompressionCodec) ToExtension() string {
 	switch m {
 	case CompressionCodec_NONE:

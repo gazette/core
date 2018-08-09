@@ -3,9 +3,10 @@ package protocol
 import (
 	"time"
 
+	gc "github.com/go-check/check"
+
 	"github.com/LiveRamp/gazette/pkg/keyspace"
 	"github.com/LiveRamp/gazette/pkg/v3.allocator"
-	gc "github.com/go-check/check"
 )
 
 type JournalSuite struct{}
@@ -51,7 +52,7 @@ func (s *JournalSuite) TestSpecValidationCases(c *gc.C) {
 			Retention:        365 * 24 * time.Hour,
 		},
 
-		ReadOnly: false,
+		Flags: JournalSpec_O_RDWR,
 	}
 	c.Check(spec.Validate(), gc.IsNil) // Base case: validates successfully.
 
@@ -78,6 +79,26 @@ func (s *JournalSuite) TestSpecValidationCases(c *gc.C) {
 	c.Check(spec.Validate(), gc.ErrorMatches, `Fragment: invalid Length \(0; expected 1024 <= length <= \d+\)`)
 	spec.Fragment.Length = 4096
 
+	// Flag combinations which are not permitted.
+	for _, f := range []JournalSpec_Flag{
+		JournalSpec_O_RDWR | JournalSpec_O_RDONLY,
+		JournalSpec_O_RDWR | JournalSpec_O_WRONLY,
+		JournalSpec_O_RDONLY | JournalSpec_O_WRONLY,
+	} {
+		spec.Flags = f
+		c.Check(spec.Validate(), gc.ErrorMatches, `Flags: invalid combination \(\d\)`) // Valid alternate Flag value.
+	}
+	// Permitted flag combinations.
+	for _, f := range []JournalSpec_Flag{
+		JournalSpec_NOT_SPECIFIED,
+		JournalSpec_O_RDWR,
+		JournalSpec_O_RDONLY,
+		JournalSpec_O_WRONLY,
+	} {
+		spec.Flags = f
+		c.Check(spec.Validate(), gc.IsNil)
+	}
+
 	// Additional tests of JournalSpec_Fragment cases.
 	var f = &spec.Fragment
 
@@ -99,10 +120,6 @@ func (s *JournalSuite) TestSpecValidationCases(c *gc.C) {
 	f.RefreshInterval = 25 * time.Hour
 	c.Check(f.Validate(), gc.ErrorMatches, `invalid RefreshInterval \(25h0m0s; expected 1s <= interval <= 24h0m0s\)`)
 	f.RefreshInterval = time.Hour
-
-	f.Retention = -time.Second
-	c.Check(f.Validate(), gc.ErrorMatches, `invalid Retention \(-1s; expected >= 0\)`)
-	f.Retention = 0
 
 	f.Stores = append(f.Stores, "invalid")
 	c.Check(f.Validate(), gc.ErrorMatches, `Stores\[2\]: not absolute \(invalid\)`)
@@ -162,7 +179,7 @@ func (s *JournalSuite) TestSetOperations(c *gc.C) {
 			RefreshInterval: time.Minute,
 			Retention:       time.Hour,
 		},
-		ReadOnly: true,
+		Flags: JournalSpec_O_RDWR,
 	}
 
 	c.Check(UnionJournalSpecs(JournalSpec{}, model), gc.DeepEquals, model)

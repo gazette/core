@@ -101,7 +101,7 @@ func (m Route) Equivalent(other *Route) bool {
 	return true
 }
 
-// MarshalString returns the marshaled encoding of the JournalSpec as a string.
+// MarshalString returns the marshaled encoding of the Route as a string.
 func (m Route) MarshalString() string {
 	var d, err = m.Marshal()
 	if err != nil {

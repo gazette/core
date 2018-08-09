@@ -47,9 +47,9 @@ func (m *JournalSpec) Validate() error {
 		return NewValidationError(`Labels cannot include label "prefix"`)
 	} else if err = m.Fragment.Validate(); err != nil {
 		return ExtendContext(err, "Fragment")
+	} else if err = m.Flags.Validate(); err != nil {
+		return ExtendContext(err, "Flags")
 	}
-
-	// ReadOnly (type bool) has no extra validation.
 
 	return nil
 }
@@ -74,10 +74,20 @@ func (m *JournalSpec_Fragment) Validate() error {
 	if m.RefreshInterval < minRefreshInterval || m.RefreshInterval > maxRefreshInterval {
 		return NewValidationError("invalid RefreshInterval (%s; expected %s <= interval <= %s)",
 			m.RefreshInterval, minRefreshInterval, maxRefreshInterval)
-	} else if m.Retention < 0 {
-		return NewValidationError("invalid Retention (%s; expected >= 0)", m.Retention)
 	}
+
+	// Retention requires no explicit validation (all values permitted).
+
 	return nil
+}
+
+func (x JournalSpec_Flag) Validate() error {
+	switch x {
+	case JournalSpec_NOT_SPECIFIED, JournalSpec_O_WRONLY, JournalSpec_O_RDONLY, JournalSpec_O_RDWR:
+		return nil
+	default:
+		return NewValidationError("invalid combination (%s)", x)
+	}
 }
 
 // MarshalString returns the marshaled encoding of the JournalSpec as a string.
@@ -130,8 +140,8 @@ func UnionJournalSpecs(a, b JournalSpec) JournalSpec {
 	if a.Fragment.Retention == 0 {
 		a.Fragment.Retention = b.Fragment.Retention
 	}
-	if a.ReadOnly == false {
-		a.ReadOnly = b.ReadOnly
+	if a.Flags == JournalSpec_NOT_SPECIFIED {
+		a.Flags = b.Flags
 	}
 	return a
 }
@@ -159,8 +169,8 @@ func IntersectJournalSpecs(a, b JournalSpec) JournalSpec {
 	if a.Fragment.Retention != b.Fragment.Retention {
 		a.Fragment.Retention = 0
 	}
-	if a.ReadOnly != b.ReadOnly {
-		a.ReadOnly = false
+	if a.Flags != b.Flags {
+		a.Flags = JournalSpec_NOT_SPECIFIED
 	}
 	return a
 }
@@ -188,8 +198,8 @@ func SubtractJournalSpecs(a, b JournalSpec) JournalSpec {
 	if a.Fragment.Retention == b.Fragment.Retention {
 		a.Fragment.Retention = 0
 	}
-	if a.ReadOnly == b.ReadOnly {
-		a.ReadOnly = false
+	if a.Flags == b.Flags {
+		a.Flags = JournalSpec_NOT_SPECIFIED
 	}
 	return a
 }

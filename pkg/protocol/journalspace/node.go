@@ -95,7 +95,7 @@ func (n *Node) Flatten() []Node {
 
 // HoistSpecs performs a bottom-up initialization of non-terminal "directory"
 // Node JournalSpec fields. Specifically, at each recursive step a parent Node
-// specification field is set if the value is shared by all of the Nodes
+// specification field is set if the value is shared by all of the Node's
 // direct Children. The field is then zeroed at each child in turn. After
 // hoisting, the overall repetition of JournalSpec fields in the tree is
 // minimized, as every field which is already implied by a parent is zeroed.
@@ -143,22 +143,22 @@ func ExtractTree(nodes []Node) Node {
 	nodes = append([]Node{}, nodes...)
 
 	for len(nodes) > 1 {
-		var b, e, l = 0, 0, -1
+		var beg, end, maxLen = 0, 0, -1
 
 		// Find longest run of Nodes having a maximal-length prefix.
 		for i := 1; i < len(nodes); i++ {
-			if ll := sharedPrefix(nodes[i].Name, nodes[i-1].Name); ll > l {
-				b, e, l = i-1, i+1, ll // |i| begins a new, longest-prefix run.
-			} else if ll == l && i == e {
-				e = i + 1 // |i| extends a current run.
+			if l := sharedPrefix(nodes[i].Name, nodes[i-1].Name); l > maxLen {
+				beg, end, maxLen = i-1, i+1, l // |i| begins a new, longest-prefix run.
+			} else if l == maxLen && i == end {
+				end = i + 1 // |i| extends a current run.
 			}
 		}
-		// Build and splice in a Node to parent and replace nodes[b:e].
+		// Build and splice in a Node to parent and replace nodes[beg:end].
 		var node = Node{
-			JournalSpec: pb.JournalSpec{Name: nodes[b].Name[:l]},
-			Children:    append([]Node{}, nodes[b:e]...),
+			JournalSpec: pb.JournalSpec{Name: nodes[beg].Name[:maxLen]},
+			Children:    append([]Node{}, nodes[beg:end]...),
 		}
-		nodes = append(nodes[:b], append([]Node{node}, nodes[e:]...)...)
+		nodes = append(nodes[:beg], append([]Node{node}, nodes[end:]...)...)
 	}
 	return nodes[0]
 }
