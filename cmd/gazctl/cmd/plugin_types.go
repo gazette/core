@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"crypto"
+	"hash/crc32"
 )
 
 // When shard_compose finds the same key in multiple different input sources, it has to select a single value
@@ -17,10 +17,10 @@ func First(key []byte, values [][]byte) []byte {
 // shard_split partitions a shard into multiple shards with smaller keyspaces. In order to do this partitioning, you must
 // specify how you want shards to choose where to put each key. This function takes in a key and the index
 // of the original shard you're processing and outputs an index for the new shard that it will be assigned to.
-type Split func(originalPartition int, key []byte) int
+type Split func(originalPartition int, currentTotalPartitions int, key []byte) int
 
 // Example of a Split function that splits keys in a shard in half arbitrarily
-func Halve(originalPartition int, key []byte) int {
-	h := crypto.MD5.New().Sum(key)
-	return originalPartition + int(h[len(h)-1])%2
+func Halve(originalPartition int, currentTotalPartitions int, key []byte) int {
+	h := crc32.ChecksumIEEE(key)
+	return originalPartition + int(h%2)*currentTotalPartitions
 }

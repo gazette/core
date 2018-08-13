@@ -111,7 +111,7 @@ func (p Partitioner) Assign(key []byte, value []byte) {
 		// journals, and we won't have to read them starting from the beginning of time.
 		part = p.currentShard
 	} else {
-		part = p.split(p.currentShard, key)
+		part = p.split(p.currentShard, p.currentTotalShards, key)
 	}
 
 	if _, hasKey := p.partitions[part]; !hasKey {
