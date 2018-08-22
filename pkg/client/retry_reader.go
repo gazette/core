@@ -13,9 +13,9 @@ import (
 )
 
 // RetryReader wraps Reader with error handling and retry behavior, as well as
-// support for cancellation of a ongoing Read RPC, restarts, and seeks.
-// RetryReader is not thread-safe, with one exception: Cancel may be called from
-// one goroutine to abort an ongoing Read call in another.
+// support for cancellation of an ongoing Read or Seek operation. RetryReader
+// is not thread-safe, with one exception: Cancel may be called from one
+// goroutine to abort an ongoing Read or Seek call in another.
 type RetryReader struct {
 	// Reader is the current underlying Reader of the RetryReader. This instance
 	// may change many times over the lifetime of a RetryReader, as Read RPCs
@@ -122,8 +122,10 @@ func (rr *RetryReader) Seek(offset int64, whence int) (int64, error) {
 		// |offset| is already absolute.
 	case io.SeekCurrent:
 		offset = rr.Reader.Request.Offset + offset
-	default:
+	case io.SeekEnd:
 		return rr.Reader.Request.Offset, errors.New("io.SeekEnd whence is not supported")
+	default:
+		panic("invalid whence")
 	}
 
 	if _, err := rr.Reader.Seek(offset, io.SeekStart); err != nil {
@@ -153,8 +155,10 @@ func (rr *RetryReader) AdjustedSeek(offset int64, whence int, br *bufio.Reader) 
 		// |offset| is already absolute.
 	case io.SeekCurrent:
 		offset = rr.AdjustedOffset(br) + offset
-	default:
+	case io.SeekEnd:
 		return rr.AdjustedOffset(br), errors.New("io.SeekEnd whence is not supported")
+	default:
+		panic("invalid whence")
 	}
 
 	var delta = offset - rr.AdjustedOffset(br)

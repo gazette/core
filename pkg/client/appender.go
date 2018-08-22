@@ -9,7 +9,7 @@ import (
 	pb "github.com/LiveRamp/gazette/pkg/protocol"
 )
 
-// Appender adapts an Append RPC to the io.WriteCloser interface. Its usages should
+// Appender adapts an Append RPC to the io.WriteCloser interface. Its usages
 // should be limited to cases where the full and complete buffer to append is
 // already available and can be immediately dispatched as, by design, an in-
 // progress RPC prevents the broker from serving other Append RPCs concurrently.
@@ -98,9 +98,15 @@ func (a *Appender) Abort() {
 
 func (a *Appender) lazyInit() (err error) {
 	if a.stream == nil {
+		if a.Request.Journal == "" {
+			return pb.NewValidationError("expected Request.Journal")
+		} else if err = a.Request.Validate(); err != nil {
+			return pb.ExtendContext(err, "Request")
+		}
 		a.stream, err = a.client.Append(WithJournalHint(a.ctx, a.Request.Journal))
 
 		if err == nil {
+			// Send request preamble metadata prior to append content chunks.
 			err = a.stream.SendMsg(&a.Request)
 		}
 	}

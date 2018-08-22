@@ -58,7 +58,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	}
 
 	// Is there remaining content in the last ReadResponse?
-	if l, d := len(r.Response.Content), int(r.Request.Offset-r.Response.Offset); l != 0 && d < l {
+	if l, d := len(r.Response.Content), int(r.Request.Offset-r.Response.Offset); l != 0 && l > d {
 		n = copy(p, r.Response.Content[d:])
 		r.Request.Offset += int64(n)
 		return
@@ -129,7 +129,9 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	// Otherwise, map Status of the preceding frame into a more specific error.
 	switch r.Response.Status {
 	case pb.Status_OK:
-		// Return err = io.EOF.
+		if err != io.EOF {
+			panic(err.Error()) // Status_OK implies graceful stream closure.
+		}
 	case pb.Status_NOT_JOURNAL_BROKER:
 		err = ErrNotJournalBroker
 	case pb.Status_OFFSET_NOT_YET_AVAILABLE:
@@ -157,8 +159,10 @@ func (r *Reader) Seek(offset int64, whence int) (int64, error) {
 		// |offset| is already absolute.
 	case io.SeekCurrent:
 		offset = r.Request.Offset + offset
-	default:
+	case io.SeekEnd:
 		return r.Request.Offset, errors.New("io.SeekEnd whence is not supported")
+	default:
+		panic("invalid whence")
 	}
 
 	if r.direct == nil || offset < r.Request.Offset || offset >= r.Response.Fragment.End {

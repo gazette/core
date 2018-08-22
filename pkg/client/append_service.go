@@ -317,7 +317,7 @@ func (fb *appendBuffer) flush() error {
 		// daisy-chain a new |fb.buf| to which our old |buf| is guaranteed to flush
 		// successfully.
 		var buf = fb.buf
-		fb.buf = bufio.NewWriterSize(fb, buf.Buffered()+buf.Available())
+		fb.buf = bufio.NewWriterSize(fb, buf.Size())
 
 		// Note Reset clears |buf.err| and leaves |buf.buf| alone, but zeroes |buf.n|.
 		// Strip buffer interfaces other than io.Writer.
