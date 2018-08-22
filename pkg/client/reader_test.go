@@ -57,7 +57,7 @@ func (s *ReaderSuite) TestOpenFragmentURLCases(c *gc.C) {
 	c.Check(err, gc.IsNil)
 
 	b, err = ioutil.ReadAll(rc)
-	c.Check(err, gc.Equals, ErrExpectedEOF)
+	c.Check(err, gc.Equals, ErrDidNotReadExpectedEOF)
 	c.Check(string(b), gc.Equals, "hello, world")
 
 	// Case: decompression fails.

@@ -250,7 +250,7 @@ func (fr *fragReader) Read(p []byte) (n int, err error) {
 	if fr.fragment.Begin > fr.fragment.End {
 		// Did we somehow read beyond Fragment.End?
 		n -= int(fr.fragment.Begin - fr.fragment.End)
-		err = ErrExpectedEOF
+		err = ErrDidNotReadExpectedEOF
 	} else if err == io.EOF && fr.fragment.Begin != fr.fragment.End {
 		// Did we read EOF before the reaching Fragment.End?
 		err = io.ErrUnexpectedEOF
@@ -287,7 +287,7 @@ var (
 	ErrOffsetJump            = errors.New("offset jump")
 
 	ErrSeekRequiresNewReader = errors.New("seek offset requires new Reader")
-	ErrExpectedEOF           = errors.New("did not read EOF at expected Fragment.End")
+	ErrDidNotReadExpectedEOF = errors.New("did not read EOF at expected Fragment.End")
 
 	// httpClient is the http.Client used by OpenFragmentURL
 	httpClient = http.DefaultClient
