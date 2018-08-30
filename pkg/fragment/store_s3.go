@@ -54,6 +54,26 @@ func s3SignGET(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, erro
 	return req.Presign(d)
 }
 
+func s3Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (bool, error) {
+	var cfg, client, err = s3Client(ep)
+	if err != nil {
+		return false, err
+	}
+
+	// First test whether the Spool has been uploaded by another broker.
+	var headObj = s3.HeadObjectInput{
+		Bucket: aws.String(cfg.bucket),
+		Key:    aws.String(cfg.prefix + fragment.ContentPath()),
+	}
+	if _, err = client.HeadObjectWithContext(ctx, &headObj); err == nil {
+		return true, nil
+	} else if awsErr, ok := err.(awserr.RequestFailure); ok && awsErr.StatusCode() == http.StatusNotFound {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
 func s3Open(ctx context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
 	var cfg, client, err = s3Client(ep)
 	if err != nil {
@@ -77,29 +97,17 @@ func s3Persist(ctx context.Context, ep *url.URL, spool Spool) error {
 		return err
 	}
 
-	// First test whether the Spool has been uploaded by another broker.
-	var headObj = s3.HeadObjectInput{
-		Bucket: aws.String(cfg.bucket),
-		Key:    aws.String(cfg.prefix + spool.ContentPath()),
-	}
-	if _, err = client.HeadObjectWithContext(ctx, &headObj); err == nil {
-		return nil // Spool already persisted. We're done.
-	} else if awsErr, ok := err.(awserr.RequestFailure); !ok || awsErr.StatusCode() != http.StatusNotFound {
-		return err
-	}
-
 	var putObj = s3.PutObjectInput{
-		Bucket:               headObj.Bucket,
-		Key:                  headObj.Key,
+		Bucket:               aws.String(cfg.bucket),
+		Key:                  aws.String(cfg.prefix + spool.ContentPath()),
 		ServerSideEncryption: aws.String(s3.ServerSideEncryptionAes256),
 	}
 
-	if spool.CompressionCodec != pb.CompressionCodec_NONE {
-		// Ensure |compressedFile| is ready. This is a no-op if compressed incrementally.
-		spool.finishCompression()
-		putObj.Body = io.NewSectionReader(spool.compressedFile, 0, spool.compressedLength)
-	} else {
+	switch spool.CompressionCodec {
+	case pb.CompressionCodec_NONE:
 		putObj.Body = io.NewSectionReader(spool.File, 0, spool.ContentLength())
+	default:
+		putObj.Body = io.NewSectionReader(spool.compressedFile, 0, spool.compressedLength)
 	}
 
 	if cfg.ACL != "" {

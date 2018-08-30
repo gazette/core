@@ -20,6 +20,18 @@ func fsURL(ep *url.URL, fragment pb.Fragment) string {
 	return "file://" + ep.Path + fragment.ContentPath()
 }
 
+func fsExists(ep *url.URL, fragment pb.Fragment) (bool, error) {
+	var path = filepath.Join(*FileSystemStoreRoot, filepath.FromSlash(ep.Path+fragment.ContentPath()))
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false, nil
+	} else if err == nil {
+		return true, nil
+	} else {
+		return false, err
+	}
+}
+
 func fsOpen(ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
 	var path = filepath.Join(*FileSystemStoreRoot, filepath.FromSlash(ep.Path+fragment.ContentPath()))
 	var f, err = os.Open(path)
@@ -31,15 +43,6 @@ func fsPersist(ep *url.URL, spool Spool) error {
 
 	// Create the journal's fragment directory, if not already present.
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
-		return err
-	}
-
-	// Test if |path| exists already.
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		// Pass.
-	} else if err == nil {
-		// Already persisted; we're done.
-	} else {
 		return err
 	}
 

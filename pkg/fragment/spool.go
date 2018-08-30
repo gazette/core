@@ -16,7 +16,7 @@ import (
 
 // Spool is a Fragment which is in the process of being created, backed by a
 // local *os.File. As commits occur and the file extent is updated, the Spool
-// Fragment is also be updated to reflect the new committed extent. At all
+// Fragment is also updated to reflect the new committed extent. At all
 // times, the Spool Fragment is a consistent, valid Fragment.
 type Spool struct {
 	// Fragment at time of last commit.

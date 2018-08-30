@@ -310,7 +310,7 @@ func (s *SetSuite) TestSetDifference(c *gc.C) {
 	})
 }
 
-func (s *SetSuite) TestIssue97Regression(c *gc.C) {
+func (s *SetSuite) TestParseWithMultipleOverlaps(c *gc.C) {
 	var set Set
 
 	f, _ := protocol.ParseContentName("a/journal",

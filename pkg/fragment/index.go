@@ -21,8 +21,8 @@ type Index struct {
 	ctx            context.Context // Context over the lifetime of the Index.
 	set            Set             // All Fragments of the index (local and remote).
 	local          Set             // Local Fragments only (having non-nil File).
-	condCh         chan struct{}   // Notifies blocked queries that |set| was updated.
-	firstRefreshCh chan struct{}   // Notifies that the first remote index load has completed.
+	condCh         chan struct{}   // Condition variable; notifies blocked queries on each |set| update.
+	firstRefreshCh chan struct{}   // Closed when the first remote index load has completed.
 	mu             sync.RWMutex    // Guards |set| and |condCh|.
 }
 

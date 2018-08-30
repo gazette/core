@@ -29,7 +29,5 @@ func removeFileFinalizer(f *os.File) {
 	}
 	if err := os.Remove(f.Name()); err != nil {
 		logrus.WithFields(logrus.Fields{"name": f.Name(), "err": err}).Error("failed to Remove file in finalizer")
-	} else {
-		logrus.WithFields(logrus.Fields{"name": f.Name()}).Error("removed file in finalizer")
 	}
 }
