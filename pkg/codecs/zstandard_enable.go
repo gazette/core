@@ -1,4 +1,4 @@
-// +build !windows
+// +build !nozstd
 
 package codecs
 
@@ -9,6 +9,6 @@ import (
 )
 
 func init() {
-	zstdNewReader = zstd.NewReader
-	zstdNewWriter = func(w io.Writer) io.WriteCloser { return zstd.NewWriter(w) }
+	zstdNewReader = func(r io.Reader) (io.ReadCloser, error) { return zstd.NewReader(r), nil }
+	zstdNewWriter = func(w io.Writer) (io.WriteCloser, error) { return zstd.NewWriter(w), nil }
 }

@@ -29,7 +29,7 @@ func NewCodecReader(r io.Reader, codec pb.CompressionCodec) (Decompressor, error
 	case pb.CompressionCodec_SNAPPY:
 		return ioutil.NopCloser(snappy.NewReader(r)), nil
 	case pb.CompressionCodec_ZSTANDARD:
-		return zstdNewReader(r), nil
+		return zstdNewReader(r)
 	default:
 		return nil, fmt.Errorf("unsupported codec %s", codec.String())
 	}
@@ -44,7 +44,7 @@ func NewCodecWriter(w io.Writer, codec pb.CompressionCodec) (Compressor, error) 
 	case pb.CompressionCodec_SNAPPY:
 		return snappy.NewBufferedWriter(w), nil
 	case pb.CompressionCodec_ZSTANDARD:
-		return zstdNewWriter(w), nil
+		return zstdNewWriter(w)
 	default:
 		return nil, fmt.Errorf("unsupported codec %s", codec.String())
 	}
@@ -55,6 +55,10 @@ type nopWriteCloser struct{ io.Writer }
 func (nopWriteCloser) Close() error { return nil }
 
 var (
-	zstdNewReader = func(io.Reader) io.ReadCloser { panic("ZSTANDARD was not enabled at compile time") }
-	zstdNewWriter = func(io.Writer) io.WriteCloser { panic("ZSTANDARD was not enabled at compile time") }
+	zstdNewReader = func(io.Reader) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("ZSTANDARD was not enabled at compile time")
+	}
+	zstdNewWriter = func(io.Writer) (io.WriteCloser, error) {
+		return nil, fmt.Errorf("ZSTANDARD was not enabled at compile time")
+	}
 )
