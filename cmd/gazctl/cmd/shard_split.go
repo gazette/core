@@ -25,7 +25,8 @@ in the local output path as pairs of hex-encoded keys and values, in a format th
 
 By default, this function will split a shard in half arbitrarily, by taking a hashmod. You can split shards in a custom way by
 adding a config called "split.plugin" pointing to a .so plugin containing an implementation of the Split type 
-as defined in plugin_types.go.'
+as defined in plugin_types.go. The key containing the latest offset that the shard has read will always be left
+in the current shard, as long as the consumer-journal name provided is the correct.'
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 5 {
