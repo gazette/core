@@ -350,11 +350,15 @@ func getJournalLag(etcdOffsets, writeHeads, readHeads map[string]int64, cdata *c
 			// be less than that amount.)
 			state = "Recovering"
 			readHead = etcdOffsets[journal]
+			log.WithFields(log.Fields{"consumerShardStatus": "Recovering", "journal": journal}).Warn(
+				"Consumer shard is recovering.")
 		} else if readHead == journalNotBeingRead {
 			// The shard is not recovering, but is not busy reading the
 			// journal.
 			state = "NotReading"
 			readHead = etcdOffsets[journal]
+			log.WithFields(log.Fields{"consumerShardStatus": "NotReading", "journal": journal}).Warn(
+				"Consumer shard is not reading the journal.")
 		} else if readHead < etcdOffsets[journal] {
 			// The shard is not recovering and is actively reading. The
 			// offsets stored for this shard in Etcd exceed the ones reported
