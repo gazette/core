@@ -22,12 +22,6 @@
   version = "v0.5.0"
 
 [[projects]]
-  name = "github.com/DataDog/zstd"
-  packages = ["."]
-  revision = "aebefd9fcb99f22cd691ef778a12ed68f0e6a1ab"
-  version = "v1.3.4"
-
-[[projects]]
   name = "github.com/aws/aws-sdk-go"
   packages = [
     "aws",
@@ -264,12 +258,6 @@
 
 [[projects]]
   branch = "master"
-  name = "github.com/golang/snappy"
-  packages = ["."]
-  revision = "2e65f85255dbc3072edf28d6b5b8efc472979f5a"
-
-[[projects]]
-  branch = "master"
   name = "github.com/google/btree"
   packages = ["."]
   revision = "e89373fe6b4a7413d7acd6da1725b83ef713e6e4"
@@ -362,21 +350,6 @@
   packages = ["."]
   revision = "2eee05ed794112d45db504eb05aa693efd2b8b09"
   version = "v0.1.0"
-
-[[projects]]
-  name = "github.com/klauspost/compress"
-  packages = [
-    "flate",
-    "gzip"
-  ]
-  revision = "b939724e787a27c0005cabe3f78e7ed7987ac74f"
-  version = "v1.4.0"
-
-[[projects]]
-  name = "github.com/klauspost/cpuid"
-  packages = ["."]
-  revision = "ae7887de9fa5d2db4eaa8174a7eff2c1ac00f2da"
-  version = "v1.1"
 
 [[projects]]
   name = "github.com/kr/fs"
@@ -787,6 +760,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "7ff48041d7d274e1eef0193e1c5322a59143e8743f396f9a30936ad733ff71a7"
+  inputs-digest = "bb9c569dc67ab645981f23812fc99aca1564c4b3da4315344c12ca78af4aaf1e"
   solver-name = "gps-cdcl"
   solver-version = 1
