@@ -88,15 +88,15 @@ var (
 	}, []string{"consumer", "journal"})
 )
 
-//func GazconsumerShardStates() []*prometheus.GaugeVec {
-//	return []*prometheus.GaugeVec{
-//		GazconsumerShardIsNotReading,
-//		GazconsumerShardIsNoOwner,
-//		GazconsumerShardIsEtcdAhead,
-//		GazconsumerShardIsOK,
-//		GazconsumerShardIsRecovering,
-//	}
-//}
+func GazconsumerShardStates() []*prometheus.GaugeVec {
+	return []*prometheus.GaugeVec{
+		GazconsumerShardIsNotReading,
+		GazconsumerShardIsNoOwner,
+		GazconsumerShardIsEtcdAhead,
+		GazconsumerShardIsOK,
+		GazconsumerShardIsRecovering,
+	}
+}
 
 func GazconsumerCollectors() []prometheus.Collector {
 	return []prometheus.Collector{
