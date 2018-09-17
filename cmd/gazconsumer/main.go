@@ -43,6 +43,14 @@ const (
 	stateOK             = "OK"
 	stateEtcdAhead      = "EtcdAhead"
 	stateNoOwner        = "NoOwner"
+
+	// Keys for gazconsumer metrics.
+	GazconsumerLagBytesKey          = "gazconsumer_lag_bytes"
+	GazconsumerShardIsRecoveringKey = "gazconsumer_shard_is_recovering"
+	GazconsumerShardIsNotReadingKey = "gazconsumer_shard_is_not_reading"
+	GazconsumerShardIsOKKey         = "gazconsumer_shard_is_ok"
+	GazconsumerShardIsEtcdAheadKey  = "gazconsumer_shard_is_etcd_ahead"
+	GazconsumerShardIsNoOwnerKey    = "gazconsumer_shard_is_no_owner"
 )
 
 var (
@@ -60,6 +68,34 @@ var (
 	keysAPI       etcd.KeysAPI
 	gazetteClient *gazette.Client
 	httpClient    *http.Client
+
+	// Collectors for gazconsumer metrics.
+	GazconsumerLagBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: GazconsumerLagBytesKey,
+		Help: "Lag of the consumer on a per shard basis.",
+	}, []string{"consumer"})
+
+	// Binary metrics that indicate whether the shard is in a particular state.
+	GazconsumerShardIsRecovering = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: GazconsumerShardIsRecoveringKey,
+		Help: "Binary value where 1 indicates shard state is 'Recovering', and 0 otherwise.",
+	}, []string{"consumer", "journal"})
+	GazconsumerShardIsNotReading = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: GazconsumerShardIsNotReadingKey,
+		Help: "Binary value where 1 indicates shard state is 'Not Reading', and 0 otherwise.",
+	}, []string{"consumer", "journal"})
+	GazconsumerShardIsOK = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: GazconsumerShardIsOKKey,
+		Help: "Binary value where 1 indicates shard state is 'OK', and 0 otherwise.",
+	}, []string{"consumer", "journal"})
+	GazconsumerShardIsEtcdAhead = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: GazconsumerShardIsEtcdAheadKey,
+		Help: "Binary value where 1 indicates shard state is 'Etcd Ahead', and 0 otherwise.",
+	}, []string{"consumer", "journal"})
+	GazconsumerShardIsNoOwner = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: GazconsumerShardIsNoOwnerKey,
+		Help: "Binary value where 1 indicates shard state is 'No Owner', and 0 otherwise.",
+	}, []string{"consumer", "journal"})
 )
 
 type varsData struct {
@@ -104,6 +140,27 @@ func (cd consumerData) totalLag() int64 {
 	return res
 }
 
+func GazconsumerShardStates() []*prometheus.GaugeVec {
+	return []*prometheus.GaugeVec{
+		GazconsumerShardIsNotReading,
+		GazconsumerShardIsNoOwner,
+		GazconsumerShardIsEtcdAhead,
+		GazconsumerShardIsOK,
+		GazconsumerShardIsRecovering,
+	}
+}
+
+func GazconsumerCollectors() []prometheus.Collector {
+	return []prometheus.Collector{
+		GazconsumerLagBytes,
+		GazconsumerShardIsRecovering,
+		GazconsumerShardIsNotReading,
+		GazconsumerShardIsOK,
+		GazconsumerShardIsNoOwner,
+		GazconsumerShardIsEtcdAhead,
+	}
+}
+
 func main() {
 	defer mainboilerplate.LogPanic()
 
@@ -135,7 +192,7 @@ func main() {
 
 	checkConsumers(consumerList)
 	if *monitor {
-		prometheus.MustRegister(metrics.GazconsumerCollectors()...)
+		prometheus.MustRegister(GazconsumerCollectors()...)
 		prometheus.MustRegister(metrics.GazetteClientCollectors()...)
 
 		for _ = range time.Tick(*monitorInterval) {
@@ -164,21 +221,21 @@ func checkConsumers(consumerList []string) {
 
 // Log metrics based on the consumer's data; namely, total lag and the state of each shard.
 func updateConsumerMetrics(cdata consumerData, consumer string) {
-	metrics.GazconsumerLagBytes.WithLabelValues(consumer).Set(float64(cdata.totalLag()))
+	GazconsumerLagBytes.WithLabelValues(consumer).Set(float64(cdata.totalLag()))
 
 	var currentState *prometheus.GaugeVec
 	for journal, data := range cdata.journals {
 		switch data.state {
 		case stateNotReading:
-			currentState = metrics.GazconsumerShardIsNotReading
+			currentState = GazconsumerShardIsNotReading
 		case stateNoOwner:
-			currentState = metrics.GazconsumerShardIsNoOwner
+			currentState = GazconsumerShardIsNoOwner
 		case stateEtcdAhead:
-			currentState = metrics.GazconsumerShardIsEtcdAhead
+			currentState = GazconsumerShardIsEtcdAhead
 		case stateOK:
-			currentState = metrics.GazconsumerShardIsOK
+			currentState = GazconsumerShardIsOK
 		case stateRecovering:
-			currentState = metrics.GazconsumerShardIsRecovering
+			currentState = GazconsumerShardIsRecovering
 		default:
 			log.WithFields(log.Fields{
 				"consumer": consumer,
@@ -187,7 +244,7 @@ func updateConsumerMetrics(cdata consumerData, consumer string) {
 			}).Warn("Unknown state encountered for consumer shard.")
 			continue
 		}
-		for _, m := range metrics.GazconsumerShardStates() {
+		for _, m := range GazconsumerShardStates() {
 			if m == currentState {
 				m.WithLabelValues(consumer, journal).Set(1)
 			} else {

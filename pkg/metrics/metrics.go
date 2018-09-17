@@ -48,67 +48,6 @@ func GazetteCollectors() []prometheus.Collector {
 	}
 }
 
-// Keys for gazconsumer metrics.
-const (
-	GazconsumerLagBytesKey          = "gazconsumer_lag_bytes"
-	GazconsumerShardIsRecoveringKey = "gazconsumer_shard_is_recovering"
-	GazconsumerShardIsNotReadingKey = "gazconsumer_shard_is_not_reading"
-	GazconsumerShardIsOKKey         = "gazconsumer_shard_is_ok"
-	GazconsumerShardIsEtcdAheadKey  = "gazconsumer_shard_is_etcd_ahead"
-	GazconsumerShardIsNoOwnerKey    = "gazconsumer_shard_is_no_owner"
-)
-
-// Collectors for gazconsumer metrics.
-var (
-	GazconsumerLagBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: GazconsumerLagBytesKey,
-		Help: "Lag of the consumer on a per shard basis.",
-	}, []string{"consumer"})
-
-	// Binary metrics that indicate whether the shard is in a particular state.
-	GazconsumerShardIsRecovering = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: GazconsumerShardIsRecoveringKey,
-		Help: "Binary value where 1 indicates shard state is 'Recovering', and 0 otherwise.",
-	}, []string{"consumer", "journal"})
-	GazconsumerShardIsNotReading = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: GazconsumerShardIsNotReadingKey,
-		Help: "Binary value where 1 indicates shard state is 'Not Reading', and 0 otherwise.",
-	}, []string{"consumer", "journal"})
-	GazconsumerShardIsOK = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: GazconsumerShardIsOKKey,
-		Help: "Binary value where 1 indicates shard state is 'OK', and 0 otherwise.",
-	}, []string{"consumer", "journal"})
-	GazconsumerShardIsEtcdAhead = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: GazconsumerShardIsEtcdAheadKey,
-		Help: "Binary value where 1 indicates shard state is 'Etcd Ahead', and 0 otherwise.",
-	}, []string{"consumer", "journal"})
-	GazconsumerShardIsNoOwner = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: GazconsumerShardIsNoOwnerKey,
-		Help: "Binary value where 1 indicates shard state is 'No Owner', and 0 otherwise.",
-	}, []string{"consumer", "journal"})
-)
-
-func GazconsumerShardStates() []*prometheus.GaugeVec {
-	return []*prometheus.GaugeVec{
-		GazconsumerShardIsNotReading,
-		GazconsumerShardIsNoOwner,
-		GazconsumerShardIsEtcdAhead,
-		GazconsumerShardIsOK,
-		GazconsumerShardIsRecovering,
-	}
-}
-
-func GazconsumerCollectors() []prometheus.Collector {
-	return []prometheus.Collector{
-		GazconsumerLagBytes,
-		GazconsumerShardIsRecovering,
-		GazconsumerShardIsNotReading,
-		GazconsumerShardIsOK,
-		GazconsumerShardIsNoOwner,
-		GazconsumerShardIsEtcdAhead,
-	}
-}
-
 // Keys for gazretention metrics.
 const (
 	GazretentionDeletedBytesTotalKey      = "gazretention_deleted_bytes_total"
