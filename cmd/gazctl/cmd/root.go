@@ -81,7 +81,7 @@ func etcdClient() etcd.Client {
 		}
 
 		var err error
-		lazyEtcdClient, err = etcd.New(etcd.Config{Endpoints: []string{ep}})
+		lazyEtcdClient, err = etcd.New(etcd.Config{Endpoints: []string{"http://" + ep}})
 		if err != nil {
 			log.WithField("err", err).Fatal("building etcd client")
 		}
