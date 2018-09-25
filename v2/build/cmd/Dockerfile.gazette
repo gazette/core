@@ -1,0 +1,5 @@
+FROM gazette-build:latest AS build
+
+FROM liveramp/gazette-base:2.0.0
+COPY --from=build /go/bin/gazette /go/bin
+COPY --from=build /go/bin/gazctl /go/bin
