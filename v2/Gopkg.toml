@@ -25,23 +25,6 @@ required = [
 ]
 
 [[constraint]]
-  name = "github.com/aws/aws-sdk-go"
-  version = "1.12.19"
-
-[[constraint]]
-  name = "github.com/pkg/sftp"
-  version = "1.0.0"
-
-[[constraint]]
-  name = "github.com/satori/go.uuid"
-  version = "1.1.0"
-
-[[constraint]]
-  name = "github.com/youtube/vitess"
-  version = "2.1.1"
-
-# Use an old, pinned version of the cockroach DB keyspace encoding utilities.
-[[constraint]]
   name = "github.com/cockroachdb/cockroach"
   branch = "master"
   source = "https://github.com/jgraettinger/cockroach-encoding.git"
