@@ -1,0 +1,55 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ template "gazette.fullname" . }}
+  labels:
+    app: {{ template "gazette.name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "gazette.name" . }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args: [
+          "/go/bin/gazette", "serve",
+          "--broker.zone={{ .Values.zone }}",
+          "--broker.port={{ .Values.service.port }}",
+          "--etcd.address={{ .Values.etcd.endpoint }}",
+          "--etcd.prefix={{ .Values.etcd.prefix }}",
+          "--debug.port={{ .Values.service.monitoringPort }}",
+        ]
+        env:
+        - name: BROKER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: BROKER_HOST
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        {{ if .Values.aws }}
+        - name: AWS_ACCESS_KEY_ID
+          value: {{ .Values.aws.accessKeyID }}
+        - name: AWS_SECRET_ACCESS_KEY
+          value: {{ .Values.aws.secretKey }}
+        - name: AWS_REGION
+          value: {{ .Values.aws.defaultRegion }}
+        {{ end }}
+        ports:
+        - containerPort: {{ .Values.service.port }}
+          name: service
+        - containerPort: {{ .Values.service.monitoringPort }}
+          name: monitoring
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.service.port }}
+      terminationGracePeriodSeconds: 21600

@@ -1,0 +1,19 @@
+# Default values for word-count.
+# This is a YAML-formatted file.
+
+replicaCount: 3
+image:
+  repository: word-count
+  tag: latest
+  pullPolicy: IfNotPresent
+service:
+  name: word-count
+  type: ClusterIP
+  port: 8080
+  monitoringPort: 8090
+zone: "local"
+etcd:
+  endpoint: "http://replace-with-etcd-address"
+  prefix: "/gazette/consumers/word-count"
+gazette:
+  endpoint: "http://replace-with-gazette-address"

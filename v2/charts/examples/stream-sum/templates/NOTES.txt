@@ -1,0 +1,24 @@
+The `stream-sum` example is now running. The `summer` consumers consume chunks of data streams emitted by `chunker`
+jobs to the `examples/stream-sum/chunks` topic. When a stream completes, the `summer` emits a final computed sum to
+the `examples/stream-sum/sums` journal. The `chunker` jobs inspect this journal and verify expected sums match,
+and exit normally when all streams have been completed and verified.
+
+For extra fun, `summer` pods and `gazette` brokers can be terminated or hard-killed, and the example _must_ still
+complete successfully. The `chunker` jobs and `summer` pods will crash loudly if a detected invariant is violated
+(eg, messages arrive out-of-order or are altogether missing, computed sums are incorrect, etc).
+
+1. Get the application URL by running these commands:
+{{- if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ template "stream-sum.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           You can watch the status of by running 'kubectl get svc -w {{ template "stream-sum.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ template "stream-sum.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo http://$SERVICE_IP:{{ .Values.service.externalPort }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app={{ template "stream-sum.name" . }},release={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl port-forward $POD_NAME 8080:{{ .Values.service.internalPort }}
+{{- end }}
