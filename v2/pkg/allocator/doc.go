@@ -6,4 +6,4 @@
 // Allocator coordinates through Etcd, and uses a greedy, incremental maximum-
 // flow solver to quickly determine minimal re-Assignments which best balance
 // Items across Members (subject to constraints).
-package v3_allocator
+package allocator
