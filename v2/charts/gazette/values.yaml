@@ -1,0 +1,19 @@
+# Default values for gazette.
+# This is a YAML-formatted file.
+
+replicaCount: 3
+image:
+  repository: gazette
+  tag: latest
+  pullPolicy: IfNotPresent
+service:
+  name: gazette
+  type: ClusterIP
+  port: 8080
+  monitoringPort: 8090
+zone: "local"
+etcd:
+  endpoint: "http://replace-with-etcd-address"
+  prefix: "/gazette/brokers"
+aws:
+  defaultRegion: us-east-1

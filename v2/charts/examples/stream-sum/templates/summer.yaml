@@ -1,0 +1,50 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ template "stream-sum.fullname" . }}-summer
+  labels:
+    app: {{ template "stream-sum.name" . }}-summer
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "stream-sum.name" . }}-summer
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}-summer
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args: [
+          "/go/bin/run-consumer", "serve",
+          "--consumer.module=/go/bin/summer.so",
+          "--consumer.zone={{ .Values.zone }}",
+          "--consumer.port={{ .Values.service.port }}",
+          "--broker.address={{ .Values.gazette.endpoint }}",
+          "--broker.cache.size=256",
+          "--etcd.address={{ .Values.etcd.endpoint }}",
+          "--etcd.prefix={{ .Values.etcd.prefix }}",
+          "--debug.port={{ .Values.service.monitoringPort }}",
+        ]
+        env:
+        - name: CONSUMER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: CONSUMER_HOST
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: {{ .Values.service.port }}
+          name: service
+        - containerPort: {{ .Values.service.monitoringPort }}
+          name: monitoring
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.service.port }}
+      terminationGracePeriodSeconds: 21600
