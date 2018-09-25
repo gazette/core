@@ -3,7 +3,7 @@ package journalspace
 import (
 	"testing"
 
-	pb "github.com/LiveRamp/gazette/pkg/protocol"
+	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 	gc "github.com/go-check/check"
 )
 
