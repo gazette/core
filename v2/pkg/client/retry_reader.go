@@ -86,7 +86,7 @@ func (rr *RetryReader) Read(p []byte) (n int, err error) {
 		case io.EOF, ErrNotJournalBroker:
 			// Suppress logging for expected errors.
 		default:
-			log.WithFields(log.Fields{"journal": rr.Journal(), "offset": rr.Offset(), "err": err}).
+			log.WithFields(log.Fields{"journal": rr.Journal(), "offset": rr.Offset(), "err": err, "i": i}).
 				Warn("read failure (will retry)")
 		}
 

@@ -103,7 +103,14 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 			r.Request.Offset = r.Response.Offset
 			err = ErrOffsetJump
 		}
-		// Return empty read, to allow inspection of the updated |r.Response|.
+
+		if r.Response.Status == pb.Status_OK {
+			// Return empty read, to allow inspection of the updated |r.Response|.
+		} else {
+			// The broker will send a stream closure following a !OK status.
+			// Recurse to read that closure, and _then_ return a final error.
+			n, err = r.Read(p)
+		}
 		return
 
 	} else if err != io.EOF {
