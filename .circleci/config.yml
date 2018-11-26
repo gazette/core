@@ -1,8 +1,6 @@
 version: 2
 jobs:
   build:
-    docker:
-      - image: docker:stable
     steps:
       - checkout
 
