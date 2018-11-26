@@ -1,11 +1,17 @@
 version: 2
 jobs:
   build:
+    docker:
+      - image: docker:stable
     steps:
       - checkout
 
       - setup_remote_docker:
           docker_layer_caching: true
+
+      - run:
+          name: Install tools
+          command: apk add --no-cache bash
 
       - run:
           name: Build and test V1 Gazette
