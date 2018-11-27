@@ -1,6 +1,6 @@
 version: 2
 jobs:
-  build:
+  build_v1:
     docker:
       - image: docker:stable
     steps:
@@ -25,6 +25,21 @@ jobs:
           name: Build V1 stream-sum example
           command: docker build . --file build/examples/Dockerfile.stream-sum
 
+  build_v2:
+    docker:
+      - image: docker:stable
+    steps:
+      - checkout
+
+      - setup_remote_docker:
+          docker_layer_caching: true
+
       - run:
           name: Build and test V2 Gazette
           command: ./v2/build/all.sh
+workflows:
+  version: 2
+  build_and_build:
+    jobs:
+      - build_v1
+      - build_v2
