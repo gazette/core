@@ -11,7 +11,7 @@ docker build ${ROOT} \
     --file ${ROOT}/v2/build/Dockerfile \
     --target build \
     --tag liveramp/gazette-build:latest \
-    --cache-from liveramp/gazette-build:latest
+    --cache-from liveramp/gazette-base:2.1.0
 
 # Create the `gazette` image, which plucks the `gazette`, `gazctl` and
 # `run-consumer` onto a base runtime image.
