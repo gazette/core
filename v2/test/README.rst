@@ -34,7 +34,7 @@ for test JournalSpec fixtures, but if needed additional buckets can be created:
 .. code-block:: console
 
   # Port-forward to the running Minio pod.
-  $ alias minio_pod="kubectl get pod -l release=minio -o jsonpath='{.items[0].metadata.name}'"
+  $ alias minio_pod="kubectl get pod -l app=minio -o jsonpath='{.items[0].metadata.name}'"
   $ kubectl port-forward $(minio_pod) 9000
 
   # Access the Minio web UI.
