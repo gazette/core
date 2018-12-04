@@ -17,14 +17,6 @@ docker build ${ROOT} \
 
 # Create the `gazette` image, which plucks the `gazette`, `gazctl` and
 # `run-consumer` onto a base runtime image.
-#
-# Note: Using "--cache-from" is a workaround for unexpected cache behavior on
-# CircleCI. Without it, the image layers of previous stages would not be used
-# and the entire multi-stage build would be done from scratch. This occurs
-# despite the previous stage being built in the prior call and it being a
-# subset of the layers of this target. This note similarly applies to the
-# "examples" target where every previous stage referenced must be explicitly
-# included.
 docker build ${ROOT} \
     --file ${ROOT}/v2/build/Dockerfile \
     --target gazette \
