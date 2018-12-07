@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"crypto/sha1"
 	"time"
 
 	"github.com/LiveRamp/gazette/v2/pkg/allocator"
@@ -252,6 +253,58 @@ func (s *ReplicaSuite) TestBasicHealthCheck(c *gc.C) {
 		c.Check(a.Decoded.(allocator.Assignment).AssignmentValue.(*pb.Route),
 			gc.DeepEquals, &pb.Route{Members: []pb.ProcessSpec_ID{broker.id, peer.id}})
 	}
+}
+
+func (s *ReplicaSuite) TestHealthCheckWithFlush(c *gc.C) {
+	var tf, cleanup = newTestFixture(c)
+	defer cleanup()
+	defer func(f func() time.Time) { timeNow = f }(timeNow)
+
+	var secondsToNanoSeconds = 1000000000
+	var rm = newReplicationMock(c)
+	defer rm.cancel()
+
+	var summer = sha1.New()
+	var _, _ = summer.Write([]byte("valid content"))
+	// Prime replication mock with spool with data.
+	var spool = <-rm.spoolCh
+	spool.Begin = 0
+	spool.End = 10
+	spool.FirstAppendTime = 21000
+	spool.Sum = pb.SHA1SumFromDigest(summer.Sum(nil))
+	rm.spoolCh <- spool
+
+	// 6 hours + 10 minutes in seconds
+	var fixedtime int64 = 22200
+	timeNow = func() time.Time { return time.Unix(fixedtime, 0) }
+	flushIntervalSpec := pb.JournalSpec{
+		Name:        "a/journal",
+		Replication: 1,
+		Fragment: pb.JournalSpec_Fragment{
+			// 6 hours in seconds
+			FlushInterval: time.Duration(21600 * secondsToNanoSeconds),
+		},
+	}
+
+	var processSpecs = []pb.ProcessSpec_ID{{Zone: "local", Suffix: "broker"}}
+	var broker = newTestBroker(c, tf, processSpecs[0], newReadyReplica)
+	newTestJournal(c, tf, flushIntervalSpec, broker.id)
+
+	var res, err = broker.resolve(resolveArgs{ctx: tf.ctx, journal: "a/journal"})
+	c.Check(err, gc.IsNil)
+
+	// remove pipeline from channel to be replaced with pipeline with mocked observer
+	_ = <-res.replica.pipelineCh
+	var hdr = rm.header(0, 100)
+	hdr.Route.Members = processSpecs
+	hdr.Route.Primary = 0
+	var stubPipeline = rm.newPipeline(hdr)
+	go func() { res.replica.pipelineCh <- stubPipeline }()
+
+	_, err = checkHealth(res, broker.MustClient(), tf.etcd)
+	c.Check(err, gc.IsNil)
+
+	c.Check(rm.completes[0].Sum, gc.DeepEquals, pb.SHA1SumFromDigest(summer.Sum(nil)))
 }
 
 var _ = gc.Suite(&ReplicaSuite{})

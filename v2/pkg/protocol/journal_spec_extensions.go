@@ -163,6 +163,9 @@ func UnionJournalSpecs(a, b JournalSpec) JournalSpec {
 	if a.Fragment.Retention == 0 {
 		a.Fragment.Retention = b.Fragment.Retention
 	}
+	if a.Fragment.FlushInterval == 0 {
+		a.Fragment.FlushInterval = b.Fragment.FlushInterval
+	}
 	if a.Flags == JournalSpec_NOT_SPECIFIED {
 		a.Flags = b.Flags
 	}

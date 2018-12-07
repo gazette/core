@@ -269,16 +269,7 @@ func updateProposal(cur pb.Fragment, spec pb.JournalSpec_Fragment) (pb.Fragment,
 		return cur, false
 	}
 
-	var next = cur
-	next.Begin = next.End
-	next.Sum = pb.SHA1Sum{}
-	next.CompressionCodec = spec.CompressionCodec
-
-	if len(spec.Stores) != 0 {
-		next.BackingStore = spec.Stores[0]
-	} else {
-		next.BackingStore = ""
-	}
+	var next = getFragmentFlushProposal(cur, spec)
 	return next, next != cur
 }
 
