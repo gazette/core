@@ -244,7 +244,6 @@ func (s *AppendSuite) TestAppendOffsetReset(c *gc.C) {
 		Status: pb.Status_INDEX_HAS_GREATER_OFFSET,
 		Header: &res.Header,
 	})
-
 	// Part 2: We now submit a request offset which matches the remote fragment offset.
 	stream, _ = broker.MustClient().Append(pb.WithDispatchDefault(tf.ctx))
 	c.Check(stream.Send(&pb.AppendRequest{Journal: "a/journal", Offset: 1024}), gc.IsNil)
