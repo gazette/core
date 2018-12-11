@@ -249,19 +249,7 @@ func checkHealth(res resolution, jc pb.JournalClient, etcd clientv3.KV) (int64, 
 		return minRevision, nil
 	}
 
-	var proposal = pln.spool.Fragment.Fragment
-	// If the flush interval of the fragment is less then the number of intervals since the epoch
-	// the fragment needs to be flushed as it contains data that belongs to an old flush interval.
-	var flushIntervalSecs = int64(res.journalSpec.Fragment.FlushInterval.Seconds())
-	if flushIntervalSecs > 0 {
-		var secsSinceEpoch = timeNow().Unix()
-		var intervalsSinceEpoch = secsSinceEpoch / flushIntervalSecs
-		var fragmentInterval = pln.spool.FirstAppendTime / flushIntervalSecs
-		if fragmentInterval < intervalsSinceEpoch {
-			proposal = getFragmentFlushProposal(pln.spool.Fragment.Fragment, res.journalSpec.Fragment)
-		}
-	}
-
+	var proposal = nextProposal(pln.spool, res.journalSpec.Fragment)
 	// Send a proposal which is either:
 	//  1) A no-op, acknowledged Proposal, and read its acknowledgement from peers.
 	//
@@ -280,20 +268,44 @@ func checkHealth(res resolution, jc pb.JournalClient, etcd clientv3.KV) (int64, 
 	return minRevision, nil
 }
 
-// getFragmentFlushProposal takes a fragment and a spec and generates a new proposal which will prompt a flush
-// of the current fragment to the backing store.
-func getFragmentFlushProposal(cur pb.Fragment, spec pb.JournalSpec_Fragment) pb.Fragment {
-	var next = cur
-	next.Begin = next.End
-	next.Sum = pb.SHA1Sum{}
-	next.CompressionCodec = spec.CompressionCodec
-
-	if len(spec.Stores) != 0 {
-		next.BackingStore = spec.Stores[0]
-	} else {
-		next.BackingStore = ""
+// checkFragmentflush evaluates the |cur| spool for scenarios warrenting a flush message to be sent to the other
+// replica nodes. In the event that a flush is warrented a flush proposal, otherwise return the original Fragment.
+func nextProposal(cur fragment.Spool, spec pb.JournalSpec_Fragment) pb.Fragment {
+	var flushFragment bool
+	// If the proposed Fragment is non-empty, but not yet at the target length,
+	// don't propose changes to it.
+	if cur.ContentLength() == 0 || cur.ContentLength() > spec.Length {
+		flushFragment = true
 	}
-	return next
+
+	// If the flush interval of the fragment is less then the number of intervals since the epoch
+	// the fragment needs to be flushed as it contains data that belongs to an old flush interval.
+	var flushIntervalSecs = int64(spec.FlushInterval.Seconds())
+	if flushIntervalSecs > 0 {
+		var secsSinceEpoch = timeNow().Unix()
+		var intervalsSinceEpoch = secsSinceEpoch / flushIntervalSecs
+		var fragmentInterval = cur.FirstAppendTime.Unix() / flushIntervalSecs
+		if fragmentInterval < intervalsSinceEpoch {
+			flushFragment = true
+		}
+	}
+
+	// Return a new proposal which will prompt a flush of the current fragment to the backing store.
+	if flushFragment {
+		var next = cur.Fragment.Fragment
+		next.Begin = next.End
+		next.Sum = pb.SHA1Sum{}
+		next.CompressionCodec = spec.CompressionCodec
+
+		if len(spec.Stores) != 0 {
+			next.BackingStore = spec.Stores[0]
+		} else {
+			next.BackingStore = ""
+		}
+		return next
+	}
+
+	return cur.Fragment.Fragment
 }
 
 var sharedPersister *fragment.Persister

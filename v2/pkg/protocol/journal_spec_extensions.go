@@ -80,7 +80,7 @@ func (m *JournalSpec_Fragment) Validate() error {
 	}
 
 	if m.FlushInterval != 0 && m.FlushInterval < minFlushInterval {
-		return NewValidationError("invalid FlushInterval (%s; expect >= %s)",
+		return NewValidationError("invalid FlushInterval (%s; expected >= %s)",
 			m.FlushInterval, minFlushInterval)
 	}
 
