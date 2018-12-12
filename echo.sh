@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -v
+
+echo "$CIRCLE_BRANCH"
+echo "$CIRCLE_COMPARE_URL"
+echo "$CIRCLE_PR_REPONAME"
+echo "$CIRCLE_PR_USERNAME"
+echo "$CIRCLE_PULL_REQUESTS"
+echo "$CIRCLE_REPOSITORY_URL"
+echo "$CIRCLE_USERNAME"
