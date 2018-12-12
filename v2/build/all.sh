@@ -18,7 +18,7 @@ if [[ ${CIRCLECI:-} = true ]]; then
     fi
 fi
 
-# Build the `vendor` image.
+# Build the `gazette-vendor` image.
 docker build ${ROOT} \
     --file ${ROOT}/v2/build/Dockerfile \
     --target vendor \
@@ -50,7 +50,7 @@ docker build ${ROOT} \
     --tag liveramp/gazette-examples:latest \
     ${CF_EXAMPLES:-}
 
-# Publish the `vendor` image which is used as a cache in CI builds.
+# Publish the `gazette-vendor` image which is used as a cache in CI builds.
 if [[ ${SHOULD_PUSH_VENDOR:-} = true && -n "${DOCKER_USER:-}" && -n "${DOCKER_PASS:-}" ]]; then
     # Temporarily disable xtrace to hide password ($DOCKER_PASS).
     set +x
