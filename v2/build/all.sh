@@ -4,18 +4,26 @@ set -Eeux -o pipefail
 # Root directory of repository.
 readonly ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
-readonly VENDOR_IMAGE="rupertchen/gazette-vendor:latest"
+readonly VENDOR_IMAGE="liveramp/gazette-vendor:latest"
 if [[ ${CIRCLECI:-} = true ]]; then
     docker pull "$VENDOR_IMAGE"
 
+    readonly CF_VENDOR="--cache-from $VENDOR_IMAGE"
     readonly CF_BUILD="--cache-from $VENDOR_IMAGE"
     readonly CF_GAZETTE="--cache-from liveramp/gazette-build:latest"
     readonly CF_EXAMPLES="--cache-from liveramp/gazette-build:latest --cache-from liveramp/gazette:latest"
 
-    if [[ $CIRCLE_BRANCH = "master" ]]; then
+    if [[ "$CIRCLE_REPOSITORY_URL" = "git@github.com:LiveRamp/gazette.git" && "$CIRCLE_BRANCH" = "master" ]]; then
         SHOULD_PUSH_VENDOR=true
     fi
 fi
+
+# Build the `vendor` image.
+docker build ${ROOT} \
+    --file ${ROOT}/v2/build/Dockerfile \
+    --target vendor \
+    --tag "$VENDOR_IMAGE" \
+    ${CF_VENDOR:-}
 
 # Build and test Gazette. This image includes all Gazette source, vendored
 # dependencies, compiled packages and binaries, and only completes after
@@ -42,7 +50,7 @@ docker build ${ROOT} \
     --tag liveramp/gazette-examples:latest \
     ${CF_EXAMPLES:-}
 
-# Publish vendor image which is used as a cache in CI builds.
+# Publish the `vendor` image which is used as a cache in CI builds.
 if [[ ${SHOULD_PUSH_VENDOR:-} = true && -n "${DOCKER_USER:-}" && -n "${DOCKER_PASS:-}" ]]; then
     # Temporarily disable xtrace to hide password ($DOCKER_PASS).
     set +x
@@ -50,10 +58,5 @@ if [[ ${SHOULD_PUSH_VENDOR:-} = true && -n "${DOCKER_USER:-}" && -n "${DOCKER_PA
     echo "$DOCKER_PASS" | docker login -u $DOCKER_USER --password-stdin
     set -x
 
-    docker build . \
-      --file ./v2/build/Dockerfile \
-      --target vendor \
-      --tag "$VENDOR_IMAGE" \
-      --cache-from "$VENDOR_IMAGE"
     docker push "$VENDOR_IMAGE"
 fi
