@@ -17,7 +17,7 @@ var (
 		Log mbp.LogConfig `group:"Logging" namespace:"log" env-namespace:"LOG"`
 	})
 	journalsCfg = new(struct {
-		Broker mbp.AddressConfig `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
+		Broker mbp.ClientConfig `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 	})
 	shardsCfg = new(struct {
 		Consumer mbp.AddressConfig `group:"Consumer" namespace:"consumer" env-namespace:"CONSUMER"`
@@ -38,6 +38,13 @@ type ListConfig struct {
 type ApplyConfig struct {
 	SpecsPath string `long:"specs" description:"Path to specifications file to apply. Stdin is used if not set"`
 	DryRun    bool   `long:"dry-run" description:"Perform a dry-run of the apply"`
+}
+
+// ReadConfig is common configuration of read operations.
+type ReadConfig struct {
+	Selector string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on"`
+	Blocking bool   `long:"blocking" short:"b" description:"Stream contents to Stdout as the are written to the selected journals"`
+	Offset   int64  `long:"offset" short:"o" default:"-1" description:"Offset to beging reading from journal"`
 }
 
 func (cfg ApplyConfig) decode(into interface{}) error {
@@ -153,6 +160,26 @@ ShardSpecs may be created by setting "revision" to zero or omitting it altogethe
 
 ShardSpecs may be deleted by setting their field "delete" to true.
 `, &cmdShardsApply{})
+
+	_ = addCmd(cmdJournals, "read", "Read journal contents", `
+Read the contents journal or journals as a stream.
+
+Use --selector to supply a LabelSelector which constrains the set of jouranls
+to be read from.
+
+Match JournalSpecs having an exact name:
+>    --selector "name in (foo/bar, baz/bing)"
+
+Match JournalSpecs having a name prefix (must end in '/'):
+>    --selector "prefix = my/prefix/"
+
+Read can run in a blocking fashion with --blocking which will not exit when 
+it has reached the head of the current journal(s). When new data becomes available 
+it will be sent to Stdout.
+
+To read from an arbitrary offset into a journal(s) use the --offset flag. 
+If not passed the default value is -1 which is the will read from the head of the journal.
+`, &cmdJournalRead{})
 
 	mbp.MustParseConfig(parser, iniFilename)
 }
