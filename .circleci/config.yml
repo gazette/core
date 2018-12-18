@@ -44,16 +44,18 @@ jobs:
       - prepare_build_env
       - run:
           name: Build and publish V2 Gazette
-          command: ./v2/build/release .
+          command: ./v2/build/release . "${CIRCLE_TAG}"
 workflows:
   version: 2
   build_all:
     jobs:
       - build_v1
       - build_v2
-  build_release:
+  release:
     jobs:
       - publish_images:
           filters:
             tags:
-             only: /^v.*/
+              only: /^v.*/
+            branches:
+              ignore: /.*/
