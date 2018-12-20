@@ -5,18 +5,34 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LiveRamp/gazette/v2/pkg/allocator"
+	"github.com/LiveRamp/gazette/v2/pkg/keyspace"
+	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 	log "github.com/sirupsen/logrus"
 )
+
+var persistFn = Persist
 
 type Persister struct {
 	qA, qB, qC []Spool
 	mu         sync.Mutex
 	doneCh     chan struct{}
+	ks         *keyspace.KeySpace
+	timeChan   <-chan time.Time
+}
+
+type PersisterOpts struct {
+	KeySpace *keyspace.KeySpace
+	TimeChan <-chan time.Time
 }
 
 // NewPersister returns an empty, initialized Persister.
-func NewPersister() *Persister {
-	return &Persister{doneCh: make(chan struct{})}
+func NewPersister(opts PersisterOpts) *Persister {
+	return &Persister{
+		doneCh:   make(chan struct{}),
+		ks:       opts.KeySpace,
+		timeChan: opts.TimeChan,
+	}
 }
 
 func (p *Persister) SpoolComplete(spool Spool, primary bool) {
@@ -25,8 +41,9 @@ func (p *Persister) SpoolComplete(spool Spool, primary bool) {
 	} else if primary {
 		// Attempt to immediately persist the Spool.
 		go func() {
-			if err := Persist(context.Background(), spool); err != nil {
+			if err := persistFn(context.Background(), spool); err != nil {
 				log.WithField("err", err).Warn("failed to persist Spool")
+
 				p.queue(spool)
 			}
 		}()
@@ -49,18 +66,32 @@ func (p *Persister) queue(spool Spool) {
 }
 
 func (p *Persister) Serve() {
+	var ticker *time.Ticker
+	// If a timeChan has not been provided use default 1 min ticker.
+	if p.timeChan == nil {
+		ticker = time.NewTicker(time.Minute)
+		p.timeChan = ticker.C
+	}
 	for done, exiting := false, false; !done; {
-
 		if !exiting {
 			select {
-			case <-time.After(time.Minute):
+			case <-p.timeChan:
 			case <-p.doneCh:
 				exiting = true
+				if ticker != nil {
+					ticker.Stop()
+				}
 			}
 		}
 
 		for _, spool := range p.qA {
-			if err := Persist(context.Background(), spool); err != nil {
+			// Prior to attempting to store the fragment confirm that fragment metadata
+			// is the most up to date.
+			if item, ok := allocator.LookupItem(p.ks, spool.Journal.String()); ok {
+				var spec = item.ItemValue.(*pb.JournalSpec)
+				spool.Fragment.BackingStore = spec.Fragment.Stores[0]
+			}
+			if err := persistFn(context.Background(), spool); err != nil {
 				log.WithField("err", err).Warn("failed to persist Spool")
 				p.queue(spool)
 			}
