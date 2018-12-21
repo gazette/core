@@ -5,7 +5,6 @@ commands:
     steps:
       - checkout
       - setup_remote_docker:
-          docker_layer_caching: true
       - run:
           name: Install bash
           command: apk add --no-cache --no-progress bash

@@ -50,7 +50,6 @@ docker_tag_and_push() {
 docker_build_all() {
     declare -r root="$1"
     declare -r vendor_image="${2:-}"
-
     declare -r dockerfile="${root}/v2/build/Dockerfile"
 
     if [[ -n "${vendor_image}" ]]; then

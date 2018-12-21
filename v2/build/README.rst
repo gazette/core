@@ -1,6 +1,8 @@
-===========================
 Containerized Gazette Build
 ===========================
+
+Overview
+~~~~~~~~
 
 Gazette releases are built via a multi-stage `Dockerfile <Dockerfile>`_
 with multiple named targets:
@@ -22,3 +24,13 @@ with multiple named targets:
 
 See ``docker_build_all`` in `lib.sh <lib.sh>`_ for run-able documentation of
 building each target.
+
+Build QuickStart
+~~~~~~~~~~~~~~~~
+
+To build the world from a clean local checkout:
+
+.. code-block:: console
+
+    # Perform a containerized build and test of the project and examples (requires Docker).
+    $ v2/build/all .
