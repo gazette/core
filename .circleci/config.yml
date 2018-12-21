@@ -4,7 +4,7 @@ commands:
     description: Prepare build environment
     steps:
       - checkout
-      - setup_remote_docker:
+      - setup_remote_docker
       - run:
           name: Install bash
           command: apk add --no-cache --no-progress bash
