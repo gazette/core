@@ -40,13 +40,6 @@ type ApplyConfig struct {
 	DryRun    bool   `long:"dry-run" description:"Perform a dry-run of the apply"`
 }
 
-// ReadConfig is common configuration of read operations.
-type ReadConfig struct {
-	Selector string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on"`
-	Blocking bool   `long:"blocking" short:"b" description:"Stream contents to Stdout as the are written to the selected journals"`
-	Offset   int64  `long:"offset" short:"o" default:"-1" description:"Offset to beging reading from journal"`
-}
-
 func (cfg ApplyConfig) decode(into interface{}) error {
 	var buffer []byte
 	var err error

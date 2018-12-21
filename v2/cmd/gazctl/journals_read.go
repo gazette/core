@@ -1,10 +1,13 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
 	"context"
-	"io/ioutil"
+	"errors"
+	"io"
+	"log"
 	"os"
+	"sync"
 
 	"github.com/LiveRamp/gazette/v2/pkg/client"
 	mbp "github.com/LiveRamp/gazette/v2/pkg/mainboilerplate"
@@ -12,7 +15,9 @@ import (
 )
 
 type cmdJournalRead struct {
-	ReadConfig
+	Selector string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on"`
+	Blocking bool   `long:"blocking" short:"b" description:"Stream contents to Stdout as they are written to the selected journals"`
+	Offset   int64  `long:"offset" short:"o" default:"-1" description:"Offset to beging reading from journal"`
 }
 
 func (cmd *cmdJournalRead) Execute([]string) error {
@@ -32,105 +37,87 @@ func (cmd *cmdJournalRead) Execute([]string) error {
 	mbp.Must(err, "failed to resolved journals from selector", cmd.Selector)
 
 	var doneCounter int32
-	var dataChan = make(chan []byte)
-	var errChan = make(chan error)
+	var doneChan = make(chan struct{})
+	var writer = newLockedWriter(os.Stdout)
 	for _, journal := range listResp.Journals {
-		go createJournalReader(createJournalReaderOpts{
-			dataChan: dataChan,
-			errChan:  errChan,
+		go readJournal(readjournalOpts{
+			doneChan: doneChan,
 			ctx:      ctx,
 			spec:     journal.Spec,
 			client:   brokerClient,
 			blocking: cmd.Blocking,
 			offset:   cmd.Offset,
+			writer:   writer,
 		})
-		if !cmd.Blocking {
-			doneCounter++
-		}
+		doneCounter++
 	}
 
 	for {
-		select {
-		case data := <-dataChan:
-			var _, err = os.Stdout.Write(data)
-			if err != nil {
-				mbp.Must(err, "failed to write data")
-				return nil
-			}
-		case err := <-errChan:
-			// This is the error that is returned a journal has been read to head.
-			// If blocking has been set wait for all values to readers to reach head before exiting.
-			if err == client.ErrOffsetNotYetAvailable && !cmd.Blocking {
-				doneCounter--
-				if doneCounter == 0 {
-					return nil
-				}
-				continue
-			}
-			mbp.Must(err, "error reading from journal")
+		<-doneChan
+		if doneCounter--; doneCounter == 0 {
 			return nil
 		}
+		continue
 	}
 }
 
-type createJournalReaderOpts struct {
-	dataChan chan<- []byte
-	errChan  chan<- error
+type lockedWriter struct {
+	sync.Mutex
+	w io.Writer
+}
+
+func newLockedWriter(w io.Writer) *lockedWriter {
+	return &lockedWriter{w: w}
+}
+
+func (l *lockedWriter) writeN(reader io.Reader, n int64) (int64, error) {
+	l.Lock()
+	defer l.Unlock()
+
+	return io.CopyN(l.w, reader, n)
+}
+
+type readjournalOpts struct {
 	ctx      context.Context
 	spec     pb.JournalSpec
 	client   pb.RoutedJournalClient
 	blocking bool
 	offset   int64
+	writer   *lockedWriter
+	doneChan chan<- struct{}
 }
 
-func createJournalReader(opts createJournalReaderOpts) error {
-	var req pb.ReadRequest
-	req.Journal = opts.spec.Name
-	req.Offset = opts.offset
-	req.Block = opts.blocking
-
-	var currentFragmentEnd int64
-	var writeHead int64
+func readJournal(opts readjournalOpts) {
+	var req = pb.ReadRequest{
+		Journal: opts.spec.Name,
+		Offset:  opts.offset,
+		Block:   opts.blocking,
+	}
 	var reader = client.NewReader(opts.ctx, opts.client, req)
-
-	var fragmentBuffer = bytes.NewBuffer([]byte{})
-	// default size of a buffered reader. Is there a better size?
-	var content = make([]byte, 4096)
+	var bufferedReader = bufio.NewReader(reader)
 	for {
-		var bytesWritten, err = reader.Read(content)
-		// Offset jumps means that the offset is set to -1, or data has been removed from
-		// a journal. In either case this error is expected and should not be surfaced.
-		if (err != nil) && (err != client.ErrOffsetJump) {
-			opts.errChan <- err
-			return nil
+		// BufferedReader can not be used here as this is treated as a noop.
+		var _, err = reader.Read(nil)
+		switch err {
+		case client.ErrOffsetJump:
+			// Offset jumps means that the offset is set to -1, or data has been removed from
+			// a journal. Relevant fragment metadata should be available.
+			break
+		case client.ErrOffsetNotYetAvailable:
+			// The error is returned when we have reached the writehead of a journal when blocking is not set.
+			// Signal that reading from this journal is finished.
+			opts.doneChan <- struct{}{}
+			return
+		default:
+			mbp.Must(err, "error reading fragment")
 		}
 
-		// The response contains metadata information about the current fragment.
-		// Set the local writeHead to match up with the beginning of the fragment.
-		if reader.Response.Fragment != nil {
-			currentFragmentEnd = reader.Response.Fragment.End
-			writeHead = reader.Request.Offset
-			continue
-
+		if reader.Response.Fragment == nil {
+			log.Panic(errors.New("expected fragment metadata but it was not available"))
+			return
 		}
-
-		if bytesWritten > 0 {
-			_, err := fragmentBuffer.Write(content[:bytesWritten])
-			if err != nil {
-				opts.errChan <- err
-				return nil
-			}
-			writeHead += int64(bytesWritten)
-		}
-		// When a fragment end has been reached we can be sure we have full
-		// messages and the fragmentBuffer can be flushed.k
-		if writeHead == currentFragmentEnd {
-			var fragmentBytes, err = ioutil.ReadAll(fragmentBuffer)
-			if err != nil {
-				opts.errChan <- err
-				return nil
-			}
-			opts.dataChan <- fragmentBytes
-		}
+		var numBytesToWrite = reader.Response.Fragment.End - reader.Request.Offset
+		_, err = opts.writer.writeN(bufferedReader, numBytesToWrite)
+		mbp.Must(err, "error writing fragment")
 	}
 }
