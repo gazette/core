@@ -30,9 +30,9 @@ docker_tag_and_push() {
     declare -r image="$1"
     declare -r tag="$2"
 
-    docker tag ${image}:latest ${image}:${tag}
-    docker push ${image}:latest
-    docker push ${image}:${tag}
+    docker tag "${image}:latest" "${image}:${tag}"
+    docker push "${image}:latest"
+    docker push "${image}:${tag}"
 }
 
 # Build and tag all targets of the multi-stage build.
