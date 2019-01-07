@@ -1,33 +1,27 @@
 #!/usr/bin/env bash
 set -Eeu -o pipefail
 
-# Base V2 directory which parents this script.
-V2DIR="$(cd "$(dirname "$0")/.." && pwd)"
+readonly USAGE="Usage: $0 kube-context kube-namespace"
+readonly CONTEXT="${1?Kubernetes context is required. $USAGE}"
+readonly NAMESPACE="${2?Kubernetes namespace is required.$USAGE}"
 
-# Defaults for NAMESPACE & CONTEXT. The latter is conditioned on whether minikube is installed.
-NAMESPACE="default"
-if [[ -x "$(which minikube)" ]] ; then
-  CONTEXT="minikube"
-else
-  CONTEXT="docker-for-desktop"
-fi
+# DOCKER defaults to `docker`.
+readonly DOCKER="${DOCKER:-docker}"
+# KUBECTL defaults to `kubectl`, and uses an explicit --context and --namespace.
+readonly KUBECTL="${KUBECTL:-kubectl} --context ${CONTEXT} --namespace ${NAMESPACE}"
+# V2DIR is the `v2` directory which parents this script.
+readonly V2DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Parse explicit CONTEXT & NAMESPACE options.
-usage() { echo "Usage: $0 [ -c kubernetes-context ] [ -n kubernetes-namespace ]" 1>&2; exit 1; }
-
-while getopts ":c:n:" opt; do
-  case "${opt}" in
-    c)   CONTEXT=${OPTARG} ;;
-    n)   NAMESPACE=${OPTARG} ;;
-    \? ) usage ;;
-  esac
-done
+# HELM defaults to `helm`, and uses an explicit --context and --kubeconfig.
+# KUBECTL may use a non-standard location for its config (eg, microk8s.kubectl
+# manages kubernetes config under its /snap directory). We make configuration
+# explicit by copying into a tempfile and then passing to helm by flag.
+readonly TMPKUBECONFIG=$(mktemp)
+readonly HELM="${HELM:-helm} --kube-context ${CONTEXT} --kubeconfig ${TMPKUBECONFIG}"
+trap "{ rm -f $TMPKUBECONFIG; }" EXIT
+$KUBECTL config view --raw > $TMPKUBECONFIG
 
 echo "Using context \"$CONTEXT\" & namespace \"$NAMESPACE\""
-
-# Alias `kubectl` and `helm` to use the proper context & namespace.
-KUBECTL="kubectl --context ${CONTEXT} --namespace ${NAMESPACE}"
-HELM="helm --kube-context ${CONTEXT}"
 
 # lastHelmRelease retrieves the name (eg, "oily-wombat") created by the last `helm install`.
 function lastHelmRelease {
@@ -41,9 +35,9 @@ function lastHelmRelease {
 #   https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
 # Note that Gazette, and many public Helm charts do so, but not all (particularly charts generated prior to Helm V2).
 function releaseSvcAddress {
-    host=$($KUBECTL get svc -l app.kubernetes.io/instance=$1 -o jsonpath={.items[0].spec.clusterIP})
-    port=$($KUBECTL get svc -l app.kubernetes.io/instance=$1 -o jsonpath={.items[0].spec.ports[0].port})
-    echo "http://$host:$port"
+  host=$($KUBECTL get svc -l app.kubernetes.io/instance=$1 -o jsonpath={.items[0].spec.clusterIP})
+  port=$($KUBECTL get svc -l app.kubernetes.io/instance=$1 -o jsonpath={.items[0].spec.ports[0].port})
+  echo "http://$host:$port"
 }
 
 # Install the "incubator/etcd" chart (https://github.com/helm/charts/tree/master/incubator/etcd).
@@ -58,7 +52,7 @@ persistentVolume:
   enabled: true
   storage: 256Mi
 EOF
-ETCD_RELEASE=$(lastHelmRelease)
+readonly ETCD_RELEASE=$(lastHelmRelease)
 
 # Install the "minio" chart, which provides an S3-compatible cloud filesystem.
 $HELM install --namespace $NAMESPACE --wait stable/minio --values /dev/stdin << EOF
@@ -69,11 +63,11 @@ defaultBucket:
 persistence:
   enabled: false  # Bucket data is ephemeral, and lives only with the minio pod.
 EOF
-MINIO_RELEASE=$(lastHelmRelease)
+readonly MINIO_RELEASE=$(lastHelmRelease)
 
 # Create a Secret holding AWS credentials.
 function minioCredentialsB64 {
-    jq -rRs @base64 <<EOF
+  jq -rRs @base64 <<EOF
 [minio]
 # These are the default example credentials which Minio starts with.
 aws_access_key_id=AKIAIOSFODNN7EXAMPLE
@@ -81,9 +75,9 @@ aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 EOF
 }
 function minioConfigB64 {
-    # Note that ~/.aws/config uses "[profile my-name]",
-    # where ~/.aws/credentials uses just "[my-name]".
-    jq -rRs @base64 <<EOF
+  # Note that ~/.aws/config uses "[profile my-name]",
+  # where ~/.aws/credentials uses just "[my-name]".
+  jq -rRs @base64 <<EOF
 [profile minio]
 region=us-east-1
 EOF
@@ -107,19 +101,18 @@ $HELM install --namespace $NAMESPACE --wait $V2DIR/charts/gazette  --values /dev
 etcd:
   endpoint: http://${ETCD_RELEASE}-etcd:2379
 EOF
-GAZETTE_RELEASE=$(lastHelmRelease)
+readonly GAZETTE_RELEASE=$(lastHelmRelease)
 
-# We'll run gazctl in an ephemeral docker container which has direct access to
-# the kubernetes networking space, and mounts this "test" directory. The
-# alternative is to run gazctl on the host and port-forward broker or consumer
-# pods as required to expose the service (yuck).
-GAZCTL="docker run \
-    --rm \
-    --interactive \
-    --env BROKER_ADDRESS \
-    --env CONSUMER_ADDRESS \
-    liveramp/gazette:latest \
-    gazctl"
+# gazctl is run in an ephemeral docker container which has direct access to
+# the kubernetes networking space. The alternative is to run gazctl on the host
+# and port-forward broker or consumer pods as required to expose the service (yuck).
+readonly GAZCTL="${DOCKER} run \
+  --rm \
+  --interactive \
+  --env BROKER_ADDRESS \
+  --env CONSUMER_ADDRESS \
+  liveramp/gazette:latest \
+  gazctl"
 
 # Create all test journals. Use `sed` to replace the MINIO_ENDPOINT token with the
 # correct, URL-encoded Minio service address.
@@ -134,14 +127,14 @@ consumer:
   gazette:
     endpoint: http://${GAZETTE_RELEASE}-gazette:80
 EOF
-STREAM_SUM_RELEASE=$(lastHelmRelease)
+readonly STREAM_SUM_RELEASE=$(lastHelmRelease)
 
 # Enumerate all stream-sum shards, one for each journal of the topic.
 function streamSumShards {
-    # Create one shard for each journal & recoverylog hard-coded in test/journalspace.yaml
-    # TODO(johnny): This is hacky, but works until we can define better tooling.
-    for i in $(seq -f "%03g" 0 7); do
-       cat<<EOF
+  # Create one shard for each journal & recoverylog hard-coded in test/journalspace.yaml
+  # TODO(johnny): This is hacky, but works until we can define better tooling.
+  for i in $(seq -f "%03g" 0 7); do
+     cat<<EOF
 # Define ShardSpec in YAML format. Compare to ShardSpec for field definitions.
 - id: chunks-part-$i
   sources:
@@ -177,18 +170,17 @@ consumer:
   gazette:
     endpoint: http://${GAZETTE_RELEASE}-gazette:80
 EOF
-WORD_COUNT_RELEASE=$(lastHelmRelease)
+readonly WORD_COUNT_RELEASE=$(lastHelmRelease)
 
 # Enumerate all word-count shards.
 function wordCountShards {
-    # Create one shard for journals & recoverylog hard-coded in test/journalspace.yaml
-    for i in $(seq -f "%03g" 0 3); do
-       cat<<EOF
+  # Create one shard for journals & recoverylog hard-coded in test/journalspace.yaml
+  for i in $(seq -f "%03g" 0 3); do
+     cat<<EOF
 # Define ShardSpec in YAML format. Compare to ShardSpec for field definitions.
 - id: shard-$i
   sources:
   - journal: examples/word-count/deltas/part-$i
-  - journal: examples/word-count/relocations/part-$i
   recovery_log: examples/word-count/recovery-logs/shard-$i
   hint_keys:
   - /gazette/hints/examples/word-count/part-$i.recorded
