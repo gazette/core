@@ -10,6 +10,34 @@ import (
 	"github.com/coreos/etcd/clientv3"
 )
 
+// Stat dispatches the ShardServer.Stat API.
+func (srv *Service) Stat(ctx context.Context, req *StatRequest) (*StatResponse, error) {
+	var (
+		resp     = new(StatResponse)
+		res, err = srv.Resolver.Resolve(ResolveArgs{
+			Context:     ctx,
+			ShardID:     req.Shard,
+			MayProxy:    req.Header == nil, // MayProxy if request hasn't already been proxied.
+			ProxyHeader: req.Header,
+		})
+	)
+	resp.Status, resp.Header = res.Status, res.Header
+
+	if err != nil || resp.Status != Status_OK {
+		return resp, err
+	} else if res.Store == nil {
+		// Non-local Shard. Proxy to the resolved primary peer.
+		req.Header = &res.Header
+		return NewShardClient(srv.Loopback).Stat(
+			pb.WithDispatchRoute(ctx, req.Header.Route, req.Header.ProcessId), req)
+	}
+
+	defer res.Done()
+	resp.Offsets, err = res.Store.FetchJournalOffsets()
+
+	return resp, err
+}
+
 // List dispatches the ShardServer.List API.
 func (srv *Service) List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	var s = srv.Resolver.state
@@ -95,7 +123,7 @@ func (srv *Service) Apply(ctx context.Context, req *ApplyRequest) (*ApplyRespons
 	} else {
 		// Delay responding until we have read our own Etcd write.
 		s.KS.Mu.RLock()
-		s.KS.WaitForRevision(ctx, txnResp.Txn().Header.Revision)
+		_ = s.KS.WaitForRevision(ctx, txnResp.Txn().Header.Revision)
 		s.KS.Mu.RUnlock()
 	}
 
