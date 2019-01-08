@@ -3,7 +3,6 @@ package fragment
 import (
 	"context"
 	"errors"
-	"io/ioutil"
 	"sync"
 	"time"
 
@@ -17,20 +16,15 @@ import (
 
 type PersisterSuite struct{}
 
-var _ = gc.Suite(&PersisterSuite{})
-var obv testSpoolObserver
-
 func (p *PersisterSuite) TestSpoolCompleteNotEnqueued(c *gc.C) {
-	defer func(s func(ctx context.Context, spool Spool) error) { persistFn = s }(persistFn)
-	persistFn = func(ctx context.Context, spool Spool) error { return nil }
-
-	var ks = keyspace.NewKeySpace("/root", func(kv *mvccpb.KeyValue) (interface{}, error) {
+	var ks = keyspace.NewKeySpace("/journals", func(kv *mvccpb.KeyValue) (interface{}, error) {
 		return allocator.Item{}, nil
 	})
-	var persister = NewPersister(PersisterOpts{KeySpace: ks})
+	var persister = NewPersister(ks)
+	var obv testSpoolObserver
 	var spool = NewSpool("journal-1", &obv)
 
-	// Empty spool is not enququed.
+	// Empty spool is not enqueued.
 	persister.SpoolComplete(spool, true)
 	c.Check(len(persister.qC), gc.Equals, 0)
 
@@ -43,16 +37,12 @@ func (p *PersisterSuite) TestSpoolCompleteNotEnqueued(c *gc.C) {
 }
 
 func (p *PersisterSuite) TestSpoolCompleteNonPrimary(c *gc.C) {
-	defer func(s func(ctx context.Context, spool Spool) error) { persistFn = s }(persistFn)
-	persistFn = func(ctx context.Context, spool Spool) error {
+	var persister = NewPersister(nil)
+	persister.persistFn = func(ctx context.Context, spool Spool) error {
 		c.Error("spool should not be persisted")
 		return nil
 	}
-
-	var ks = keyspace.NewKeySpace("/root", func(kv *mvccpb.KeyValue) (interface{}, error) {
-		return allocator.Item{}, nil
-	})
-	var persister = NewPersister(PersisterOpts{KeySpace: ks})
+	var obv testSpoolObserver
 	var spool = NewSpool("journal-1", &obv)
 	spool.BackingStore = "file:///root/"
 	applyAndCommit(&spool, "file:///root/")
@@ -64,9 +54,26 @@ func (p *PersisterSuite) TestSpoolCompleteNonPrimary(c *gc.C) {
 }
 
 func (p *PersisterSuite) TestSpoolCompletePrimary(c *gc.C) {
-	var wg = sync.WaitGroup{}
-	defer func(s func(ctx context.Context, spool Spool) error) { persistFn = s }(persistFn)
-	persistFn = func(ctx context.Context, spool Spool) error {
+	var wg sync.WaitGroup
+	var specFixture = &pb.JournalSpec{
+		Fragment: pb.JournalSpec_Fragment{
+			Stores: []pb.FragmentStore{"file:///root/"},
+		},
+	}
+	var ks = keyspace.NewKeySpace("/journals", func(kv *mvccpb.KeyValue) (interface{}, error) {
+		return allocator.Item{
+			ID:        "journal-1",
+			ItemValue: specFixture,
+		}, nil
+	})
+	var client, ctx = etcdtest.TestClient(), context.Background()
+	defer etcdtest.Cleanup()
+	var _, err = client.Put(ctx, "/journals/items/journal-1", "")
+	c.Assert(err, gc.IsNil)
+	c.Check(ks.Load(ctx, client, 0), gc.IsNil)
+
+	var persister = NewPersister(ks)
+	persister.persistFn = func(ctx context.Context, spool Spool) error {
 		c.Check(spool.Fragment.Fragment, gc.DeepEquals, pb.Fragment{
 			Journal:          "journal-1",
 			Begin:            0,
@@ -78,11 +85,6 @@ func (p *PersisterSuite) TestSpoolCompletePrimary(c *gc.C) {
 		wg.Done()
 		return nil
 	}
-
-	var ks = keyspace.NewKeySpace("/root", func(kv *mvccpb.KeyValue) (interface{}, error) {
-		return allocator.Item{}, nil
-	})
-	var persister = NewPersister(PersisterOpts{KeySpace: ks})
 	var obv testSpoolObserver
 	var spool = NewSpool("journal-1", &obv)
 	spool.BackingStore = pb.FragmentStore("file:///root/")
@@ -94,25 +96,12 @@ func (p *PersisterSuite) TestSpoolCompletePrimary(c *gc.C) {
 }
 
 func (p *PersisterSuite) TestPersisterServe(c *gc.C) {
-	defer func(s func(ctx context.Context, spool Spool) error) { persistFn = s }(persistFn)
-	persistFn = func(ctx context.Context, spool Spool) error {
-		c.Check(spool.Fragment.Fragment, gc.DeepEquals, pb.Fragment{
-			Journal:          "journal-1",
-			Begin:            0,
-			End:              12,
-			Sum:              pb.SHA1SumOf("some content"),
-			CompressionCodec: pb.CompressionCodec_NONE,
-			BackingStore:     "file:///root/",
-		})
-		return nil
-	}
-
 	var specFixture = &pb.JournalSpec{
 		Fragment: pb.JournalSpec_Fragment{
 			Stores: []pb.FragmentStore{"file:///root/"},
 		},
 	}
-	var ks = keyspace.NewKeySpace("/root", func(kv *mvccpb.KeyValue) (interface{}, error) {
+	var ks = keyspace.NewKeySpace("/journals", func(kv *mvccpb.KeyValue) (interface{}, error) {
 		return allocator.Item{
 			ID:        "journal-1",
 			ItemValue: specFixture,
@@ -120,16 +109,114 @@ func (p *PersisterSuite) TestPersisterServe(c *gc.C) {
 	})
 	var client, ctx = etcdtest.TestClient(), context.Background()
 	defer etcdtest.Cleanup()
-	var _, err = client.Put(ctx, "/root/items/journal-1", "")
+	var _, err = client.Put(ctx, "/journals/items/journal-1", "")
 	c.Assert(err, gc.IsNil)
 	c.Check(ks.Load(ctx, client, 0), gc.IsNil)
 
+	var ticker = &time.Ticker{}
 	var timeChan = make(chan time.Time)
-	var persister = NewPersister(PersisterOpts{
-		KeySpace: ks,
-		TimeChan: timeChan,
-	})
+	ticker.C = timeChan
+	var persister = Persister{
+		doneCh: make(chan struct{}),
+		ks:     ks,
+		persistFn: func(ctx context.Context, spool Spool) error {
+			c.Check(spool.Fragment.Fragment, gc.DeepEquals, pb.Fragment{
+				Journal:          "journal-1",
+				Begin:            0,
+				End:              12,
+				Sum:              pb.SHA1SumOf("some content"),
+				CompressionCodec: pb.CompressionCodec_NONE,
+				BackingStore:     "file:///root/",
+			})
+			return nil
+		},
+		ticker: ticker,
+	}
 
+	var obv testSpoolObserver
+	var spool = NewSpool("journal-1", &obv)
+	spool.BackingStore = pb.FragmentStore("file:///root/")
+	applyAndCommit(&spool, "file:///root/")
+
+	go persister.Serve()
+	persister.qA = append(persister.qA, spool)
+	timeChan <- time.Time{}
+	persister.Finish()
+	// Ensure all queues are empty after rotation.
+	persister.mu.Lock()
+	c.Check(len(persister.qA)+len(persister.qB)+len(persister.qC), gc.Equals, 0)
+	persister.mu.Unlock()
+}
+
+func (p *PersisterSuite) TestPersisterServeStoreRemoved(c *gc.C) {
+	var specFixture = &pb.JournalSpec{
+		Fragment: pb.JournalSpec_Fragment{
+			Stores: nil,
+		},
+	}
+	var ks = keyspace.NewKeySpace("/journals", func(kv *mvccpb.KeyValue) (interface{}, error) {
+		return allocator.Item{
+			ID:        "journal-1",
+			ItemValue: specFixture,
+		}, nil
+	})
+	var client, ctx = etcdtest.TestClient(), context.Background()
+	defer etcdtest.Cleanup()
+	var _, err = client.Put(ctx, "/journals/items/journal-1", "")
+	c.Assert(err, gc.IsNil)
+	c.Check(ks.Load(ctx, client, 0), gc.IsNil)
+
+	var ticker = &time.Ticker{}
+	var timeChan = make(chan time.Time)
+	ticker.C = timeChan
+	var persister = Persister{
+		doneCh: make(chan struct{}),
+		ks:     ks,
+		persistFn: func(ctx context.Context, spool Spool) error {
+			c.Error("spool should not be persisted")
+			return nil
+		},
+		ticker: ticker,
+	}
+
+	var obv testSpoolObserver
+	var spool = NewSpool("journal-1", &obv)
+	spool.BackingStore = pb.FragmentStore("file:///root/")
+	applyAndCommit(&spool, "file:///root/")
+
+	go persister.Serve()
+	persister.qA = append(persister.qA, spool)
+	timeChan <- time.Time{}
+	persister.Finish()
+	// Ensure all queues are empty after rotation.
+	persister.mu.Lock()
+	c.Check(len(persister.qA)+len(persister.qB)+len(persister.qC), gc.Equals, 0)
+	persister.mu.Unlock()
+}
+
+func (p *PersisterSuite) TestPersisterServeSpecRemoved(c *gc.C) {
+	var ks = keyspace.NewKeySpace("/journals", func(kv *mvccpb.KeyValue) (interface{}, error) {
+		c.Error("decoder should not be called")
+		return allocator.Item{}, nil
+	})
+	var client, ctx = etcdtest.TestClient(), context.Background()
+	defer etcdtest.Cleanup()
+	c.Check(ks.Load(ctx, client, 0), gc.IsNil)
+
+	var ticker = &time.Ticker{}
+	var timeChan = make(chan time.Time)
+	ticker.C = timeChan
+	var persister = Persister{
+		doneCh: make(chan struct{}),
+		ks:     ks,
+		persistFn: func(ctx context.Context, spool Spool) error {
+			c.Error("spool should not be persisted")
+			return nil
+		},
+		ticker: ticker,
+	}
+
+	var obv testSpoolObserver
 	var spool = NewSpool("journal-1", &obv)
 	spool.BackingStore = pb.FragmentStore("file:///root/")
 	applyAndCommit(&spool, "file:///root/")
@@ -145,33 +232,12 @@ func (p *PersisterSuite) TestPersisterServe(c *gc.C) {
 }
 
 func (p *PersisterSuite) TestPersisterServeUpdateBackingStore(c *gc.C) {
-	var tmpDir, err = ioutil.TempDir("", "")
-	c.Assert(err, gc.IsNil)
-	defer func(s string) { FileSystemStoreRoot = s }(FileSystemStoreRoot)
-	FileSystemStoreRoot = tmpDir
-
-	defer func(s func(ctx context.Context, spool Spool) error) { persistFn = s }(persistFn)
-	persistFn = func(ctx context.Context, spool Spool) error {
-		if spool.BackingStore == pb.FragmentStore("file:///root/invalid/") {
-			return errors.New("something has gone wrong")
-		}
-		c.Check(spool.Fragment.Fragment, gc.DeepEquals, pb.Fragment{
-			Journal:          "journal-1",
-			Begin:            0,
-			End:              12,
-			Sum:              pb.SHA1SumOf("some content"),
-			CompressionCodec: pb.CompressionCodec_NONE,
-			BackingStore:     pb.FragmentStore("file:///root/"),
-		})
-		return nil
-	}
-
 	var specFixture = &pb.JournalSpec{
 		Fragment: pb.JournalSpec_Fragment{
 			Stores: []pb.FragmentStore{"file:///root/invalid/"},
 		},
 	}
-	var ks = keyspace.NewKeySpace("/root", func(kv *mvccpb.KeyValue) (interface{}, error) {
+	var ks = keyspace.NewKeySpace("/journals", func(kv *mvccpb.KeyValue) (interface{}, error) {
 		return allocator.Item{
 			ID:        "journal-1",
 			ItemValue: specFixture,
@@ -179,15 +245,34 @@ func (p *PersisterSuite) TestPersisterServeUpdateBackingStore(c *gc.C) {
 	})
 	var client, ctx = etcdtest.TestClient(), context.Background()
 	defer etcdtest.Cleanup()
-	_, err = client.Put(ctx, "/root/items/journal-1", "")
+	var _, err = client.Put(ctx, "/journals/items/journal-1", "")
 	c.Assert(err, gc.IsNil)
 	c.Check(ks.Load(ctx, client, 0), gc.IsNil)
 
+	var ticker = &time.Ticker{}
 	var timeChan = make(chan time.Time)
-	var persister = NewPersister(PersisterOpts{
-		KeySpace: ks,
-		TimeChan: timeChan,
-	})
+	ticker.C = timeChan
+	var persister = Persister{
+		doneCh: make(chan struct{}),
+		ks:     ks,
+		persistFn: func(ctx context.Context, spool Spool) error {
+			if spool.BackingStore == pb.FragmentStore("file:///root/invalid/") {
+				return errors.New("something has gone wrong")
+			}
+			c.Check(spool.Fragment.Fragment, gc.DeepEquals, pb.Fragment{
+				Journal:          "journal-1",
+				Begin:            0,
+				End:              12,
+				Sum:              pb.SHA1SumOf("some content"),
+				CompressionCodec: pb.CompressionCodec_NONE,
+				BackingStore:     pb.FragmentStore("file:///root/"),
+			})
+			return nil
+		},
+		ticker: ticker,
+	}
+
+	var obv testSpoolObserver
 	var spool = NewSpool("journal-1", &obv)
 	spool.BackingStore = pb.FragmentStore("file:///root/invalid/")
 	applyAndCommit(&spool, "file:///root/invalid/")
@@ -227,3 +312,5 @@ func applyAndCommit(spool *Spool, store string) {
 			BackingStore:     pb.FragmentStore(store),
 		}}, true)
 }
+
+var _ = gc.Suite(&PersisterSuite{})
