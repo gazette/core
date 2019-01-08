@@ -11,27 +11,26 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var persistFn = Persist
+const (
+	persistInterval = time.Minute
+)
 
 type Persister struct {
 	qA, qB, qC []Spool
 	mu         sync.Mutex
 	doneCh     chan struct{}
 	ks         *keyspace.KeySpace
-	timeChan   <-chan time.Time
-}
-
-type PersisterOpts struct {
-	KeySpace *keyspace.KeySpace
-	TimeChan <-chan time.Time
+	ticker     *time.Ticker
+	persistFn  func(ctx context.Context, spool Spool) error
 }
 
 // NewPersister returns an empty, initialized Persister.
-func NewPersister(opts PersisterOpts) *Persister {
+func NewPersister(ks *keyspace.KeySpace) *Persister {
 	return &Persister{
-		doneCh:   make(chan struct{}),
-		ks:       opts.KeySpace,
-		timeChan: opts.TimeChan,
+		doneCh:    make(chan struct{}),
+		ks:        ks,
+		persistFn: Persist,
+		ticker:    time.NewTicker(persistInterval),
 	}
 }
 
@@ -41,7 +40,7 @@ func (p *Persister) SpoolComplete(spool Spool, primary bool) {
 	} else if primary {
 		// Attempt to immediately persist the Spool.
 		go func() {
-			if err := persistFn(context.Background(), spool); err != nil {
+			if err := p.persistFn(context.Background(), spool); err != nil {
 				log.WithField("err", err).Warn("failed to persist Spool")
 				p.queue(spool)
 			}
@@ -65,21 +64,13 @@ func (p *Persister) queue(spool Spool) {
 }
 
 func (p *Persister) Serve() {
-	var ticker *time.Ticker
-	// If a timeChan has not been provided use default 1 min ticker.
-	if p.timeChan == nil {
-		ticker = time.NewTicker(time.Minute)
-		p.timeChan = ticker.C
-	}
 	for done, exiting := false, false; !done; {
 		if !exiting {
 			select {
-			case <-p.timeChan:
+			case <-p.ticker.C:
 			case <-p.doneCh:
 				exiting = true
-				if ticker != nil {
-					ticker.Stop()
-				}
+				p.ticker.Stop()
 			}
 		}
 
@@ -88,10 +79,22 @@ func (p *Persister) Serve() {
 			// is the most up to date.
 			if item, ok := allocator.LookupItem(p.ks, spool.Journal.String()); ok {
 				var spec = item.ItemValue.(*pb.JournalSpec)
-				spool.Fragment.BackingStore = spec.Fragment.Stores[0]
+				// The spec has been updated and to no longer persist fragments.
+				// Drop this fragment.
+				if len(spec.Fragment.Stores) == 0 {
+					continue
+				}
+				spool.BackingStore = spec.Fragment.Stores[0]
+			} else {
+				log.WithField("journal", spool.Journal).Warn("journal spec has been removed")
+				continue
 			}
-			if err := persistFn(context.Background(), spool); err != nil {
-				log.WithField("err", err).Warn("failed to persist Spool")
+
+			if err := p.persistFn(context.Background(), spool); err != nil {
+				log.WithFields(log.Fields{
+					"journal": spool.Journal,
+					"err":     err,
+				}).Warn("failed to persist Spool")
 				p.queue(spool)
 			}
 		}
