@@ -38,6 +38,7 @@ func NewBroker(c *gc.C, etcd *clientv3.Client, zone, suffix string) *Broker {
 	var ks = broker.NewKeySpace("/brokertest")
 	ks.WatchApplyDelay = 0 // Speed test execution.
 	var key = allocator.MemberKey(ks, zone, suffix)
+	// TODO(jskelcy): Shared Persister race condition in integration tests (Issue #130)
 	broker.SetSharedPersister(fragment.NewPersister(ks))
 
 	var bk = &Broker{

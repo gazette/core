@@ -35,17 +35,12 @@ func NewPersister(ks *keyspace.KeySpace) *Persister {
 }
 
 func (p *Persister) SpoolComplete(spool Spool, primary bool) {
-	if spool.ContentLength() == 0 {
-		// Cannot persist this Spool.
-	} else if primary {
+	if primary {
 		// Attempt to immediately persist the Spool.
 		go func() {
-			if err := p.persist(spool); err != nil {
-				log.WithField("err", err).Warn("failed to persist Spool")
-				p.queue(spool)
-			}
+			p.attemptPersist(spool)
 		}()
-	} else {
+	} else if spool.ContentLength() != 0 {
 		p.queue(spool)
 	}
 	return
@@ -75,13 +70,7 @@ func (p *Persister) Serve() {
 		}
 
 		for _, spool := range p.qA {
-			if err := p.persist(spool); err != nil {
-				log.WithFields(log.Fields{
-					"journal": spool.Journal,
-					"err":     err,
-				}).Warn("failed to persist Spool")
-				p.queue(spool)
-			}
+			p.attemptPersist(spool)
 		}
 
 		// Rotate queues.
@@ -96,21 +85,34 @@ func (p *Persister) Serve() {
 	close(p.doneCh)
 }
 
-func (p *Persister) persist(spool Spool) error {
-	// Prior to attempting to store the fragment confirm that fragment metadata
-	// is the most up to date.
+// attemptPersist persist valid spools, dropping spools with no content or no configured
+// backing store. If persistFn fails the spool will be requeued and the attmepted again.
+func (p *Persister) attemptPersist(spool Spool) {
+	if spool.ContentLength() == 0 {
+		// Persisting an empty Spool is a no-op.
+		return
+	}
+	// attach the current BackingStore of the Fragment's JournalSpec.
 	if item, ok := allocator.LookupItem(p.ks, spool.Journal.String()); ok {
 		var spec = item.ItemValue.(*pb.JournalSpec)
-		// The spec has been updated and to no longer persist fragments.
-		// Drop this fragment.
+		// Journal spec has no configured store, drop this fragment.
 		if len(spec.Fragment.Stores) == 0 {
-			return nil
+			return
 		}
 		spool.BackingStore = spec.Fragment.Stores[0]
 	} else {
-		log.WithField("journal", spool.Journal).Warn("journal spec has been removed")
-		return nil
+		log.WithFields(log.Fields{
+			"journal":      spool.Journal,
+			"Content Name": spool.ContentName,
+		}).Warn("journal spec has been removed")
+		return
 	}
 
-	return p.persistFn(context.Background(), spool)
+	if err := p.persistFn(context.Background(), spool); err != nil {
+		log.WithFields(log.Fields{
+			"journal": spool.Journal,
+			"err":     err,
+		}).Warn("failed to persist Spool")
+		p.queue(spool)
+	}
 }
