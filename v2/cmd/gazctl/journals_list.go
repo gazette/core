@@ -25,15 +25,7 @@ type cmdJournalsList struct {
 func (cmd *cmdJournalsList) Execute([]string) error {
 	startup()
 
-	var err error
-	var req pb.ListRequest
-	var ctx = context.Background()
-
-	req.Selector, err = pb.ParseLabelSelector(cmd.Selector)
-	mbp.Must(err, "failed to parse label selector", "selector", cmd.Selector)
-
-	resp, err := client.ListAll(ctx, pb.NewJournalClient(journalsCfg.Broker.Dial(ctx)), req)
-	mbp.Must(err, "failed to list journals")
+	var resp = listJournals(cmd.Selector)
 
 	switch cmd.Format {
 	case "table":
@@ -114,6 +106,20 @@ func (cmd *cmdJournalsList) outputTable(resp *pb.ListResponse) {
 
 func (cmd *cmdJournalsList) outputYAML(resp *pb.ListResponse) {
 	writeHoistedJournalSpecTree(os.Stdout, resp)
+}
+
+func listJournals(s string) *pb.ListResponse {
+	var err error
+	var req pb.ListRequest
+	var ctx = context.Background()
+
+	req.Selector, err = pb.ParseLabelSelector(s)
+	mbp.Must(err, "failed to parse label selector", "selector", s)
+
+	resp, err := client.ListAll(ctx, pb.NewJournalClient(journalsCfg.Broker.Dial(ctx)), req)
+	mbp.Must(err, "failed to list journals")
+
+	return resp
 }
 
 func writeHoistedJournalSpecTree(w io.Writer, resp *pb.ListResponse) {

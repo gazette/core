@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -22,15 +23,7 @@ type cmdShardsList struct {
 func (cmd *cmdShardsList) Execute([]string) error {
 	startup()
 
-	var err error
-	var req = new(consumer.ListRequest)
-	var ctx = context.Background()
-
-	req.Selector, err = pb.ParseLabelSelector(cmd.Selector)
-	mbp.Must(err, "failed to parse label selector", "selector", cmd.Selector)
-
-	resp, err := consumer.ListShards(ctx, consumer.NewShardClient(shardsCfg.Consumer.Dial(ctx)), req)
-	mbp.Must(err, "failed to list shards")
+	var resp = listShards(cmd.Selector)
 
 	switch cmd.Format {
 	case "table":
@@ -108,7 +101,25 @@ func (cmd *cmdShardsList) outputTable(resp *consumer.ListResponse) {
 	table.Render()
 }
 
+func listShards(s string) *consumer.ListResponse {
+	var err error
+	var req = new(consumer.ListRequest)
+	var ctx = context.Background()
+
+	req.Selector, err = pb.ParseLabelSelector(s)
+	mbp.Must(err, "failed to parse label selector", "selector", s)
+
+	resp, err := consumer.ListShards(ctx, consumer.NewShardClient(shardsCfg.Consumer.Dial(ctx)), req)
+	mbp.Must(err, "failed to list shards")
+
+	return resp
+}
+
 func (cmd *cmdShardsList) outputYAML(resp *consumer.ListResponse) {
+	writeYAMLShardSpec(os.Stdout, resp)
+}
+
+func writeYAMLShardSpec(w io.Writer, resp *consumer.ListResponse) {
 	var shards []yamlShard
 	for i := range resp.Shards {
 		shards = append(shards, yamlShard{
@@ -117,7 +128,7 @@ func (cmd *cmdShardsList) outputYAML(resp *consumer.ListResponse) {
 		})
 	}
 	var b, err = yaml.Marshal(shards)
-	os.Stdout.Write(b)
+	w.Write(b)
 	mbp.Must(err, "failed to encode shards")
 }
 

@@ -40,6 +40,10 @@ type ApplyConfig struct {
 	DryRun    bool   `long:"dry-run" description:"Perform a dry-run of the apply"`
 }
 
+type EditConfig struct {
+	Selector string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on" no-ini:"true"`
+}
+
 func (cfg ApplyConfig) decode(into interface{}) error {
 	var buffer []byte
 	var err error
@@ -158,7 +162,7 @@ ShardSpecs may be deleted by setting their field "delete" to true.
 	_ = addCmd(cmdJournals, "read", "Read journal contents", `
 Read the contents journal or journals as a stream.
 
-Use --selector to supply a LabelSelector which constrains the set of jouranls
+Use --selector to supply a LabelSelector which constrains the set of journals
 to be read from.
 
 Match JournalSpecs having an exact name:
@@ -178,21 +182,37 @@ If not passed the default value is -1 which will read from the head of the journ
 	_ = addCmd(cmdJournals, "edit", "Edit journal specifications", `
 Edit and apply journal specifications.
 
-The edit command allows you to directly edit journal specifications matching the supplied LabelSelector. It will open the editor defined by your GAZ_EDITOR or EDITOR environment variables or fall back to 'vi'. Editing from Windows is currently not supported.
+`+editCmdLongDescription+`
 
-Upon exiting the editor, if the file has been changed, it will be validated and applied. If the file is invalid or fails to apply, the editor is re-opened. Exiting the editor with no changes or saving an empty file are interpreted as the user aborting the edit attempt.
+Use --selector to supply a LabelSelector which constrains the set of returned journal specifications. See "journals list --help" for details and examples.
 
-Use --selector to supply a LabelSelector which constrains the set of returned journal specifications. See "journal list" for details and examples.
+Edit specifications of journals having an exact name:
+>    gazctl journals edit --selector "name in (foo/bar, baz/bing)"
 
-Examples:
-  # Edit specifications of journals having an exact name:
-  gazctl journals edit --selector "name in (foo/bar, baz/bing)"
-
-  # Use an alternative editor
-  GAZ_EDITOR=nano gazctl journals edit --selector "prefix = my/prefix/"
+Use an alternative editor
+>    GAZ_EDITOR=nano gazctl journals edit --selector "prefix = my/prefix/"
 `, &cmdJournalsEdit{})
+
+	_ = addCmd(cmdShards, "edit", "Edit shard specifications", `
+Edit and apply shard specifications.
+
+`+editCmdLongDescription+`
+
+Use --selector to supply a LabelSelector which constrains the set of returned shard specifications. See "shards list --help" for details and examples.
+
+Edit specifications of journals having an exact ID:
+>    gazctl shards edit --selector "id in (foo, bar)"
+
+Use an alternative editor
+>    GAZ_EDITOR=nano gazctl shards edit --selector "id = baz"
+`, &cmdShardsEdit{})
 
 	mbp.MustParseConfig(parser, iniFilename)
 }
 
 const iniFilename = "gazctl.ini"
+
+// editCmdLongDescription is the common description of "journals edit" and "shards edit".
+const editCmdLongDescription = `The edit command allows you to directly edit journal specifications matching the supplied LabelSelector. It will open the editor defined by your GAZ_EDITOR or EDITOR environment variables or fall back to 'vi'. Editing from Windows is currently not supported.
+
+Upon exiting the editor, if the file has been changed, it will be validated and applied. If the file is invalid or fails to apply, the editor is re-opened. Exiting the editor with no changes or saving an empty file are interpreted as the user aborting the edit attempt.`
