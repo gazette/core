@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -112,6 +113,10 @@ func (cmd *cmdJournalsList) outputTable(resp *pb.ListResponse) {
 }
 
 func (cmd *cmdJournalsList) outputYAML(resp *pb.ListResponse) {
+	writeHoistedJournalSpecTree(os.Stdout, resp)
+}
+
+func writeHoistedJournalSpecTree(w io.Writer, resp *pb.ListResponse) {
 	// Initialize Nodes for each journal. Extract a journal specification tree,
 	// and hoist common configuration to parent nodes to minimize config DRY.
 	var nodes []journalspace.Node
@@ -129,5 +134,5 @@ func (cmd *cmdJournalsList) outputYAML(resp *pb.ListResponse) {
 	// Render journal specification tree.
 	b, err := yaml.Marshal(tree)
 	mbp.Must(err, "failed to encode journals")
-	os.Stdout.Write(b)
+	w.Write(b)
 }

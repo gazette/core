@@ -53,7 +53,7 @@ func (cfg ApplyConfig) decode(into interface{}) error {
 
 	if err = yaml.UnmarshalStrict(buffer, into); err != nil {
 		// `yaml` produces nicely formatted error messages that are best printed as-is.
-		os.Stderr.WriteString(err.Error() + "\n")
+		_, _ = os.Stderr.WriteString(err.Error() + "\n")
 		return errors.New("YAML decode failed")
 	}
 	return nil
@@ -73,6 +73,7 @@ func main() {
 		return cmd
 	}
 
+	mbp.AddPrintConfigCmd(parser, "gazctl.ini")
 	var cmdJournals = addCmd(parser.Command, "journals", "Interact with broker journals", "", journalsCfg)
 	var cmdShards = addCmd(parser.Command, "shards", "Interact with consumer shards", "", shardsCfg)
 
@@ -173,6 +174,23 @@ it will be sent to Stdout.
 To read from an arbitrary offset into a journal(s) use the --offset flag. 
 If not passed the default value is -1 which will read from the head of the journal.
 `, &cmdJournalRead{})
+
+	_ = addCmd(cmdJournals, "edit", "Edit journal specifications", `
+Edit and apply journal specifications.
+
+The edit command allows you to directly edit journal specifications matching the supplied LabelSelector. It will open the editor defined by your GAZ_EDITOR or EDITOR environment variables or fall back to 'vi'. Editing from Windows is currently not supported.
+
+Upon exiting the editor, if the file has been changed, it will be validated and applied. If the file is invalid or fails to apply, the editor is re-opened. Exiting the editor with no changes or saving an empty file are interpreted as the user aborting the edit attempt.
+
+Use --selector to supply a LabelSelector which constrains the set of returned journal specifications. See "journal list" for details and examples.
+
+Examples:
+  # Edit specifications of journals having an exact name:
+  gazctl journals edit --selector "name in (foo/bar, baz/bing)"
+
+  # Use an alternative editor
+  GAZ_EDITOR=nano gazctl journals edit --selector "prefix = my/prefix/"
+`, &cmdJournalsEdit{})
 
 	mbp.MustParseConfig(parser, iniFilename)
 }
