@@ -1,6 +1,6 @@
 # State 1: Create a base image which includes the Go toolchain,
 # RocksDB library, its tools, and dependencies.
-FROM golang:1.11 AS base
+FROM golang:1.11.4-stretch AS base
 
 ARG ROCKSDB_VERSION=5.14.2
 ARG ZSTD_VERSION=1.3.5
