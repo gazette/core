@@ -5,9 +5,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/LiveRamp/gazette/v2/cmd/gazctl/editor/editor"
+	"github.com/LiveRamp/gazette/v2/cmd/gazctl/editor"
 	"github.com/LiveRamp/gazette/v2/pkg/consumer"
-	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
@@ -26,8 +25,7 @@ func (cmd *cmdShardsEdit) selectSpecs() io.Reader {
 
 	var buf = &bytes.Buffer{}
 	if len(resp.Shards) == 0 {
-		logrus.WithField("selector", cmd.Selector).Panic("no shards match selector")
-		panic("unreachable")
+		log.WithField("selector", cmd.Selector).Panic("no shards match selector")
 	}
 	writeYAMLShardSpec(buf, resp)
 

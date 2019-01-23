@@ -1,11 +1,10 @@
-// Package editor provides utilities for editing and re-editing YAML-based
-// files in an editor until the changes are accepted or the user aborts the
-// attempt.
+// Package editor provides utilities for editing and re-editing text files in
+// an editor until the changes are accepted or the user aborts the attempt.
 package editor
 
 import (
+	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -21,7 +20,8 @@ var whitespace = regexp.MustCompile(`^\s*$`)
 
 // EditRetryLoop seeds a temp file, prefixed with 'prefix', with content from
 // selectFn and passes it to applyFn. If applyFn errors, the editor will be
-// re-opened with recent error message included in the header comments.
+// re-opened with recent error message included in the header comments. The
+// current implementation prefixes comment lines with "#".
 func EditRetryLoop(prefix string, selectFn func() io.Reader, applyFn func(b []byte) error) error {
 	var (
 		isRetry  bool
@@ -88,7 +88,7 @@ func EditRetryLoop(prefix string, selectFn func() io.Reader, applyFn func(b []by
 		if isEmptyEdit(userEdits) {
 			log.WithField("file", currPath).Debug("remove temp file")
 			_ = os.Remove(currPath)
-			_, _ = fmt.Fprintln(os.Stderr, "Cancelled, empty file.")
+			_, _ = fmt.Fprintln(os.Stderr, "Cancelled; empty file.")
 			return nil
 		}
 
@@ -96,19 +96,18 @@ func EditRetryLoop(prefix string, selectFn func() io.Reader, applyFn func(b []by
 		// cancellation of the edit attempt.
 		if bytes.Equal(preEdit, userEdits) {
 			if isRetry {
-				// When at least one edit attempt was made, a cancellation is
-				// considered an error because the last change was not applied;
-				// it could not have been because it was invalid.
-				return errors.New("Cancelled, no changes to invalid file.")
+				// When at least one edit attempt was made before cancelling,
+				// do not remove the temp file as it contains changes.
+				_, _ = fmt.Fprintln(os.Stderr, "Cancelled; no changes to invalid file.")
 			} else {
-				// When no edit attempt is made, a cancellation is not
-				// considered an error because the current (live) specs are
-				// consistent with definitions last seen in the editor.
+				// When no edit attempt is made before cancelling, it is
+				// redundant to keep the temp file because the contents can be
+				// fully regenerated.
 				log.WithField("file", currPath).Debug("remove temp file")
 				_ = os.Remove(currPath)
-				_, _ = fmt.Fprintln(os.Stderr, "Cancelled, nothing to do.")
-				return nil
+				_, _ = fmt.Fprintln(os.Stderr, "Cancelled; nothing to do.")
 			}
+			return nil
 		}
 
 		// Attempt to apply edits.
@@ -123,7 +122,7 @@ func EditRetryLoop(prefix string, selectFn func() io.Reader, applyFn func(b []by
 	}
 }
 
-// editToTempFile presents the contest of r to the user for editing and saves
+// editToTempFile presents the contents of r to the user for editing and saves
 // the result in a temp file with the given prefix.
 func editToTempFile(prefix string, r io.Reader) ([]byte, string, error) {
 	var tmpFile, errTemp = ioutil.TempFile("", prefix)
@@ -207,16 +206,20 @@ func writePostHeader(w io.Writer, n int) {
 
 func pruneHeader(b []byte) []byte {
 	var pruned []byte
-	var lines = bytes.Split(b, []byte("\n"))
-	var lastLine = len(lines) - 1
-	for i, line := range lines {
+	var s = bufio.NewScanner(bytes.NewReader(b))
+
+	for s.Scan() {
+		var line = s.Bytes()
 		if bytes.HasPrefix(line, []byte("#⚙")) || bytes.HasPrefix(line, []byte("#\u26a0")) {
 			continue
 		}
 		pruned = append(pruned, line...)
-		if i < lastLine {
-			pruned = append(pruned, '\n')
-		}
+		pruned = append(pruned, '\n')
 	}
+
+	if err := s.Err(); err != nil {
+		log.WithField("err", err).Panic("unable to prune header comments")
+	}
+
 	return pruned
 }

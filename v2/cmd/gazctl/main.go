@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"io/ioutil"
 	"os"
+	"text/template"
 
 	mbp "github.com/LiveRamp/gazette/v2/pkg/mainboilerplate"
 	"github.com/LiveRamp/gazette/v2/pkg/protocol"
@@ -22,6 +24,8 @@ var (
 	shardsCfg = new(struct {
 		Consumer mbp.AddressConfig `group:"Consumer" namespace:"consumer" env-namespace:"CONSUMER"`
 	})
+
+	journalsEditLongDesc, shardsEditLongDesc string
 )
 
 // ListConfig is common configuration of list operations.
@@ -179,33 +183,8 @@ To read from an arbitrary offset into a journal(s) use the --offset flag.
 If not passed the default value is -1 which will read from the head of the journal.
 `, &cmdJournalRead{})
 
-	_ = addCmd(cmdJournals, "edit", "Edit journal specifications", `
-Edit and apply journal specifications.
-
-`+editCmdLongDescription+`
-
-Use --selector to supply a LabelSelector which constrains the set of returned journal specifications. See "journals list --help" for details and examples.
-
-Edit specifications of journals having an exact name:
->    gazctl journals edit --selector "name in (foo/bar, baz/bing)"
-
-Use an alternative editor
->    GAZ_EDITOR=nano gazctl journals edit --selector "prefix = my/prefix/"
-`, &cmdJournalsEdit{})
-
-	_ = addCmd(cmdShards, "edit", "Edit shard specifications", `
-Edit and apply shard specifications.
-
-`+editCmdLongDescription+`
-
-Use --selector to supply a LabelSelector which constrains the set of returned shard specifications. See "shards list --help" for details and examples.
-
-Edit specifications of journals having an exact ID:
->    gazctl shards edit --selector "id in (foo, bar)"
-
-Use an alternative editor
->    GAZ_EDITOR=nano gazctl shards edit --selector "id = baz"
-`, &cmdShardsEdit{})
+	_ = addCmd(cmdJournals, "edit", "Edit journal specifications", journalsEditLongDesc, &cmdJournalsEdit{})
+	_ = addCmd(cmdShards, "edit", "Edit shard specifications", shardsEditLongDesc, &cmdShardsEdit{})
 
 	mbp.MustParseConfig(parser, iniFilename)
 }
@@ -216,3 +195,52 @@ const iniFilename = "gazctl.ini"
 const editCmdLongDescription = `The edit command allows you to directly edit journal specifications matching the supplied LabelSelector. It will open the editor defined by your GAZ_EDITOR or EDITOR environment variables or fall back to 'vi'. Editing from Windows is currently not supported.
 
 Upon exiting the editor, if the file has been changed, it will be validated and applied. If the file is invalid or fails to apply, the editor is re-opened. Exiting the editor with no changes or saving an empty file are interpreted as the user aborting the edit attempt.`
+
+type editDescription struct {
+	Type, HelpCommand, Examples string
+}
+
+func init() {
+	// Avoid heavy duplication of text between "journals edit" and
+	// "shards edit" commands by templating their long descriptions.
+	var editTemplate = template.Must(template.New("template").Parse(`Edit and apply {{ .Type }} specifications.
+
+The edit command allows you to directly edit {{ .Type }} specifications matching the supplied LabelSelector. It will open the editor defined by your GAZ_EDITOR or EDITOR environment variables or fall back to 'vi'. Editing from Windows is currently not supported.
+
+Upon exiting the editor, if the file has been changed, it will be validated and applied. If the file is invalid or fails to apply, the editor is re-opened. Exiting the editor with no changes or saving an empty file are interpreted as the user aborting the edit attempt.
+
+Use --selector to supply a LabelSelector which constrains the set of returned {{ .Type }} specifications. See "{{ .HelpCommand }}" for details and examples.
+
+{{ .Examples }}
+`))
+	var journalData = editDescription{
+		Type:        "journal",
+		HelpCommand: "journals list --help",
+		Examples: `Edit specifications of journals having an exact name:
+>    gazctl journals edit --selector "name in (foo/bar, baz/bing)"
+
+Use an alternative editor
+>    GAZ_EDITOR=nano gazctl journals edit --selector "prefix = my/prefix/"`,
+	}
+	var shardData = editDescription{
+		Type:        "shard",
+		HelpCommand: "shards list --help",
+		Examples: `Edit specifications of shards having an exact ID:
+>    gazctl shards edit --selector "id in (foo, bar)"
+
+Use an alternative editor
+>    GAZ_EDITOR=nano gazctl shards edit --selector "id = baz"`,
+	}
+
+	// Save the template output to package vars.
+	var buf = &bytes.Buffer{}
+	if err := editTemplate.Execute(buf, journalData); err != nil {
+		panic(err)
+	}
+	journalsEditLongDesc = buf.String()
+	buf.Reset()
+	if err := editTemplate.Execute(buf, shardData); err != nil {
+		panic(err)
+	}
+	shardsEditLongDesc = buf.String()
+}

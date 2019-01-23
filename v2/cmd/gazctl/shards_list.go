@@ -29,7 +29,7 @@ func (cmd *cmdShardsList) Execute([]string) error {
 	case "table":
 		cmd.outputTable(resp)
 	case "yaml":
-		cmd.outputYAML(resp)
+		writeYAMLShardSpec(os.Stdout, resp)
 	case "json":
 		mbp.Must(json.NewEncoder(os.Stdout).Encode(resp), "failed to encode to json")
 	case "proto":
@@ -113,10 +113,6 @@ func listShards(s string) *consumer.ListResponse {
 	mbp.Must(err, "failed to list shards")
 
 	return resp
-}
-
-func (cmd *cmdShardsList) outputYAML(resp *consumer.ListResponse) {
-	writeYAMLShardSpec(os.Stdout, resp)
 }
 
 func writeYAMLShardSpec(w io.Writer, resp *consumer.ListResponse) {

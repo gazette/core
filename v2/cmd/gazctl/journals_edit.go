@@ -5,7 +5,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/LiveRamp/gazette/v2/cmd/gazctl/editor/editor"
+	"github.com/LiveRamp/gazette/v2/cmd/gazctl/editor"
 	"github.com/LiveRamp/gazette/v2/pkg/client"
 	"github.com/LiveRamp/gazette/v2/pkg/protocol/journalspace"
 	log "github.com/sirupsen/logrus"
@@ -25,10 +25,10 @@ func (cmd *cmdJournalsEdit) Execute([]string) error {
 func (cmd *cmdJournalsEdit) selectSpecs() io.Reader {
 	var resp = listJournals(cmd.Selector)
 
-	var buf = &bytes.Buffer{}
 	if len(resp.Journals) == 0 {
 		log.WithField("selector", cmd.Selector).Panic("no journals match selector")
 	}
+	var buf = &bytes.Buffer{}
 	writeHoistedJournalSpecTree(buf, resp)
 
 	return buf
