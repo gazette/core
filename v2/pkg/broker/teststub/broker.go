@@ -198,4 +198,9 @@ func (p *Broker) Apply(ctx context.Context, req *pb.ApplyRequest) (*pb.ApplyResp
 	return p.ApplyFunc(ctx, req)
 }
 
+// Fragments implements the JournalServer interface by proxying through FragmentsFunc.
+func (p *Broker) Fragments(ctx context.Context, req *pb.FragmentsRequest) (*pb.FragmentsResponse, error) {
+	return nil, nil
+}
+
 func init() { pb.RegisterGRPCDispatcher("local") }

@@ -312,6 +312,28 @@ func (m *ApplyResponse) Validate() error {
 	return nil
 }
 
+func (m *FragmentsRequest) Validate() error {
+	if m.Header != nil {
+		if err := m.Header.Validate(); err != nil {
+			return ExtendContext(err, "Header")
+		}
+	}
+	if err := m.Journal.Validate(); err != nil {
+		return ExtendContext(err, "Journal")
+	}
+	if m.End.Before(m.Begin) {
+		return NewValidationError("invalid End (%v; must be after the Begin: %v)", m.End, m.Begin)
+	}
+	if m.PageToken < 0 {
+		return NewValidationError("invalid PageToken (%v; must be greater than 0)", m.PageToken)
+	}
+	if m.PageLimit < 0 {
+		return NewValidationError("invalid PageLimit (%v; must be greater than 0)", m.PageLimit)
+	}
+
+	return nil
+}
+
 // Validate returns an error if the Status is not well-formed.
 func (x Status) Validate() error {
 	if _, ok := Status_name[int32(x)]; !ok {
