@@ -322,7 +322,7 @@ func (m *FragmentsRequest) Validate() error {
 		return ExtendContext(err, "Journal")
 	}
 	if m.End.Before(m.Begin) {
-		return NewValidationError("invalid End (%v; must be after the Begin: %v)", m.End, m.Begin)
+		return NewValidationError("invalid End (End must be after the Begin)")
 	}
 	if m.PageToken < 0 {
 		return NewValidationError("invalid PageToken (%v; must be greater than 0)", m.PageToken)
@@ -331,6 +331,15 @@ func (m *FragmentsRequest) Validate() error {
 		return NewValidationError("invalid PageLimit (%v; must be greater than 0)", m.PageLimit)
 	}
 
+	return nil
+}
+
+func (m *FragmentsResponse) Validate() error {
+	if err := m.Status.Validate(); err != nil {
+		return ExtendContext(err, "Status")
+	} else if err = m.Header.Validate(); err != nil {
+		return ExtendContext(err, "Header")
+	}
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/LiveRamp/gazette/v2/pkg/fragment"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -41,10 +42,10 @@ func (svc *Service) Fragments(ctx context.Context, req *pb.FragmentsRequest) (*p
 		return svc.jc.Fragments(ctx, req)
 	}
 
-	return serveFragments(ctx, req, res.journalSpec)
+	return serveFragments(ctx, req, res)
 }
 
-func serveFragments(ctx context.Context, req *pb.FragmentsRequest, spec *pb.JournalSpec) (*pb.FragmentsResponse, error) {
+func serveFragments(ctx context.Context, req *pb.FragmentsRequest, res resolution) (*pb.FragmentsResponse, error) {
 	if req.SignatureTTL == nil {
 		req.SignatureTTL = &defaultSignatureTTL
 	}
@@ -54,13 +55,19 @@ func serveFragments(ctx context.Context, req *pb.FragmentsRequest, spec *pb.Jour
 
 	var fragmentSet fragment.CoverSet
 	var err error
-	fragmentSet, err = fragment.WalkAllStores(ctx, req.Journal, spec.Fragment.Stores)
+
+	// IS THIS EVEN POSSIBLE?????
+	if res.journalSpec == nil {
+		return nil, errors.Errorf("No configured journal spec for journal %v", req.Journal)
+	}
+	fragmentSet, err = fragment.WalkAllStores(ctx, req.Journal, res.journalSpec.Fragment.Stores)
 	if err != nil {
 		return nil, err
 	}
 
 	var resp = &pb.FragmentsResponse{
 		Status: pb.Status_OK,
+		Header: &res.Header,
 	}
 	var tuples []*pb.FragmentsResponse_FragmentTuple
 	tuples, err = getFragmentTuples(req, fragmentSet)
@@ -95,7 +102,7 @@ func getFragmentTuples(req *pb.FragmentsRequest, fragmentSet fragment.CoverSet) 
 		// If the query is unbounded and there is no BackingStore or ModeTime this is a live fragment
 		// and can be added to the list of tuples, but no signedURL can be consutructed for this fragment.
 		if req.End.IsZero() && (f.BackingStore == "" && f.ModTime.IsZero()) {
-			tuples = append(tuples, &pb.FragmentsResponse_FragmentTuple{Fragment: &f.Fragment})
+			tuples = append(tuples, &pb.FragmentsResponse_FragmentTuple{Fragment: f.Fragment})
 			continue
 		}
 
@@ -123,7 +130,7 @@ func buildFragmentTuple(f pb.Fragment, ttl time.Duration) (*pb.FragmentsResponse
 	}
 
 	return &pb.FragmentsResponse_FragmentTuple{
-		Fragment:  &f,
+		Fragment:  f,
 		SignedURL: signedURL,
 	}, nil
 }

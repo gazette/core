@@ -475,7 +475,7 @@ message FragmentsResponse {
   Header header = 2;
 
   message FragmentTuple {
-    Fragment fragment = 1;
+    Fragment fragment = 1 [(gogoproto.nullable) = false];
     string signedURL = 2;
   }
 

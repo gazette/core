@@ -387,7 +387,7 @@ func (s *RPCSuite) TestFragmentsRequestValidate(c *gc.C) {
 	req.Header.Etcd.ClusterId = 12
 	c.Check(req.Validate(), gc.ErrorMatches, `Journal: cannot begin with '/' \(/bad\)`)
 	req.Journal = "good"
-	c.Check(req.Validate(), gc.ErrorMatches, `invalid End \(1969-12-31 19:00:05 -0500 EST; must be after the Begin: 1969-12-31 19:00:10 -0500 EST\)`)
+	c.Check(req.Validate(), gc.ErrorMatches, `invalid End \(End must be after the Begin\)`)
 	req.End = time.Unix(100, 0)
 	c.Check(req.Validate(), gc.ErrorMatches, `invalid PageToken \(-1; must be greater than 0\)`)
 	req.PageToken = 10
