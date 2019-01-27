@@ -10,7 +10,7 @@ import (
 
 var (
 	defaultSignatureTTL = time.Hour * 24
-	defaultPageLimit    = 100
+	defaultPageLimit    = int32(1000)
 )
 
 // Fragments dispatches the JournalServer.Fragments API.
@@ -41,10 +41,10 @@ func (svc *Service) Fragments(ctx context.Context, req *pb.FragmentsRequest) (*p
 		return svc.jc.Fragments(ctx, req)
 	}
 
-	return serveFragments(ctx, req, res.journalSpec)
+	return serveFragments(ctx, req, res)
 }
 
-func serveFragments(ctx context.Context, req *pb.FragmentsRequest, spec *pb.JournalSpec) (*pb.FragmentsResponse, error) {
+func serveFragments(ctx context.Context, req *pb.FragmentsRequest, res resolution) (*pb.FragmentsResponse, error) {
 	if req.SignatureTTL == nil {
 		req.SignatureTTL = &defaultSignatureTTL
 	}
@@ -52,67 +52,76 @@ func serveFragments(ctx context.Context, req *pb.FragmentsRequest, spec *pb.Jour
 		req.PageLimit = int32(defaultPageLimit)
 	}
 
-	var fragmentSet fragment.CoverSet
 	var err error
-	fragmentSet, err = fragment.WalkAllStores(ctx, req.Journal, spec.Fragment.Stores)
-	if err != nil {
-		return nil, err
+	if err = res.replica.index.WaitForFirstRemoteRefresh(ctx); err != nil {
+		return nil, pb.ExtendContext(err, "error waiting for index")
 	}
 
 	var resp = &pb.FragmentsResponse{
 		Status: pb.Status_OK,
+		Header: &res.Header,
 	}
-	var tuples []*pb.FragmentsResponse_FragmentTuple
-	tuples, err = getFragmentTuples(req, fragmentSet)
-	if err != nil {
-		return resp, err
-	}
-	resp.Fragments = tuples
+	if err := res.replica.index.Inspect(func(fragmentSet fragment.CoverSet) error {
+		var singedFragments, nextPageToken, err = buildSignedFragments(req, fragmentSet)
+		if err != nil {
+			return err
+		}
+		resp.Fragments = singedFragments
+		resp.NextPageToken = nextPageToken
 
-	if len(tuples) > 0 {
-		resp.PageToken = tuples[len(tuples)-1].Fragment.End + 1
-	} else {
-		resp.PageToken = req.PageToken
+		return nil
+	}); err != nil {
+		return resp, err
 	}
 
 	return resp, nil
 }
 
-func getFragmentTuples(req *pb.FragmentsRequest, fragmentSet fragment.CoverSet) ([]*pb.FragmentsResponse_FragmentTuple, error) {
-	var tuples = make([]*pb.FragmentsResponse_FragmentTuple, 0, req.PageLimit)
-	var ind, found = fragmentSet.LongestOverlappingFragment(req.PageToken)
-	// If the PageToken offset is larger than the largest fragment all valid fragments
+// Returns a list of FragmentsResponse_SignedFragment corresponding to a query as well as the NextPageToken to be used for subsequent
+// requests. If NextPageToken is nil there are no more fragments left in this page.
+func buildSignedFragments(req *pb.FragmentsRequest, fragmentSet fragment.CoverSet) ([]*pb.FragmentsResponse_SignedFragment, int64, error) {
+	var singedFragments = make([]*pb.FragmentsResponse_SignedFragment, 0, req.PageLimit)
+	var nextPageToken int64
+	var ind, found = fragmentSet.LongestOverlappingFragment(req.NextPageToken)
+	// If the NextPageToken offset is larger than the largest fragment all valid fragments
 	// have been returned in previous pages. Return empty slice of fragment tuples.
 	if !found && ind == len(fragmentSet) {
-		return tuples, nil
+		return singedFragments, nextPageToken, nil
 	}
 
-	for _, f := range fragmentSet[ind:] {
-		if len(tuples) == cap(tuples) {
+	var i int
+	var f fragment.Fragment
+	for i, f = range fragmentSet[ind:] {
+		if len(singedFragments) == cap(singedFragments) {
 			break
 		}
 
-		// If the query is unbounded and there is no BackingStore or ModeTime this is a live fragment
-		// and can be added to the list of tuples, but no signedURL can be consutructed for this fragment.
-		if req.End.IsZero() && (f.BackingStore == "" && f.ModTime.IsZero()) {
-			tuples = append(tuples, &pb.FragmentsResponse_FragmentTuple{Fragment: &f.Fragment})
+		// If the query is does not specify an EndModTime and there is no BackingStore or ModTime this is a live fragment
+		// and can be added to the list of singedFragments, but no signedURL can be constructed for this fragment.
+		if req.EndModTime.IsZero() && (f.BackingStore == "" && f.ModTime.IsZero()) {
+			singedFragments = append(singedFragments, &pb.FragmentsResponse_SignedFragment{Fragment: f.Fragment})
 			continue
 		}
 
 		// Ensure the current fragment is within the time bounds of the query.
-		if (req.Begin.Equal(f.ModTime) || req.Begin.Before(f.ModTime)) &&
-			(req.End.IsZero() || req.End.After(f.ModTime)) {
-			var tupel, err = buildFragmentTuple(f.Fragment, *req.SignatureTTL)
+		if (req.BeginModTime.Equal(f.ModTime) || req.BeginModTime.Before(f.ModTime)) &&
+			(req.EndModTime.IsZero() || req.EndModTime.After(f.ModTime)) {
+			var singedFragment, err = buildSignedFragment(f.Fragment, *req.SignatureTTL)
 			if err != nil {
-				return tuples, err
+				return singedFragments, nextPageToken, err
 			}
-			tuples = append(tuples, tupel)
+			singedFragments = append(singedFragments, singedFragment)
 		}
 	}
-	return tuples, nil
+
+	var nextIndex = i + ind
+	if len(singedFragments) > 0 && nextIndex < len(fragmentSet)-1 {
+		nextPageToken = fragmentSet[nextIndex].Begin
+	}
+	return singedFragments, nextPageToken, nil
 }
 
-func buildFragmentTuple(f pb.Fragment, ttl time.Duration) (*pb.FragmentsResponse_FragmentTuple, error) {
+func buildSignedFragment(f pb.Fragment, ttl time.Duration) (*pb.FragmentsResponse_SignedFragment, error) {
 	var signedURL string
 	var err error
 	if f.BackingStore != "" {
@@ -122,8 +131,8 @@ func buildFragmentTuple(f pb.Fragment, ttl time.Duration) (*pb.FragmentsResponse
 		}
 	}
 
-	return &pb.FragmentsResponse_FragmentTuple{
-		Fragment:  &f,
-		SignedURL: signedURL,
+	return &pb.FragmentsResponse_SignedFragment{
+		Fragment:  f,
+		SignedUrl: signedURL,
 	}, nil
 }

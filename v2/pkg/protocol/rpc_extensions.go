@@ -3,6 +3,7 @@ package protocol
 import (
 	"net/url"
 	"strings"
+	"time"
 )
 
 // RoutedJournalClient composes a JournalClient and DispatchRouter.
@@ -321,16 +322,25 @@ func (m *FragmentsRequest) Validate() error {
 	if err := m.Journal.Validate(); err != nil {
 		return ExtendContext(err, "Journal")
 	}
-	if m.End.Before(m.Begin) {
-		return NewValidationError("invalid End (%v; must be after the Begin: %v)", m.End, m.Begin)
+	if m.EndModTime.Before(m.BeginModTime) {
+		return NewValidationError("invalid End (%v must be after the %v)", m.EndModTime.In(time.UTC), m.BeginModTime.In(time.UTC))
 	}
-	if m.PageToken < 0 {
-		return NewValidationError("invalid PageToken (%v; must be greater than 0)", m.PageToken)
+	if m.NextPageToken < 0 {
+		return NewValidationError("invalid PageToken (%v; must be >= zero is allowed (and the default))", m.NextPageToken)
 	}
 	if m.PageLimit < 0 {
-		return NewValidationError("invalid PageLimit (%v; must be greater than 0)", m.PageLimit)
+		return NewValidationError("invalid PageLimit (%v; must be >= zero is allowed (and the default))", m.PageLimit)
 	}
 
+	return nil
+}
+
+func (m *FragmentsResponse) Validate() error {
+	if err := m.Status.Validate(); err != nil {
+		return ExtendContext(err, "Status")
+	} else if err = m.Header.Validate(); err != nil {
+		return ExtendContext(err, "Header")
+	}
 	return nil
 }
 

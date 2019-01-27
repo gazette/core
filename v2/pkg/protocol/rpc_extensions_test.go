@@ -375,23 +375,23 @@ func (s *RPCSuite) TestApplyResponseValidationCases(c *gc.C) {
 
 func (s *RPCSuite) TestFragmentsRequestValidate(c *gc.C) {
 	var req = FragmentsRequest{
-		Header:    badHeaderFixture(),
-		Journal:   "/bad",
-		Begin:     time.Unix(10, 0),
-		End:       time.Unix(5, 0),
-		PageToken: -1,
-		PageLimit: -1,
+		Header:        badHeaderFixture(),
+		Journal:       "/bad",
+		BeginModTime:  time.Unix(10, 0),
+		EndModTime:    time.Unix(5, 0),
+		NextPageToken: -1,
+		PageLimit:     -1,
 	}
 
 	c.Check(req.Validate(), gc.ErrorMatches, `Header.Etcd: invalid ClusterId .*`)
 	req.Header.Etcd.ClusterId = 12
 	c.Check(req.Validate(), gc.ErrorMatches, `Journal: cannot begin with '/' \(/bad\)`)
 	req.Journal = "good"
-	c.Check(req.Validate(), gc.ErrorMatches, `invalid End \(1969-12-31 19:00:05 -0500 EST; must be after the Begin: 1969-12-31 19:00:10 -0500 EST\)`)
-	req.End = time.Unix(100, 0)
-	c.Check(req.Validate(), gc.ErrorMatches, `invalid PageToken \(-1; must be greater than 0\)`)
-	req.PageToken = 10
-	c.Check(req.Validate(), gc.ErrorMatches, `invalid PageLimit \(-1; must be greater than 0\)`)
+	c.Check(req.Validate(), gc.ErrorMatches, `invalid End \(1970-01-01 00:00:05 \+0000 UTC must be after the 1970-01-01 00:00:10 \+0000 UTC\)`)
+	req.EndModTime = time.Unix(100, 0)
+	c.Check(req.Validate(), gc.ErrorMatches, `invalid PageToken \(-1; must be >= zero is allowed \(and the default\)\)`)
+	req.NextPageToken = 10
+	c.Check(req.Validate(), gc.ErrorMatches, `invalid PageLimit \(-1; must be >= zero is allowed \(and the default\)\)`)
 	req.PageLimit = 10
 	c.Check(req.Validate(), gc.IsNil)
 }
