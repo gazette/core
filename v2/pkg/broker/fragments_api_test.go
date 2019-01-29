@@ -70,11 +70,14 @@ func (s *FragmentsSuite) TestbuildSignedFragmentsBoundedRange(c *gc.C) {
 
 	var fixture = buildSignedFragmentsFixture()
 	var fragmentSet = buildFragmentSet(fixture)
+	var index = fragment.NewIndex(context.Background())
+	index.ReplaceRemote(fragmentSet)
+
 	var expected = []*pb.FragmentsResponse_SignedFragment{
 		fixture[1],
 		fixture[3],
 	}
-	var signedFragments, nextPageToken, err = buildSignedFragments(&req, fragmentSet)
+	var signedFragments, nextPageToken, err = buildSignedFragments(&req, index)
 	c.Check(err, gc.IsNil)
 	c.Check(nextPageToken, gc.DeepEquals, int64(0))
 	c.Check(signedFragments, gc.DeepEquals, expected)
@@ -92,8 +95,10 @@ func (s *FragmentsSuite) TestbuildSignedFragmentsUnboundedRange(c *gc.C) {
 
 	var fixture = buildSignedFragmentsFixture()
 	var fragmentSet = buildFragmentSet(fixture)
+	var index = fragment.NewIndex(context.Background())
+	index.ReplaceRemote(fragmentSet)
 	// Return when page is full.
-	var signedFragments, nextPageToken, err = buildSignedFragments(&req, fragmentSet)
+	var signedFragments, nextPageToken, err = buildSignedFragments(&req, index)
 	c.Check(err, gc.IsNil)
 	c.Check(nextPageToken, gc.DeepEquals, fixture[3].Begin)
 	c.Check(signedFragments, gc.DeepEquals, fixture[:3])
@@ -108,7 +113,7 @@ func (s *FragmentsSuite) TestbuildSignedFragmentsUnboundedRange(c *gc.C) {
 	}
 
 	// Return remainder of fragments in next page.
-	signedFragments, nextPageToken, err = buildSignedFragments(&req, fragmentSet)
+	signedFragments, nextPageToken, err = buildSignedFragments(&req, index)
 	c.Check(err, gc.IsNil)
 	c.Check(nextPageToken, gc.DeepEquals, int64(0))
 	c.Check(signedFragments, gc.DeepEquals, fixture[3:])

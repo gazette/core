@@ -251,6 +251,30 @@ func (s *IndexSuite) TestWalkStoresAndURLSigning(c *gc.C) {
 		"file:///root/two/a/journal/0000000000000222-0000000000000333-0000000000000000000000000000000000000444.gz")
 }
 
+func (s *IndexSuite) TestIndexIterator(c *gc.C) {
+	var ind = NewIndex(context.Background())
+	var set = buildSet(c, 100, 150, 150, 200, 200, 250)
+	ind.ReplaceRemote(set)
+
+	var iterator = ind.CreateIterator(0)
+	var f, err = iterator.Next()
+	c.Check(err, gc.IsNil)
+	for i := 0; err == nil; i++ {
+		c.Check(f, gc.DeepEquals, ind.set[i])
+		f, err = iterator.Next()
+	}
+	c.Check(err, gc.DeepEquals, ErrDoneIterator)
+
+	err = iterator.Close()
+	c.Check(err, gc.IsNil)
+
+	// functions should return an error after the iterator has been closed.
+	_, err = iterator.Next()
+	c.Check(err, gc.DeepEquals, ErrClosedIterator)
+	err = iterator.Close()
+	c.Check(err, gc.DeepEquals, ErrClosedIterator)
+}
+
 func buildSet(c *gc.C, offsets ...int64) CoverSet {
 	var set CoverSet
 	var ok bool

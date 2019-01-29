@@ -61,37 +61,34 @@ func serveFragments(ctx context.Context, req *pb.FragmentsRequest, res resolutio
 		Status: pb.Status_OK,
 		Header: &res.Header,
 	}
-	if err := res.replica.index.Inspect(func(fragmentSet fragment.CoverSet) error {
-		var singedFragments, nextPageToken, err = buildSignedFragments(req, fragmentSet)
-		if err != nil {
-			return err
-		}
-		resp.Fragments = singedFragments
-		resp.NextPageToken = nextPageToken
 
-		return nil
-	}); err != nil {
+	var singedFragments []*pb.FragmentsResponse_SignedFragment
+	var nextPageToken int64
+	singedFragments, nextPageToken, err = buildSignedFragments(req, res.replica.index)
+	if err != nil {
 		return resp, err
 	}
+	resp.Fragments = singedFragments
+	resp.NextPageToken = nextPageToken
 
 	return resp, nil
 }
 
 // Returns a list of FragmentsResponse_SignedFragment corresponding to a query as well as the NextPageToken to be used for subsequent
 // requests. If NextPageToken is nil there are no more fragments left in this page.
-func buildSignedFragments(req *pb.FragmentsRequest, fragmentSet fragment.CoverSet) ([]*pb.FragmentsResponse_SignedFragment, int64, error) {
+func buildSignedFragments(req *pb.FragmentsRequest, index *fragment.Index) ([]*pb.FragmentsResponse_SignedFragment, int64, error) {
 	var singedFragments = make([]*pb.FragmentsResponse_SignedFragment, 0, req.PageLimit)
 	var nextPageToken int64
-	var ind, found = fragmentSet.LongestOverlappingFragment(req.NextPageToken)
-	// If the NextPageToken offset is larger than the largest fragment all valid fragments
-	// have been returned in previous pages. Return empty slice of fragment tuples.
-	if !found && ind == len(fragmentSet) {
-		return singedFragments, nextPageToken, nil
-	}
+	var iterator = index.CreateIterator(req.NextPageToken)
+	defer iterator.Close()
 
-	var i int
 	var f fragment.Fragment
-	for i, f = range fragmentSet[ind:] {
+	var err error
+	for {
+		f, err = iterator.Next()
+		if err != nil {
+			break
+		}
 		if len(singedFragments) == cap(singedFragments) {
 			break
 		}
@@ -114,9 +111,10 @@ func buildSignedFragments(req *pb.FragmentsRequest, fragmentSet fragment.CoverSe
 		}
 	}
 
-	var nextIndex = i + ind
-	if len(singedFragments) > 0 && nextIndex < len(fragmentSet)-1 {
-		nextPageToken = fragmentSet[nextIndex].Begin
+	// If the singedFragments is not empty and there are more fragments to be
+	// returned set the nextPageToken to the next fragment.
+	if len(singedFragments) > 0 && err != fragment.ErrDoneIterator {
+		nextPageToken = f.Begin
 	}
 	return singedFragments, nextPageToken, nil
 }

@@ -2,6 +2,7 @@ package fragment
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -15,6 +16,13 @@ const (
 	offsetJumpAgeThreshold = 6 * time.Hour
 )
 
+var (
+	// ErrDoneIterator is returned when an IndexIterator has reached the end of the underlying index.
+	ErrDoneIterator = errors.New("function called on closed iterator")
+	// ErrClosedItertor is called when functions are called on a closed IndexIterator.
+	ErrClosedIterator = errors.New("end of iterator has been reached")
+)
+
 // Index maintains a queryable index of local and remote journal Fragments.
 type Index struct {
 	ctx            context.Context // Context over the lifetime of the Index.
@@ -23,6 +31,14 @@ type Index struct {
 	condCh         chan struct{}   // Condition variable; notifies blocked queries on each |set| update.
 	firstRefreshCh chan struct{}   // Closed when the first remote index load has completed.
 	mu             sync.RWMutex    // Guards |set| and |condCh|.
+}
+
+// IndexIterator allows for linear interation through a Index. While an iterator is active the
+// underlying Index is locked.
+type IndexIterator struct {
+	currentIndex int
+	index        *Index
+	isDone       bool
 }
 
 // NewIndex returns a new, empty Index.
@@ -222,6 +238,43 @@ func WalkAllStores(ctx context.Context, name pb.Journal, stores []pb.FragmentSto
 }
 
 var timeNow = time.Now
+
+// CreateIterator creates a new IndexIterator. |startOffset| is a byte offset
+// and the fragment which which statisfys index.LongestOverlappingFragment will
+// be the starting point for the iterator.
+func (fi *Index) CreateIterator(startOffset int64) *IndexIterator {
+	var ind, _ = fi.set.LongestOverlappingFragment(startOffset)
+
+	fi.mu.Lock()
+	return &IndexIterator{
+		currentIndex: ind,
+		index:        fi,
+	}
+}
+
+// Next returns the next Fragment in the set.
+func (i *IndexIterator) Next() (Fragment, error) {
+	if i.isDone {
+		return Fragment{}, ErrClosedIterator
+	}
+	if i.currentIndex == len(i.index.set) {
+		return Fragment{}, ErrDoneIterator
+	}
+	var f = i.index.set[i.currentIndex]
+	i.currentIndex++
+	return f, nil
+}
+
+// Close closes the iterator and unlocks the underlying Index. Any function
+// calls the IndexIterator after close has been called will return ErrClosedIterator.
+func (i *IndexIterator) Close() error {
+	if i.isDone {
+		return ErrClosedIterator
+	}
+	i.index.mu.Unlock()
+	i.isDone = true
+	return nil
+}
 
 func addTrace(ctx context.Context, format string, args ...interface{}) {
 	if tr, ok := trace.FromContext(ctx); ok {
