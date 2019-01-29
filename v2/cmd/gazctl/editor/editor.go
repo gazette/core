@@ -18,7 +18,7 @@ import (
 
 var whitespace = regexp.MustCompile(`^\s*$`)
 
-// EditRetryLoop seeds a temp file, prefixed with 'prefix', with content from
+// EditRetryLoop seeds a temp file, prefixed with |prefix|, with content from
 // selectFn and passes it to applyFn. If applyFn errors, the editor will be
 // re-opened with recent error message included in the header comments. The
 // current implementation prefixes comment lines with "#".

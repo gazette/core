@@ -33,7 +33,6 @@ func (cmd *cmdShardsEdit) selectSpecs() io.Reader {
 }
 
 func applyShardSpecYAML(b []byte) error {
-
 	var shards []yamlShard
 	if err := yaml.UnmarshalStrict(b, &shards); err != nil {
 		return err
