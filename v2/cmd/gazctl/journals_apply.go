@@ -42,7 +42,7 @@ func (cmd *cmdJournalsApply) Execute([]string) error {
 
 // newJournalSpecApplyRequest flattens a journal specification tree into
 // concrete JournalSpecs and builds the request.
-func newJournalSpecApplyRequest(tree *journalspace.Node) (*pb.ApplyRequest, error) {
+func newJournalSpecApplyRequest(tree *journalspace.Node) *pb.ApplyRequest {
 	var nodes = tree.Flatten()
 	var req = new(pb.ApplyRequest)
 	for i := range nodes {
@@ -56,8 +56,5 @@ func newJournalSpecApplyRequest(tree *journalspace.Node) (*pb.ApplyRequest, erro
 		req.Changes = append(req.Changes, change)
 	}
 
-	if err := req.Validate(); err != nil {
-		return nil, err
-	}
-	return req, nil
+	return req
 }

@@ -43,8 +43,8 @@ func (cmd *cmdJournalsEdit) applySpecs(b []byte) error {
 		return err
 	}
 
-	var req, err = newJournalSpecApplyRequest(&tree)
-	if err != nil {
+	var req = newJournalSpecApplyRequest(&tree)
+	if err := req.Validate(); err != nil {
 		return err
 	}
 
