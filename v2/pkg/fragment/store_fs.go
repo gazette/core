@@ -25,7 +25,7 @@ func fsURL(ep *url.URL, fragment pb.Fragment) (string, error) {
 		return "", err
 	}
 
-	return "file://" + cfg.rewritePath(ep.Path+fragment.ContentPath()), nil
+	return "file://" + cfg.rewritePath(ep.Path, fragment.ContentPath()), nil
 }
 
 func fsExists(ep *url.URL, fragment pb.Fragment) (bool, error) {
@@ -34,7 +34,7 @@ func fsExists(ep *url.URL, fragment pb.Fragment) (bool, error) {
 		return false, err
 	}
 
-	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path+fragment.ContentPath())))
+	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, fragment.ContentPath())))
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false, nil
@@ -51,10 +51,8 @@ func fsOpen(ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path+fragment.ContentPath())))
-	var f io.ReadCloser
-	f, err = os.Open(path)
-	return f, err
+	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, fragment.ContentPath())))
+	return os.Open(path)
 }
 
 func fsPersist(ep *url.URL, spool Spool) error {
@@ -63,7 +61,7 @@ func fsPersist(ep *url.URL, spool Spool) error {
 		return err
 	}
 
-	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path+spool.ContentPath())))
+	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, spool.ContentPath())))
 
 	// Create the journal's fragment directory, if not already present.
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
@@ -108,7 +106,7 @@ func fsList(store pb.FragmentStore, ep *url.URL, name pb.Journal, callback func(
 
 	var root = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(ep.Path))
 
-	return filepath.Walk(filepath.Join(root, filepath.FromSlash(cfg.rewritePath(name.String()+"/"))),
+	return filepath.Walk(filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, name.String()+"/"))),
 		func(path string, info os.FileInfo, err error) error {
 
 			var name string
@@ -140,10 +138,10 @@ func fsList(store pb.FragmentStore, ep *url.URL, name pb.Journal, callback func(
 func fsRemove(ep *url.URL, fragment pb.Fragment) error {
 	var cfg, err = newFsCfg(ep)
 	if err != nil {
-		return  err
+		return err
 	}
 
-	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path+fragment.ContentPath())))
+	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, fragment.ContentPath())))
 	return os.Remove(path)
 }
 

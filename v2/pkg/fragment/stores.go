@@ -144,11 +144,12 @@ type rewriterCfg struct {
 }
 
 // rewritePath replace the first occurrence of the find string with the replace
-// string, effectively rewriting the default Journal path. If find is empty or
-// not found, the original path is returned.
-func (cfg rewriterCfg) rewritePath(path string) string {
+// string in journal path |j| and appends it to the fragment store path |s|,
+// effectively rewriting the default Journal path. If find is empty or not
+// found, the original |j| is appended.
+func (cfg rewriterCfg) rewritePath(s, j string) string {
 	if cfg.Find == "" {
-		return path
+		return s+j
 	}
-	return strings.Replace(path, cfg.Find, cfg.Replace, 1)
+	return s+strings.Replace(j, cfg.Find, cfg.Replace, 1)
 }
