@@ -2,12 +2,12 @@ package consumer
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/LiveRamp/gazette/v2/pkg/allocator"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 	"github.com/coreos/etcd/clientv3"
+	"github.com/pkg/errors"
 )
 
 // Stat dispatches the ShardServer.Stat API.
@@ -136,6 +136,34 @@ func (srv *Service) Apply(ctx context.Context, req *ApplyRequest) (*ApplyRespons
 	return resp, err
 }
 
+// GetHints dispatches the ShardServer.Hints API.
+func (srv *Service) GetHints(ctx context.Context, req *GetHintsRequest) (*GetHintsResponse, error) {
+	var (
+		resp = &GetHintsResponse{
+			Status: Status_OK,
+			Header: pb.NewUnroutedHeader(srv.State),
+		}
+		ks   = srv.State.KS
+		spec *ShardSpec
+	)
+
+	ks.Mu.RLock()
+	var item, ok = allocator.LookupItem(ks, req.Shard.String())
+	ks.Mu.RUnlock()
+	if !ok {
+		resp.Status = Status_SHARD_NOT_FOUND
+		return resp, nil
+	}
+	spec = item.ItemValue.(*ShardSpec)
+
+	var h, err = fetchHints(ctx, spec, srv.Etcd)
+	if err != nil {
+		return nil, err
+	}
+	resp.Hints = h.hints
+	return resp, nil
+}
+
 // ListShards invokes the List RPC, and maps a validation or !OK status to an error.
 func ListShards(ctx context.Context, sc ShardClient, req *ListRequest) (*ListResponse, error) {
 	if r, err := sc.List(pb.WithDispatchDefault(ctx), req); err != nil {
@@ -152,6 +180,19 @@ func ListShards(ctx context.Context, sc ShardClient, req *ListRequest) (*ListRes
 // ApplyShards invokes the Apply RPC, and maps a validation or !OK status to an error.
 func ApplyShards(ctx context.Context, sc ShardClient, req *ApplyRequest) (*ApplyResponse, error) {
 	if r, err := sc.Apply(pb.WithDispatchDefault(ctx), req); err != nil {
+		return r, err
+	} else if err = r.Validate(); err != nil {
+		return r, err
+	} else if r.Status != Status_OK {
+		return r, errors.New(r.Status.String())
+	} else {
+		return r, nil
+	}
+}
+
+// FetchHints invokes the Hints RPC, and maps a validation or !OK status to an error.
+func FetchHints(ctx context.Context, sc ShardClient, req *GetHintsRequest) (*GetHintsResponse, error) {
+	if r, err := sc.GetHints(pb.WithDispatchDefault(ctx), req); err != nil {
 		return r, err
 	} else if err = r.Validate(); err != nil {
 		return r, err

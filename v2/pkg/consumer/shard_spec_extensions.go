@@ -424,6 +424,33 @@ func (m *ApplyResponse) Validate() error {
 	return nil
 }
 
+// Validate returns an error if the HintsRequest is not well-formed.
+func (m *GetHintsRequest) Validate() error {
+	if err := m.Shard.Validate(); err != nil {
+		return pb.ExtendContext(err, "Shard")
+	}
+	return nil
+}
+
+// Validate returns an error if the HintsResponse is not well-formed.
+func (m *GetHintsResponse) Validate() error {
+	if err := m.Status.Validate(); err != nil {
+		return pb.ExtendContext(err, "Status")
+	}
+
+	// TODO: Create a formal FSMHints validation function.
+	for _, hints := range m.Hints {
+		for _, node := range hints.LiveNodes {
+			for _, segment := range node.Segments {
+				if err := segment.Validate(); err != nil {
+					return pb.ExtendContext(err, "Segment")
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func sourcesEq(a, b []ShardSpec_Source) bool {
 	if len(a) != len(b) {
 		return false
