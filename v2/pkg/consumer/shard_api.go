@@ -2,12 +2,14 @@ package consumer
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"strings"
 
 	"github.com/LiveRamp/gazette/v2/pkg/allocator"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
+	"github.com/LiveRamp/gazette/v2/pkg/recoverylog"
 	"github.com/coreos/etcd/clientv3"
+	"github.com/pkg/errors"
 )
 
 // Stat dispatches the ShardServer.Stat API.
@@ -134,6 +136,41 @@ func (srv *Service) Apply(ctx context.Context, req *ApplyRequest) (*ApplyRespons
 		s.KS.Mu.RUnlock()
 	}
 	return resp, err
+}
+
+// Hints dispatches the ShardServer.Hints API.
+func (srv *Service) Hints(ctx context.Context, req *HintsRequest) (*HintsResponse, error) {
+	var (
+		resp     = new(HintsResponse)
+		res, err = srv.Resolver.Resolve(ResolveArgs{
+			Context: ctx,
+			ShardID: req.Shard,
+		})
+	)
+	resp.Status = res.Status
+	if err != nil || res.Status != Status_OK {
+		return resp, err
+	}
+
+	var txn *clientv3.TxnResponse
+	_, txn, err = fetchHints(ctx, res.Spec, srv.etcd)
+	for i := range txn.Responses {
+		var currHints recoverylog.FSMHints
+		if kvs := txn.Responses[i].GetResponseRange().Kvs; len(kvs) == 0 {
+			continue
+		} else if err = json.Unmarshal(kvs[0].Value, &currHints); err != nil {
+			return nil, extendErr(err, "unmarshal FSMHints")
+		} else if _, err = recoverylog.NewFSM(currHints); err != nil { // Validate hints.
+			return nil, extendErr(err, "validating FSMHints")
+		} else if currHints.Log != res.Spec.RecoveryLog {
+			return nil, errors.Errorf("recovered hints.Log doesn't match ShardSpec.RecoveryLog (%s vs %s)",
+				currHints.Log, res.Spec.RecoveryLog)
+		}
+		resp.Hints = append(resp.Hints, currHints)
+	}
+	resp.Status = Status_OK
+
+	return resp, nil
 }
 
 // ListShards invokes the List RPC, and maps a validation or !OK status to an error.

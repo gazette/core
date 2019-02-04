@@ -3,6 +3,7 @@ syntax = "proto3";
 package consumer;
 
 import "github.com/LiveRamp/gazette/v2/pkg/protocol/protocol.proto";
+import "github.com/LiveRamp/gazette/v2/pkg/recoverylog/recorded_op.proto";
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
@@ -242,6 +243,19 @@ message StatResponse {
   map<string, int64> offsets = 3 [(gogoproto.castkey) = "github.com/LiveRamp/gazette/v2/pkg/protocol.Journal"];
 }
 
+message HintsRequest {
+  // Shard to fetch hints for.
+  string shard = 1 [(gogoproto.casttype) = "ShardID"];
+}
+
+message HintsResponse{
+  // Status of the Hints RPC.
+  Status status = 1;
+  // List of hints for a shard. The most recent recovery log hint set will be first, any subsequent hints
+  // are for historical backup. 
+  repeated recoverylog.FSMHints hints = 2 [(gogoproto.nullable) = false];
+}
+
 // Shard is the Consumer service API for interacting with Shards. Applications
 // may wish to extend the Shard API with further domain-specific APIs.
 service Shard {
@@ -251,4 +265,6 @@ service Shard {
   rpc List(ListRequest) returns (ListResponse);
   // Apply changes to the collection of Shards managed by the consumer.
   rpc Apply(ApplyRequest) returns (ApplyResponse);
+  // Hints fetchs a hints for a shard.
+  rpc Hints(HintsRequest) returns (HintsResponse);
 }

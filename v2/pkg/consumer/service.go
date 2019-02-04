@@ -26,7 +26,7 @@ type Service struct {
 	// Journal client for use by consumer applications.
 	Journals pb.RoutedJournalClient
 
-	etcd clientv3.KV
+	etcd *clientv3.Client
 }
 
 // NewService constructs a new Service of the Application, driven by allocator.State.
