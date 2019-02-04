@@ -310,6 +310,14 @@ func (m *ApplyResponse) Validate() error {
 	return nil
 }
 
+// Validate returns an error if the HintsRequest is not well-formed.
+func (m *HintsRequest) Validate() error {
+	if err := m.Shard.Validate(); err != nil {
+		return pb.ExtendContext(err, "Shard")
+	}
+	return nil
+}
+
 const (
 	minShardNameLen, maxShardNameLen = 4, 512
 )
