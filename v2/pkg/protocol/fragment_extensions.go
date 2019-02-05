@@ -8,6 +8,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ContentName returns the content-addressed base file name of this Fragment.
@@ -22,6 +23,9 @@ func (m *Fragment) ContentPath() string { return m.Journal.String() + "/" + m.Co
 // ContentLength returns the number of content bytes contained in this Fragment.
 // If compression is used, this will differ from the file size of the Fragment.
 func (m *Fragment) ContentLength() int64 { return m.End - m.Begin }
+
+// NativeModTime returns the ModTime as an instance of time.Time when required.
+func (m *Fragment) NativeModTime() time.Time { return time.Unix(m.ModTime, 0) }
 
 // Validate returns an error if the Fragment is not well-formed.
 func (m *Fragment) Validate() error {

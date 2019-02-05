@@ -366,7 +366,7 @@ func buildRemoteFragmentFixture(c *gc.C) (frag pb.Fragment, dir string) {
 		Sum:              pb.SHA1SumOf(data),
 		CompressionCodec: pb.CompressionCodec_SNAPPY,
 		BackingStore:     pb.FragmentStore("file:///"),
-		ModTime:          time.Unix(1234567, 0),
+		ModTime:          time.Unix(1234567, 0).Unix(),
 	}
 
 	var path = filepath.Join(dir, frag.ContentPath())
@@ -396,12 +396,12 @@ func expectReadResponse(c *gc.C, stream pb.Journal_ReadClient, expect pb.ReadRes
 		var clone = *expect.Fragment
 		expect.Fragment = &clone
 
-		var respModTime time.Time
+		var respModTime int64
 		if resp.Fragment != nil {
 			respModTime = resp.Fragment.ModTime
 		}
-		c.Check(expect.Fragment.ModTime.Equal(respModTime), gc.Equals, true)
-		resp.Fragment.ModTime, expect.Fragment.ModTime = time.Time{}, time.Time{}
+		c.Check(expect.Fragment.ModTime, gc.Equals, respModTime)
+		resp.Fragment.ModTime, expect.Fragment.ModTime = time.Time{}.Unix(), time.Time{}.Unix()
 	}
 	c.Check(*resp, gc.DeepEquals, expect)
 }
