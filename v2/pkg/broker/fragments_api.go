@@ -12,6 +12,7 @@ import (
 var (
 	defaultSignatureTTL = time.Hour * 24
 	defaultPageLimit    = int32(1000)
+	zeroEpoch           = time.Unix(0, 0).Unix()
 )
 
 // Fragments dispatches the JournalServer.Fragments API.
@@ -94,14 +95,14 @@ func buildSignedFragments(req *pb.FragmentsRequest, set fragment.CoverSet) ([]pb
 
 		// If the query does not specify an EndModTime and there is no BackingStore or ModTime this is a local-only fragment
 		// and can be added to the list of signedFragments, but no signedURL can be constructed for this fragment.
-		if req.EndModTime.IsZero() && f.BackingStore == "" {
+		if req.EndModTime == zeroEpoch && f.BackingStore == "" {
 			out = append(out, pb.FragmentsResponse_SignedFragment{Fragment: f.Fragment})
 			continue
 		}
 
 		// Ensure the current fragment is within the time bounds of the query.
-		if (req.BeginModTime.Equal(f.ModTime) || req.BeginModTime.Before(f.ModTime)) &&
-			(req.EndModTime.IsZero() || req.EndModTime.After(f.ModTime)) {
+		if f.ModTime >= req.BeginModTime &&
+			(req.EndModTime == zeroEpoch || f.ModTime < req.EndModTime) {
 			var signedFragment, err = buildSignedFragment(f.Fragment, *req.SignatureTTL)
 			if err != nil {
 				return []pb.FragmentsResponse_SignedFragment{}, 0, err

@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/LiveRamp/gazette/v2/pkg/allocator"
@@ -358,6 +359,11 @@ func (s *ReplicaSuite) TestCheckFragmentFlush(c *gc.C) {
 		c.Log(test.description)
 		c.Check(proposal, gc.DeepEquals, test.out)
 	}
+}
+
+func (s *ReadSuite) TestFragmentEncoding(c *gc.C) {
+	f := pb.Fragment{}
+	fmt.Printf("yeah %s", &f)
 }
 
 var _ = gc.Suite(&ReplicaSuite{})
