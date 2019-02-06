@@ -335,7 +335,8 @@ func (m *FragmentsRequest) Validate() error {
 func (m *FragmentsResponse) Validate() error {
 	if err := m.Status.Validate(); err != nil {
 		return ExtendContext(err, "Status")
-	} else if err = m.Header.Validate(); err != nil {
+	}
+	if err := m.Header.Validate(); err != nil {
 		return ExtendContext(err, "Header")
 	}
 	return nil
