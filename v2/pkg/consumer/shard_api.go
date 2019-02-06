@@ -198,3 +198,16 @@ func ApplyShards(ctx context.Context, sc ShardClient, req *ApplyRequest) (*Apply
 		return r, nil
 	}
 }
+
+// FetchHints invokes the Hints RPC, and maps a validation or !OK status to an error.
+func FetchHints(ctx context.Context, sc ShardClient, req *HintsRequest) (*HintsResponse, error) {
+	if r, err := sc.Hints(pb.WithDispatchDefault(ctx), req); err != nil {
+		return r, err
+	} else if err = r.Validate(); err != nil {
+		return r, err
+	} else if r.Status != Status_OK {
+		return r, errors.New(r.Status.String())
+	} else {
+		return r, nil
+	}
+}
