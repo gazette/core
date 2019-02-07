@@ -243,17 +243,19 @@ message StatResponse {
   map<string, int64> offsets = 3 [(gogoproto.castkey) = "github.com/LiveRamp/gazette/v2/pkg/protocol.Journal"];
 }
 
-message HintsRequest {
+message GetHintsRequest {
   // Shard to fetch hints for.
   string shard = 1 [(gogoproto.casttype) = "ShardID"];
 }
 
-message HintsResponse{
+message GetHintsResponse{
   // Status of the Hints RPC.
   Status status = 1;
-  // List of hints for a shard. The most recent recovery log hint set will be first, any subsequent hints
-  // are for historical backup. 
-  repeated recoverylog.FSMHints hints = 2 [(gogoproto.nullable) = false];
+  // Header of the response.
+  protocol.Header header = 2 [(gogoproto.nullable) = false];
+  // List of hints for a shard. The most recent recovery log hint set will be
+  // first, any subsequent hints are for historical backup. 
+  repeated recoverylog.FSMHints hints = 3 [(gogoproto.nullable) = true];
 }
 
 // Shard is the Consumer service API for interacting with Shards. Applications
@@ -265,6 +267,6 @@ service Shard {
   rpc List(ListRequest) returns (ListResponse);
   // Apply changes to the collection of Shards managed by the consumer.
   rpc Apply(ApplyRequest) returns (ApplyResponse);
-  // Hints fetchs a hints for a shard.
-  rpc Hints(HintsRequest) returns (HintsResponse);
+  // GetHints fetchs a hints for a shard.
+  rpc GetHints(GetHintsRequest) returns (GetHintsResponse);
 }

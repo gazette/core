@@ -201,30 +201,34 @@ func (s *APISuite) TestHintsCases(c *gc.C) {
 		}
 	}
 
-	var expected []recoverylog.FSMHints
+	var expected []*recoverylog.FSMHints
 	for _, i := range []int64{111, 333, 222} {
 		var hints = mkHints(i)
-		expected = append(expected, hints)
+		expected = append(expected, &hints)
 	}
 	c.Check(storeRecordedHints(r, mkHints(111), r.etcd), gc.IsNil)
 	c.Check(storeRecoveredHints(r, mkHints(222), r.etcd), gc.IsNil)
 	c.Check(storeRecoveredHints(r, mkHints(333), r.etcd), gc.IsNil)
 
+	var hdr = pb.NewUnroutedHeader(tf.state)
 	// Case: Correctly fetch hints
-	var resp, err = tf.service.Hints(tf.ctx, &HintsRequest{Shard: "a-shard"})
+	var resp, err = tf.service.GetHints(tf.ctx, &GetHintsRequest{Shard: "a-shard"})
 	c.Check(err, gc.IsNil)
-	c.Check(resp.Status, gc.Equals, Status_OK)
-	c.Check(resp.Hints, gc.DeepEquals, expected)
+	c.Check(resp, gc.DeepEquals, &GetHintsResponse{
+		Status: Status_OK,
+		Header: hdr,
+		Hints:  expected,
+	})
 
 	// Case: Hint key has not yet been written to
 	tf.resolver.replicas["a-shard"].spec.HintKeys = append(tf.resolver.replicas["a-shard"].spec.HintKeys, "/hints-D")
-	resp, err = tf.service.Hints(tf.ctx, &HintsRequest{Shard: "a-shard"})
+	resp, err = tf.service.GetHints(tf.ctx, &GetHintsRequest{Shard: "a-shard"})
 	c.Check(err, gc.IsNil)
 	c.Check(resp.Status, gc.Equals, Status_OK)
-	c.Check(resp.Hints, gc.DeepEquals, expected)
+	c.Check(resp.Hints, gc.DeepEquals, append(expected, nil))
 
 	// Case: Fetch hints for a non-existant shard
-	resp, err = tf.service.Hints(tf.ctx, &HintsRequest{Shard: "missing-shard"})
+	resp, err = tf.service.GetHints(tf.ctx, &GetHintsRequest{Shard: "missing-shard"})
 	c.Check(err, gc.IsNil)
 	c.Check(resp.Status, gc.Equals, Status_SHARD_NOT_FOUND)
 
@@ -232,7 +236,7 @@ func (s *APISuite) TestHintsCases(c *gc.C) {
 	var hints = mkHints(444)
 	hints.Log = "incorrect/log"
 	c.Check(storeRecordedHints(r, hints, r.etcd), gc.IsNil)
-	resp, err = tf.service.Hints(tf.ctx, &HintsRequest{Shard: "a-shard"})
+	resp, err = tf.service.GetHints(tf.ctx, &GetHintsRequest{Shard: "a-shard"})
 	c.Check(resp, gc.IsNil)
 	c.Check(err.Error(), gc.DeepEquals, "recovered hints.Log doesn't match ShardSpec.RecoveryLog (incorrect/log vs recovery/log)")
 
@@ -240,7 +244,7 @@ func (s *APISuite) TestHintsCases(c *gc.C) {
 	hints = mkHints(555)
 	hints.Log = ""
 	c.Check(storeRecordedHints(r, hints, r.etcd), gc.IsNil)
-	resp, err = tf.service.Hints(tf.ctx, &HintsRequest{Shard: "a-shard"})
+	resp, err = tf.service.GetHints(tf.ctx, &GetHintsRequest{Shard: "a-shard"})
 	c.Check(err.Error(), gc.DeepEquals, "validating FSMHints: hinted log not provided")
 
 	tf.allocateShard(c, spec) // Cleanup.

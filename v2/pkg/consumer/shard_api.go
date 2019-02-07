@@ -2,12 +2,10 @@ package consumer
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
 	"github.com/LiveRamp/gazette/v2/pkg/allocator"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
-	"github.com/LiveRamp/gazette/v2/pkg/recoverylog"
 	"github.com/coreos/etcd/clientv3"
 	"github.com/pkg/errors"
 )
@@ -138,38 +136,35 @@ func (srv *Service) Apply(ctx context.Context, req *ApplyRequest) (*ApplyRespons
 	return resp, err
 }
 
-// Hints dispatches the ShardServer.Hints API.
-func (srv *Service) Hints(ctx context.Context, req *HintsRequest) (*HintsResponse, error) {
+// GetHints dispatches the ShardServer.Hints API.
+func (srv *Service) GetHints(ctx context.Context, req *GetHintsRequest) (*GetHintsResponse, error) {
 	var (
-		resp     = new(HintsResponse)
-		res, err = srv.Resolver.Resolve(ResolveArgs{
-			Context: ctx,
-			ShardID: req.Shard,
-		})
-	)
-	resp.Status = res.Status
-	if err != nil || res.Status != Status_OK {
-		return resp, err
-	}
-
-	var txn *clientv3.TxnResponse
-	_, txn, err = fetchHints(ctx, res.Spec, srv.etcd)
-	for i := range txn.Responses {
-		var currHints recoverylog.FSMHints
-		if kvs := txn.Responses[i].GetResponseRange().Kvs; len(kvs) == 0 {
-			continue
-		} else if err = json.Unmarshal(kvs[0].Value, &currHints); err != nil {
-			return nil, extendErr(err, "unmarshal FSMHints")
-		} else if _, err = recoverylog.NewFSM(currHints); err != nil { // Validate hints.
-			return nil, extendErr(err, "validating FSMHints")
-		} else if currHints.Log != res.Spec.RecoveryLog {
-			return nil, errors.Errorf("recovered hints.Log doesn't match ShardSpec.RecoveryLog (%s vs %s)",
-				currHints.Log, res.Spec.RecoveryLog)
+		resp = &GetHintsResponse{
+			Status: Status_OK,
+			Header: pb.NewUnroutedHeader(srv.State),
 		}
-		resp.Hints = append(resp.Hints, currHints)
-	}
-	resp.Status = Status_OK
+		ks   = srv.State.KS
+		spec *ShardSpec
+	)
 
+	defer func() {
+		if ks != nil {
+			ks.Mu.RUnlock()
+		}
+	}()
+	ks.Mu.RLock()
+	if item, ok := allocator.LookupItem(ks, req.Shard.String()); !ok {
+		resp.Status = Status_SHARD_NOT_FOUND
+		return resp, nil
+	} else {
+		spec = item.ItemValue.(*ShardSpec)
+	}
+
+	var err error
+	resp.Hints, _, err = fetchHints(ctx, spec, srv.etcd)
+	if err != nil {
+		return nil, err
+	}
 	return resp, nil
 }
 
@@ -200,8 +195,8 @@ func ApplyShards(ctx context.Context, sc ShardClient, req *ApplyRequest) (*Apply
 }
 
 // FetchHints invokes the Hints RPC, and maps a validation or !OK status to an error.
-func FetchHints(ctx context.Context, sc ShardClient, req *HintsRequest) (*HintsResponse, error) {
-	if r, err := sc.Hints(pb.WithDispatchDefault(ctx), req); err != nil {
+func FetchHints(ctx context.Context, sc ShardClient, req *GetHintsRequest) (*GetHintsResponse, error) {
+	if r, err := sc.GetHints(pb.WithDispatchDefault(ctx), req); err != nil {
 		return r, err
 	} else if err = r.Validate(); err != nil {
 		return r, err
