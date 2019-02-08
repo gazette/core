@@ -622,13 +622,14 @@ func (s *LifecycleSuite) TestStoreAndFetchHints(c *gc.C) {
 	// verifyHints confirms that fetchHints returns |id|, and the state of hint
 	// keys in etcd matches |idA|, |idB|, |idC|.
 	var verifyHints = func(id, idA, idB, idC int64) {
-		var hints, resp, err = fetchBestHints(r.ctx, r.Spec(), r.etcd)
+		var h, err = fetchHints(r.ctx, r.Spec(), r.etcd)
+		hints, err := pickFirstHints(r.ctx, r.Spec(), r.etcd)
 		c.Check(err, gc.IsNil)
 		c.Check(hints, gc.DeepEquals, mkHints(id))
-		c.Check(resp.Responses, gc.HasLen, 3)
+		c.Check(h.Resp.Responses, gc.HasLen, 3)
 
 		var recovered [3]int64
-		for i, r := range resp.Responses {
+		for i, r := range h.Resp.Responses {
 			switch len(r.GetResponseRange().Kvs) {
 			case 0: // Pass.
 			case 1:
@@ -665,7 +666,7 @@ func (s *LifecycleSuite) TestStoreAndFetchHints(c *gc.C) {
 	r.etcd.Delete(r.ctx, r.spec.HintKeys[2])
 
 	// When no hints exist, default hints are returned.
-	hints, _, err := fetchBestHints(r.ctx, r.spec, r.etcd)
+	hints, err := pickFirstHints(r.ctx, r.spec, r.etcd)
 	c.Check(err, gc.IsNil)
 	c.Check(hints, gc.DeepEquals, recoverylog.FSMHints{Log: aRecoveryLog})
 }
