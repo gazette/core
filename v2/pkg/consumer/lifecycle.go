@@ -22,7 +22,7 @@ import (
 func playLog(shard Shard, pl *recoverylog.Player, etcd *clientv3.Client) error {
 	if dir, err := ioutil.TempDir("", shard.Spec().Id.String()+"-"); err != nil {
 		return extendErr(err, "creating shard working directory")
-	} else if hints, _, err := fetchBestHints(shard.Context(), shard.Spec(), etcd); err != nil {
+	} else if hints, err := pickFirstHints(shard.Context(), shard.Spec(), etcd); err != nil {
 		return extendErr(err, "fetching FSM hints")
 	} else if err = pl.Play(shard.Context(), hints, dir, shard.JournalClient()); err != nil {
 		return extendErr(err, "playing log %s", hints.Log)
@@ -200,51 +200,49 @@ func fetchJournalSpec(ctx context.Context, name pb.Journal, journals pb.JournalC
 	return
 }
 
-// fetchBestHints retrieves and decodes the current, best FSMHints for the ShardSpec. It also
+// pickFirstHints retrieves and decodes the current, best FSMHints for the ShardSpec. It also
 // returns a TxnResponse holding each of the raw HintKeys values, which can be used for
 // transactional updates of hints.
-func fetchBestHints(ctx context.Context, spec *ShardSpec, etcd *clientv3.Client) (recoverylog.FSMHints, *clientv3.TxnResponse, error) {
-	var allHints, resp, err = fetchHints(ctx, spec, etcd)
+func pickFirstHints(ctx context.Context, spec *ShardSpec, etcd *clientv3.Client) (recoverylog.FSMHints, error) {
+	var h, err = fetchHints(ctx, spec, etcd)
 	if err != nil {
-		return recoverylog.FSMHints{}, nil, err
+		return recoverylog.FSMHints{}, err
 	}
 
-	var bestHints = recoverylog.FSMHints{Log: spec.RecoveryLog}
 	// Load the first key of |spec.HintKeys| having a populated key/value in Etcd.
-	for _, currHints := range allHints {
+	for _, currHints := range h.Hints {
 		if currHints == nil {
 			continue
 		}
-		bestHints = *currHints
-		break
+		return *currHints, nil
 	}
 
-	return bestHints, resp, nil
+	return recoverylog.FSMHints{Log: spec.RecoveryLog}, nil
 }
 
 // fetchHints retrieves and decodes the current, all FSMHints for the ShardSpec.
 // Nil values will be returned where hint values have not yet been writte. It also
 // returns a TxnResponse holding each of the raw HintKeys values, which can be used for
 // transactional updates of hints.
-func fetchHints(
-	ctx context.Context,
-	spec *ShardSpec,
-	etcd *clientv3.Client,
-) (hints []*recoverylog.FSMHints, resp *clientv3.TxnResponse, err error) {
+func fetchHints(ctx context.Context, spec *ShardSpec, etcd *clientv3.Client) (out struct {
+	Hints []*recoverylog.FSMHints
+	Resp  *clientv3.TxnResponse
+}, err error) {
 	var ops []clientv3.Op
 	for _, hk := range spec.HintKeys {
 		ops = append(ops, clientv3.OpGet(hk))
 	}
 
-	if resp, err = etcd.Txn(ctx).If().Then(ops...).Commit(); err != nil {
+	out.Resp, err = etcd.Txn(ctx).If().Then(ops...).Commit()
+	if err != nil {
 		err = extendErr(err, "fetching ShardSpec.HintKeys")
 		return
 	}
 
-	for i := range resp.Responses {
+	for i := range out.Resp.Responses {
 		var currHints recoverylog.FSMHints
-		if kvs := resp.Responses[i].GetResponseRange().Kvs; len(kvs) == 0 {
-			hints = append(hints, nil)
+		if kvs := out.Resp.Responses[i].GetResponseRange().Kvs; len(kvs) == 0 {
+			out.Hints = append(out.Hints, nil)
 			continue
 		} else if err = json.Unmarshal(kvs[0].Value, &currHints); err != nil {
 			err = extendErr(err, "unmarshal FSMHints")
@@ -255,14 +253,11 @@ func fetchHints(
 				currHints.Log, spec.RecoveryLog)
 		}
 		if err != nil {
-			return nil, resp, err
+			return
 		}
-
-		currHints.Log = spec.RecoveryLog
-		hints = append(hints, &currHints)
+		out.Hints = append(out.Hints, &currHints)
 	}
 	return
-
 }
 
 // storeRecordedHints writes the FSMHints into the first HintKeys of the spec.
@@ -288,21 +283,23 @@ func storeRecordedHints(shard Shard, hints recoverylog.FSMHints, etcd *clientv3.
 // storeRecoveredHints writes the FSMHints into the second HintKeys of the spec,
 // rotating hints previously stored under the second HintKeys to the third key,
 // and so on as a single transaction.
-func storeRecoveredHints(shard Shard, hints recoverylog.FSMHints, etcd *clientv3.Client) (err error) {
+func storeRecoveredHints(shard Shard, hints recoverylog.FSMHints, etcd *clientv3.Client) error {
 	var spec = shard.Spec()
 	var asn = shard.Assignment()
 	var resp *clientv3.TxnResponse
 
-	if _, resp, err = fetchBestHints(shard.Context(), spec, etcd); err != nil {
-		return
+	var h, err = fetchHints(shard.Context(), spec, etcd)
+	if err != nil {
+		return err
 	}
+	resp = h.Resp
 
 	// |hints| is serialized and written to HintKeys[1]. In the same txn,
 	// rotate the current value at HintKeys[1] => HintKeys[2], and so on. We don't
 	// touch HintKeys[0], which holds hints updated by the current primary.
 	var val []byte
 	if val, err = json.Marshal(hints); err != nil {
-		return
+		return err
 	}
 
 	var cmp []clientv3.Cmp
@@ -329,7 +326,7 @@ func storeRecoveredHints(shard Shard, hints recoverylog.FSMHints, etcd *clientv3
 	if _, err = etcd.Txn(shard.Context()).If(cmp...).Then(ops...).Commit(); err != nil {
 		err = extendErr(err, "storing recovered FSMHints")
 	}
-	return
+	return err
 }
 
 // transaction models state and metrics used in the execution of a consumer transaction.

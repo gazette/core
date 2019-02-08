@@ -147,24 +147,20 @@ func (srv *Service) GetHints(ctx context.Context, req *GetHintsRequest) (*GetHin
 		spec *ShardSpec
 	)
 
-	defer func() {
-		if ks != nil {
-			ks.Mu.RUnlock()
-		}
-	}()
 	ks.Mu.RLock()
-	if item, ok := allocator.LookupItem(ks, req.Shard.String()); !ok {
+	var item, ok = allocator.LookupItem(ks, req.Shard.String())
+	ks.Mu.RUnlock()
+	if !ok {
 		resp.Status = Status_SHARD_NOT_FOUND
 		return resp, nil
-	} else {
-		spec = item.ItemValue.(*ShardSpec)
 	}
+	spec = item.ItemValue.(*ShardSpec)
 
-	var err error
-	resp.Hints, _, err = fetchHints(ctx, spec, srv.etcd)
+	var h, err = fetchHints(ctx, spec, srv.etcd)
 	if err != nil {
 		return nil, err
 	}
+	resp.Hints = h.Hints
 	return resp, nil
 }
 
