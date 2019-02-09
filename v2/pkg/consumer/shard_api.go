@@ -8,6 +8,7 @@ import (
 	"github.com/LiveRamp/gazette/v2/pkg/allocator"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 	"github.com/coreos/etcd/clientv3"
+	"google.golang.org/grpc"
 )
 
 // Stat dispatches the ShardServer.Stat API.
@@ -138,7 +139,7 @@ func (srv *Service) Apply(ctx context.Context, req *ApplyRequest) (*ApplyRespons
 
 // ListShards invokes the List RPC, and maps a validation or !OK status to an error.
 func ListShards(ctx context.Context, sc ShardClient, req *ListRequest) (*ListResponse, error) {
-	if r, err := sc.List(pb.WithDispatchDefault(ctx), req); err != nil {
+	if r, err := sc.List(pb.WithDispatchDefault(ctx), req, grpc.FailFast(false)); err != nil {
 		return r, err
 	} else if err = r.Validate(); err != nil {
 		return r, err
@@ -151,7 +152,7 @@ func ListShards(ctx context.Context, sc ShardClient, req *ListRequest) (*ListRes
 
 // ApplyShards invokes the Apply RPC, and maps a validation or !OK status to an error.
 func ApplyShards(ctx context.Context, sc ShardClient, req *ApplyRequest) (*ApplyResponse, error) {
-	if r, err := sc.Apply(pb.WithDispatchDefault(ctx), req); err != nil {
+	if r, err := sc.Apply(pb.WithDispatchDefault(ctx), req, grpc.FailFast(false)); err != nil {
 		return r, err
 	} else if err = r.Validate(); err != nil {
 		return r, err
