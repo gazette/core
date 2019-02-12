@@ -18,7 +18,7 @@ const (
 	ContentType_ProtoFixed = "application/x-protobuf-fixed"
 	// ContentType_JSONLines is a ContentType for newline-delimited, JSON-encoded
 	// messages. JSONLines is implemented by message.JSONFraming.
-	ContentType_JSONLines = "application/x-jsonlines"
+	ContentType_JSONLines = "application/x-ndjson"
 	// ContentType_RecoveryLog is a ContentType for Gazette's recovery log encoding.
 	// RecoveryLog is implemented by package `recoverylog`. To serve as a shard
 	// recovery log, a JournalSpec must be labeled with ContentType_RecoveryLog.
@@ -39,7 +39,7 @@ const (
 	// user-defined Tag labels may be specified.
 	Tag = "app.gazette.dev/tag"
 	// ManagedBy names the tool or process which manages a specification.
-	// All changes to that spec should be relegated to the named of ManagedBy.
+	// All changes to the specification should be relegated to the named of ManagedBy.
 	// Only one ManagedBy label is allowed. Compare to app.kubernetes.io/managed-by.
 	ManagedBy = "app.gazette.dev/managed-by"
 	// Instance identifies the specific application release to which a

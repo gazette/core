@@ -72,6 +72,10 @@ func (s *SpecSuite) TestShardSpecValidationCases(c *gc.C) {
 	c.Check(spec.Validate(), gc.ErrorMatches, `LabelSet.Labels\[0\].Name: not a valid token \(bad label\)`)
 	spec.LabelSet = pb.MustLabelSet(labels.Instance, "a", labels.Instance, "b")
 	c.Check(spec.Validate(), gc.ErrorMatches, `LabelSet: expected single-value Label has multiple values \(index 1; label `+labels.Instance+` value b\)`)
+	spec.LabelSet = pb.MustLabelSet("id", "an-id")
+	c.Check(spec.Validate(), gc.ErrorMatches, `Labels cannot include label "id"`)
+	spec.LabelSet = pb.MustLabelSet("id", "") // Label is rejected even if empty.
+	c.Check(spec.Validate(), gc.ErrorMatches, `Labels cannot include label "id"`)
 	spec.LabelSet = pb.MustLabelSet(labels.Instance, "an-instance", labels.ManagedBy, "a-tool")
 
 	c.Check(spec.Validate(), gc.ErrorMatches, `Sources\[0\].Journal: not a valid token \(journal 2\)`)

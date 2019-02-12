@@ -25,7 +25,7 @@ func MustLabelSet(nv ...string) (set LabelSet) {
 		panic("expected an even number of Name/Value arguments")
 	}
 	for i := 0; i != len(nv); i += 2 {
-		set.Labels = append(set.Labels, Label{Name: nv[i], Value: nv[i+1]})
+		set.AddValue(nv[i], nv[i+1])
 	}
 	if err := set.Validate(); err != nil {
 		panic(err.Error())
@@ -117,6 +117,17 @@ func (m *LabelSet) AddValue(name, value string) {
 		copy(m.Labels[ind+1:], m.Labels[ind:])
 		m.Labels[ind] = label
 	}
+}
+
+// Remove all instances of Labels |name|.
+func (m *LabelSet) Remove(name string) {
+	var begin = sort.Search(len(m.Labels), func(i int) bool { return m.Labels[i].Name >= name })
+
+	var end = begin
+	for end != len(m.Labels) && m.Labels[end].Name == name {
+		end++
+	}
+	m.Labels = append(m.Labels[:begin], m.Labels[end:]...) // Cut |begin, end).
 }
 
 // ValidateSingleValueLabels compares the LabelSet to labels.SingleValueLabels,

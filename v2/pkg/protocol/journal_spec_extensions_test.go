@@ -65,6 +65,8 @@ func (s *JournalSuite) TestSpecValidationCases(c *gc.C) {
 
 	spec.Labels[0].Name = "name"
 	c.Check(spec.Validate(), gc.ErrorMatches, `Labels cannot include label "name"`)
+	spec.Labels[0].Value = "" // Label is rejected even if value is empty.
+	c.Check(spec.Validate(), gc.ErrorMatches, `Labels cannot include label "name"`)
 	spec.Labels[0].Name = "prefix"
 	c.Check(spec.Validate(), gc.ErrorMatches, `Labels cannot include label "prefix"`)
 
@@ -72,6 +74,8 @@ func (s *JournalSuite) TestSpecValidationCases(c *gc.C) {
 	c.Check(spec.Validate(), gc.ErrorMatches, `Labels: expected single-value Label has multiple values .*`)
 	spec.LabelSet = MustLabelSet(labels.ContentType, "invalid/content/type")
 	c.Check(spec.Validate(), gc.ErrorMatches, `Labels: parsing `+labels.ContentType+`: mime: unexpected content after media subtype`)
+	spec.LabelSet = MustLabelSet(labels.ContentType, "")
+	c.Check(spec.Validate(), gc.ErrorMatches, `Labels: parsing `+labels.ContentType+`: mime: no media type`)
 	spec.LabelSet = MustLabelSet(labels.MessageSubType, "subtype")
 	c.Check(spec.Validate(), gc.ErrorMatches, `Labels: expected `+labels.MessageType+` label alongside `+labels.MessageSubType)
 	spec.LabelSet = MustLabelSet(labels.MessageSubType, "subtype", labels.MessageType, "type")

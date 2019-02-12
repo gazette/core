@@ -106,7 +106,7 @@ func (s *LabelSuite) TestValuesOfCases(c *gc.C) {
 	}
 }
 
-func (s *LabelSuite) TestSetAndAdd(c *gc.C) {
+func (s *LabelSuite) TestSetAddAndRemove(c *gc.C) {
 	var set LabelSet
 	set.AddValue("bb", "3") // Insert empty.
 	set.AddValue("aa", "0") // Insert at beginning.
@@ -127,6 +127,23 @@ func (s *LabelSuite) TestSetAndAdd(c *gc.C) {
 	set.SetValue("aa", "8") // Replace at middle.
 
 	c.Check(set, gc.DeepEquals, MustLabelSet("00", "7", "aa", "8", "bb", "5", "cc", "6"))
+
+	set.AddValue("bb", "9")
+	set.AddValue("00", "00")
+
+	set.Remove("bb") // Remove from middle.
+	set.Remove("bb") // Repeat. Not found (middle).
+	c.Check(set, gc.DeepEquals, MustLabelSet("00", "00", "00", "7", "aa", "8", "cc", "6"))
+
+	set.Remove("0")  // Not found (before beginning).
+	set.Remove("00") // Remove from beginning.
+	c.Check(set, gc.DeepEquals, MustLabelSet("aa", "8", "cc", "6"))
+	set.Remove("dd") // Not found (past end).
+	set.Remove("cc") // Remove from end.
+	c.Check(set, gc.DeepEquals, MustLabelSet("aa", "8"))
+
+	set.Remove("aa")
+	c.Check(set, gc.DeepEquals, LabelSet{Labels: []Label{}})
 }
 
 func (s *LabelSuite) TestUnion(c *gc.C) {

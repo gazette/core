@@ -48,9 +48,7 @@ func (m *JournalSpec) Validate() error {
 		return NewValidationError(`Labels cannot include label "name"`)
 	} else if len(m.LabelSet.ValuesOf("prefix")) != 0 {
 		return NewValidationError(`Labels cannot include label "prefix"`)
-	} else if err = ValidateSingleValueLabels(m.LabelSet); err != nil {
-		return ExtendContext(err, "Labels")
-	} else if err = validateJournaLabelConstraints(m.LabelSet); err != nil {
+	} else if err = validateJournalLabelConstraints(m.LabelSet); err != nil {
 		return ExtendContext(err, "Labels")
 	} else if err = m.Fragment.Validate(); err != nil {
 		return ExtendContext(err, "Fragment")
@@ -258,12 +256,15 @@ func ExtractJournalSpecMetaLabels(spec *JournalSpec, out LabelSet) LabelSet {
 	return out
 }
 
-// validateJournaLabelConstraints asserts expected invariants of MessageType,
+// validateJournalLabelConstraints asserts expected invariants of MessageType,
 // MessageSubType, and ContentType labels:
 //  * ContentType must parse as a RFC 1521 MIME / media-type.
 //  * If MessageType is present, ContentType must be present and match a known framing.
 //  * If MessageSubType is present, so is MessageType.
-func validateJournaLabelConstraints(ls LabelSet) error {
+func validateJournalLabelConstraints(ls LabelSet) error {
+	if err := ValidateSingleValueLabels(ls); err != nil {
+		return err
+	}
 	var ct = ls.ValuesOf(labels.ContentType)
 	if ct != nil {
 		if _, _, err := mime.ParseMediaType(ct[0]); err != nil {
