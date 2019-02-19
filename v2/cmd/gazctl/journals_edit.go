@@ -7,7 +7,10 @@ import (
 
 	"github.com/LiveRamp/gazette/v2/cmd/gazctl/editor"
 	"github.com/LiveRamp/gazette/v2/pkg/client"
+	mbp "github.com/LiveRamp/gazette/v2/pkg/mainboilerplate"
+	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 	"github.com/LiveRamp/gazette/v2/pkg/protocol/journalspace"
+	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
@@ -54,11 +57,14 @@ func (cmd *cmdJournalsEdit) applySpecs(b []byte) error {
 	}
 
 	var ctx = context.Background()
-	if resp, err := client.ApplyJournals(ctx, journalsCfg.Broker.JournalClient(ctx), req); err != nil {
-		return err
-	} else {
-		log.WithField("rev", resp.Header.Etcd.Revision).Info("successfully applied")
+	var resp *pb.ApplyResponse
+	var err error
+	resp, err = client.ApplyJournalsInBatches(ctx, journalsCfg.Broker.JournalClient(ctx), req, cmd.MaxTxnSize)
+	if err == rpctypes.ErrTooManyOps {
+		tooManyOpsPanic(len(req.Changes))
 	}
+	mbp.Must(err, "failed to apply journals")
+	log.WithField("rev", resp.Header.Etcd.Revision).Info("successfully applied")
 
 	return nil
 }
