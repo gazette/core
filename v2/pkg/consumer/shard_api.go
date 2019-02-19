@@ -191,17 +191,56 @@ func ListShards(ctx context.Context, sc ShardClient, req *ListRequest) (*ListRes
 	}
 }
 
-// ApplyShards invokes the Apply RPC, and maps a validation or !OK status to an error.
+// ApplyShards invokes the Apply RPC.
 func ApplyShards(ctx context.Context, sc ShardClient, req *ApplyRequest) (*ApplyResponse, error) {
-	if r, err := sc.Apply(pb.WithDispatchDefault(ctx), req, grpc.FailFast(false)); err != nil {
-		return r, err
-	} else if err = r.Validate(); err != nil {
-		return r, err
-	} else if r.Status != Status_OK {
-		return r, errors.New(r.Status.String())
-	} else {
-		return r, nil
+	return ApplyShardsLimit(ctx, sc, req, 0)
+}
+
+// ApplyShardsLimit is a helper function for applying changes to shards which
+// may be larger than the configured etcd transaction size limit. The changes in
+// |parentReq| will be sent serially in batches of size |maxTxnSize|. If
+// |maxTxnSize| is 0 all changes will be attempted as part of a single
+// transaction. This function will return the response of the final
+// ShardClient.Apply call. Response validation or !OK status from Apply RPC are
+// mapped to error. In the event of an error any unapplied changes will be
+// available on |parentReq|.
+func ApplyShardsLimit(
+	ctx context.Context,
+	sc ShardClient,
+	parentReq *ApplyRequest,
+	maxTxnSize int,
+) (*ApplyResponse, error) {
+	var changes []ApplyRequest_Change
+	if maxTxnSize == 0 {
+		maxTxnSize = len(parentReq.Changes)
 	}
+	var finalResp *ApplyResponse
+
+	for len(parentReq.Changes) > 0 {
+		if len(parentReq.Changes) > maxTxnSize {
+			changes = parentReq.Changes[:maxTxnSize]
+		} else {
+			changes = parentReq.Changes
+		}
+
+		var req = &ApplyRequest{}
+		for _, change := range changes {
+			req.Changes = append(req.Changes, change)
+		}
+
+		var resp *ApplyResponse
+		var err error
+		if resp, err = sc.Apply(pb.WithDispatchDefault(ctx), req, grpc.FailFast(false)); err != nil {
+			return resp, err
+		} else if err = resp.Validate(); err != nil {
+			return resp, err
+		} else if resp.Status != Status_OK {
+			return resp, errors.New(resp.Status.String())
+		}
+		finalResp = resp
+		parentReq.Changes = parentReq.Changes[len(changes):]
+	}
+	return finalResp, nil
 }
 
 // FetchHints invokes the Hints RPC, and maps a validation or !OK status to an error.

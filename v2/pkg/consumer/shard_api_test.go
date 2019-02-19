@@ -1,6 +1,11 @@
 package consumer
 
 import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/LiveRamp/gazette/v2/pkg/client"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 	"github.com/LiveRamp/gazette/v2/pkg/recoverylog"
 	gc "github.com/go-check/check"
@@ -183,6 +188,94 @@ func (s *APISuite) TestApplyCases(c *gc.C) {
 	c.Check(err, gc.ErrorMatches, `Changes\[0\].Delete: not a valid token \(invalid shard id\)`)
 }
 
+func (s *APISuite) TestApplyShardsLimit(c *gc.C) {
+	var ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+
+	var ss = NewShardServerStub(ctx, c)
+	var client = NewRoutedShardClient(ss.MustClient(), client.NewRouteCache(2, time.Hour))
+
+	var hdr = buildHeaderFixture(ss)
+	// Case: MxnTxnSize is 0. All changes are submitted.
+	var fixture = buildApplyReqFixtue()
+	var expected = &ApplyResponse{
+		Status: Status_OK,
+		Header: *hdr,
+	}
+	ss.ApplyFunc = func(ctx context.Context, req *ApplyRequest) (*ApplyResponse, error) {
+		c.Check(req, gc.DeepEquals, fixture)
+		return expected, nil
+	}
+	resp, err := ApplyShardsLimit(ctx, client, fixture, 0)
+	c.Check(err, gc.IsNil)
+	c.Check(resp, gc.DeepEquals, expected)
+
+	// Case: MxnTxnSize == len(req.Changes). All changes are submitted.
+	fixture = buildApplyReqFixtue()
+	resp, err = ApplyShardsLimit(ctx, client, fixture, 3)
+	c.Check(err, gc.IsNil)
+	c.Check(resp, gc.DeepEquals, expected)
+	c.Check(len(fixture.Changes), gc.Equals, 0)
+
+	// Case: MxnTxnSize < len(req.Changes). Changes are batched.
+	fixture = buildApplyReqFixtue()
+	ss.ApplyFunc = func(ctx context.Context, req *ApplyRequest) (*ApplyResponse, error) {
+		c.Check(req, gc.DeepEquals, &ApplyRequest{
+			Changes: []ApplyRequest_Change{
+				{Upsert: fixture.Changes[0].Upsert, ExpectModRevision: 1},
+			},
+		})
+		return expected, nil
+	}
+	resp, err = ApplyShardsLimit(ctx, client, fixture, 1)
+	c.Check(err, gc.IsNil)
+	c.Check(resp, gc.DeepEquals, expected)
+	c.Check(len(fixture.Changes), gc.Equals, 0)
+
+	// Case: MxnTxnSize == 0.
+	fixture = &ApplyRequest{}
+	ss.ApplyFunc = func(ctx context.Context, req *ApplyRequest) (*ApplyResponse, error) {
+		c.Error("should not be called")
+		return nil, nil
+	}
+	resp, err = ApplyShardsLimit(ctx, client, &ApplyRequest{}, 1)
+	c.Check(err, gc.IsNil)
+	c.Check(resp, gc.IsNil)
+	c.Check(len(fixture.Changes), gc.Equals, 0)
+
+	// Case: Return Error from backend.
+	fixture = buildApplyReqFixtue()
+	ss.ApplyFunc = func(ctx context.Context, req *ApplyRequest) (*ApplyResponse, error) {
+		return nil, errors.New("something has gone wrong")
+	}
+	resp, err = ApplyShardsLimit(ctx, client, fixture, 1)
+	c.Check(err, gc.ErrorMatches, "rpc error: code = Unknown desc = something has gone wrong")
+	c.Check(len(fixture.Changes), gc.Equals, 2)
+
+	// Case: Status !OK mapped as an error.
+	fixture = buildApplyReqFixtue()
+	ss.ApplyFunc = func(ctx context.Context, req *ApplyRequest) (*ApplyResponse, error) {
+		return &ApplyResponse{
+			Status: Status_ETCD_TRANSACTION_FAILED,
+			Header: *hdr,
+		}, nil
+	}
+	resp, err = ApplyShardsLimit(ctx, client, fixture, 1)
+	c.Check(err.Error(), gc.Matches, Status_ETCD_TRANSACTION_FAILED.String())
+	c.Check(len(fixture.Changes), gc.Equals, 2)
+
+	// Case: Validation error mapped as error.
+	fixture = buildApplyReqFixtue()
+	ss.ApplyFunc = func(ctx context.Context, req *ApplyRequest) (*ApplyResponse, error) {
+		return &ApplyResponse{
+			Status: Status_ETCD_TRANSACTION_FAILED,
+		}, nil
+	}
+	resp, err = ApplyShardsLimit(ctx, client, fixture, 1)
+	c.Check(err, gc.ErrorMatches, `Header.Route: invalid Primary \(0; expected -1 <= Primary < 0\)`)
+	c.Check(len(fixture.Changes), gc.Equals, 2)
+}
+
 func (s *APISuite) TestHintsCases(c *gc.C) {
 	var tf, cleanup = newTestFixture(c)
 	defer cleanup()
@@ -278,6 +371,35 @@ func (s *APISuite) TestHintsCases(c *gc.C) {
 	c.Check(err.Error(), gc.DeepEquals, "validating FSMHints: hinted log not provided")
 
 	tf.allocateShard(c, spec) // Cleanup.
+}
+
+func buildHeaderFixture(ep interface{ Endpoint() pb.Endpoint }) *pb.Header {
+	return &pb.Header{
+		ProcessId: pb.ProcessSpec_ID{Zone: "a", Suffix: "broker"},
+		Route: pb.Route{
+			Members:   []pb.ProcessSpec_ID{{Zone: "a", Suffix: "broker"}},
+			Endpoints: []pb.Endpoint{ep.Endpoint()},
+			Primary:   0,
+		},
+		Etcd: pb.Header_Etcd{
+			ClusterId: 12,
+			MemberId:  34,
+			Revision:  56,
+			RaftTerm:  78,
+		},
+	}
+}
+
+func buildApplyReqFixtue() *ApplyRequest {
+	var specA = makeShard(shardA)
+	var specB = makeShard(shardB)
+
+	return &ApplyRequest{
+		Changes: []ApplyRequest_Change{
+			{Upsert: specA, ExpectModRevision: 1},
+			{Upsert: specB, ExpectModRevision: 1},
+		},
+	}
 }
 
 var _ = gc.Suite(&APISuite{})

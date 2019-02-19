@@ -7,6 +7,7 @@ import (
 	"github.com/LiveRamp/gazette/v2/pkg/consumer"
 	"github.com/LiveRamp/gazette/v2/pkg/consumer/shardspace"
 	mbp "github.com/LiveRamp/gazette/v2/pkg/mainboilerplate"
+	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/gogo/protobuf/proto"
 	log "github.com/sirupsen/logrus"
 )
@@ -30,10 +31,15 @@ func (cmd *cmdShardsApply) Execute([]string) error {
 	}
 
 	var ctx = context.Background()
-	resp, err := consumer.ApplyShards(ctx, shardsCfg.Consumer.ShardClient(ctx), req)
+	var resp *consumer.ApplyResponse
+	var err error
+	resp, err = consumer.ApplyShardsLimit(ctx, shardsCfg.Consumer.ShardClient(ctx), req, cmd.MaxTxnSize)
+	if err == rpctypes.ErrTooManyOps {
+		tooManyOpsPanic()
+	}
 	mbp.Must(err, "failed to apply shards")
-
 	log.WithField("rev", resp.Header.Etcd.Revision).Info("successfully applied")
+
 	return nil
 }
 

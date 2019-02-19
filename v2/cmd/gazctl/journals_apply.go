@@ -8,6 +8,7 @@ import (
 	mbp "github.com/LiveRamp/gazette/v2/pkg/mainboilerplate"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 	"github.com/LiveRamp/gazette/v2/pkg/protocol/journalspace"
+	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/gogo/protobuf/proto"
 	log "github.com/sirupsen/logrus"
 )
@@ -33,10 +34,13 @@ func (cmd *cmdJournalsApply) Execute([]string) error {
 	}
 
 	var ctx = context.Background()
-	resp, err := client.ApplyJournals(ctx, journalsCfg.Broker.JournalClient(ctx), req)
+	resp, err := client.ApplyJournalsLimit(ctx, journalsCfg.Broker.JournalClient(ctx), req, cmd.MaxTxnSize)
+	if err == rpctypes.ErrGRPCTooManyOps {
+		tooManyOpsPanic()
+	}
 	mbp.Must(err, "failed to apply journals")
-
 	log.WithField("rev", resp.Header.Etcd.Revision).Info("successfully applied")
+
 	return nil
 }
 
@@ -58,4 +62,16 @@ func newJournalSpecApplyRequest(tree *journalspace.Node) *pb.ApplyRequest {
 		return nil
 	})
 	return req
+}
+
+func tooManyOpsPanic() {
+	log.Panic(`
+This operation has generated more changes than are possible in a single etcd
+transaction given the current server configation. Gazctl supports a 
+max transaction size flag (--max-txn-size) which will send the changes in 
+batches of at most the max transaction size, however this means a loss
+of transactionality and should be used with caution. Instead it is recomended 
+that additional label selectors are used to limit the number of changes within
+this operation.  
+`)
 }

@@ -40,12 +40,15 @@ type ListConfig struct {
 
 // ApplyConfig is common configuration of apply operations.
 type ApplyConfig struct {
-	SpecsPath string `long:"specs" description:"Path to specifications file to apply. Stdin is used if not set"`
-	DryRun    bool   `long:"dry-run" description:"Perform a dry-run of the apply"`
+	SpecsPath  string `long:"specs" description:"Path to specifications file to apply. Stdin is used if not set"`
+	DryRun     bool   `long:"dry-run" description:"Perform a dry-run of the apply"`
+	MaxTxnSize int    `long:"max-txn-size" short:"m" default:"0" description:"Maxium number of transactions to be processed within a single batch"`
 }
 
+// EditConfig is common configuration for exit operations.
 type EditConfig struct {
-	Selector string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on" no-ini:"true"`
+	Selector   string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on" no-ini:"true"`
+	MaxTxnSize int    `long:"max-txn-size" short:"m" default:"0" description:"Maxium number of transactions to be processed within a single batch"`
 }
 
 func (cfg ApplyConfig) decode(into interface{}) error {

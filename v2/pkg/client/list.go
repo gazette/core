@@ -94,17 +94,56 @@ func ListAllJournals(ctx context.Context, client pb.JournalClient, req pb.ListRe
 	return resp, nil
 }
 
-// ApplyJournals invokes the Apply RPC, and maps a validation or !OK status to an error.
+// ApplyJournals invokes the Apply RPC.
 func ApplyJournals(ctx context.Context, jc pb.JournalClient, req *pb.ApplyRequest) (*pb.ApplyResponse, error) {
-	if r, err := jc.Apply(pb.WithDispatchDefault(ctx), req, grpc.FailFast(false)); err != nil {
-		return r, err
-	} else if err = r.Validate(); err != nil {
-		return r, err
-	} else if r.Status != pb.Status_OK {
-		return r, errors.New(r.Status.String())
-	} else {
-		return r, nil
+	return ApplyJournalsLimit(ctx, jc, req, 0)
+}
+
+// ApplyJournalsLimit is a helper function for applying changes to journals which
+// may be larger than the configured etcd transaction size limit. The changes in
+// |parentReq| will be sent serially in batches of size |maxTxnSize|. If
+// |maxTxnSize| is 0 all changes will be attempted as part of a single
+// transaction. This function will return the response of the final
+// ShardClient.Apply call. Response validation or !OK status from Apply RPC are
+// mapped to error. In the event of an error any unapplied changes will be
+// available on |parentReq|.
+func ApplyJournalsLimit(
+	ctx context.Context,
+	jc pb.JournalClient,
+	parentReq *pb.ApplyRequest,
+	maxTxnSize int,
+) (*pb.ApplyResponse, error) {
+	var changes []pb.ApplyRequest_Change
+	if maxTxnSize == 0 {
+		maxTxnSize = len(parentReq.Changes)
 	}
+	var finalResp *pb.ApplyResponse
+
+	for len(parentReq.Changes) > 0 {
+		if len(parentReq.Changes) > maxTxnSize {
+			changes = parentReq.Changes[:maxTxnSize]
+		} else {
+			changes = parentReq.Changes
+		}
+
+		var req = &pb.ApplyRequest{}
+		for _, change := range changes {
+			req.Changes = append(req.Changes, change)
+		}
+
+		var resp *pb.ApplyResponse
+		var err error
+		if resp, err = jc.Apply(pb.WithDispatchDefault(ctx), req, grpc.FailFast(false)); err != nil {
+			return resp, err
+		} else if err = resp.Validate(); err != nil {
+			return resp, err
+		} else if resp.Status != pb.Status_OK {
+			return resp, errors.New(resp.Status.String())
+		}
+		finalResp = resp
+		parentReq.Changes = parentReq.Changes[len(changes):]
+	}
+	return finalResp, nil
 }
 
 // ListAllFragments performs multiple Fragments RPCs, as required to join across multiple

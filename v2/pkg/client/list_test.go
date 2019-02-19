@@ -185,6 +185,124 @@ func (s *ListSuite) TestListAllFragments(c *gc.C) {
 	c.Check(err, gc.ErrorMatches, `Status: invalid status \(1000\)`)
 }
 
+func (s *ListSuite) TestApplyJournalsLimit(c *gc.C) {
+	var ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+
+	var broker = teststub.NewBroker(c, ctx)
+
+	var client = pb.NewRoutedJournalClient(broker.MustClient(), NewRouteCache(2, time.Hour))
+
+	var hdr = buildHeaderFixture(broker)
+	// Case: MxnTxnSize is 0. All changes are submitted.
+	var fixture = buildApplyReqFixtue()
+	var expected = &pb.ApplyResponse{
+		Status: pb.Status_OK,
+		Header: *hdr,
+	}
+	broker.ApplyFunc = func(ctx context.Context, req *pb.ApplyRequest) (*pb.ApplyResponse, error) {
+		c.Check(req, gc.DeepEquals, fixture)
+		return expected, nil
+	}
+	resp, err := ApplyJournalsLimit(ctx, client, fixture, 0)
+	c.Check(err, gc.IsNil)
+	c.Check(resp, gc.DeepEquals, expected)
+	c.Check(len(fixture.Changes), gc.Equals, 0)
+
+	// Case: MxnTxnSize == len(req.Changes). All changes are submitted.
+	fixture = buildApplyReqFixtue()
+	resp, err = ApplyJournalsLimit(ctx, client, fixture, 3)
+	c.Check(err, gc.IsNil)
+	c.Check(resp, gc.DeepEquals, expected)
+	c.Check(len(fixture.Changes), gc.Equals, 0)
+
+	// Case: MxnTxnSize < len(req.Changes). Changes are batched.
+	fixture = buildApplyReqFixtue()
+	broker.ApplyFunc = func(ctx context.Context, req *pb.ApplyRequest) (*pb.ApplyResponse, error) {
+		c.Check(req, gc.DeepEquals, &pb.ApplyRequest{
+			Changes: []pb.ApplyRequest_Change{
+				{Upsert: fixture.Changes[0].Upsert, ExpectModRevision: 1},
+			},
+		})
+		return expected, nil
+	}
+	resp, err = ApplyJournalsLimit(ctx, client, fixture, 1)
+	c.Check(err, gc.IsNil)
+	c.Check(resp, gc.DeepEquals, expected)
+	c.Check(len(fixture.Changes), gc.Equals, 0)
+
+	// Case: MxnTxnSize == 0.
+	fixture = &pb.ApplyRequest{}
+	broker.ApplyFunc = func(ctx context.Context, req *pb.ApplyRequest) (*pb.ApplyResponse, error) {
+		c.Error("should not be called")
+		return nil, nil
+	}
+	resp, err = ApplyJournalsLimit(ctx, client, &pb.ApplyRequest{}, 1)
+	c.Check(err, gc.IsNil)
+	c.Check(resp, gc.IsNil)
+	c.Check(len(fixture.Changes), gc.Equals, 0)
+
+	// Case: Return Error from backend.
+	fixture = buildApplyReqFixtue()
+	broker.ApplyFunc = func(ctx context.Context, req *pb.ApplyRequest) (*pb.ApplyResponse, error) {
+		return nil, errors.New("something has gone wrong")
+	}
+	resp, err = ApplyJournalsLimit(ctx, client, fixture, 1)
+	c.Check(err, gc.ErrorMatches, "rpc error: code = Unknown desc = something has gone wrong")
+	c.Check(len(fixture.Changes), gc.Equals, 2)
+
+	// Case: Status !OK mapped as an error.
+	fixture = buildApplyReqFixtue()
+	broker.ApplyFunc = func(ctx context.Context, req *pb.ApplyRequest) (*pb.ApplyResponse, error) {
+		return &pb.ApplyResponse{
+			Status: pb.Status_ETCD_TRANSACTION_FAILED,
+			Header: *hdr,
+		}, nil
+	}
+	resp, err = ApplyJournalsLimit(ctx, client, fixture, 1)
+	c.Check(err.Error(), gc.Matches, pb.Status_ETCD_TRANSACTION_FAILED.String())
+	c.Check(len(fixture.Changes), gc.Equals, 2)
+
+	// Case: Validation error mapped as error.
+	fixture = buildApplyReqFixtue()
+	broker.ApplyFunc = func(ctx context.Context, req *pb.ApplyRequest) (*pb.ApplyResponse, error) {
+		return &pb.ApplyResponse{
+			Status: pb.Status_ETCD_TRANSACTION_FAILED,
+		}, nil
+	}
+	resp, err = ApplyJournalsLimit(ctx, client, fixture, 1)
+	c.Check(err, gc.ErrorMatches, `Header.Route: invalid Primary \(0; expected -1 <= Primary < 0\)`)
+	c.Check(len(fixture.Changes), gc.Equals, 2)
+}
+
+func buildApplyReqFixtue() *pb.ApplyRequest {
+	// Create a fixture of JournalSpecs which we'll list.
+	var fragSpec = pb.JournalSpec_Fragment{
+		Length:           1024,
+		RefreshInterval:  time.Second,
+		CompressionCodec: pb.CompressionCodec_SNAPPY,
+	}
+	var specA = &pb.JournalSpec{
+		Name:        "journal/1/A",
+		LabelSet:    pb.MustLabelSet("foo", "bar"),
+		Replication: 1,
+		Fragment:    fragSpec,
+	}
+	var specB = &pb.JournalSpec{
+		Name:        "journal/2/B",
+		LabelSet:    pb.MustLabelSet("bar", "baz"),
+		Replication: 1,
+		Fragment:    fragSpec,
+	}
+
+	return &pb.ApplyRequest{
+		Changes: []pb.ApplyRequest_Change{
+			{Upsert: specA, ExpectModRevision: 1},
+			{Upsert: specB, ExpectModRevision: 1},
+		},
+	}
+}
+
 func buildListResponseFixture(names ...pb.Journal) (out []pb.ListResponse_Journal) {
 	for _, n := range names {
 		out = append(out, pb.ListResponse_Journal{
