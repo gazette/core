@@ -67,5 +67,5 @@ required = [
 # We require that gorocksdb match our RocksDB version pin (currently 5.17.2)
 [[constraint]]
   name = "github.com/tecbot/gorocksdb"
-  revision = "22dabfda16ecbdd40858aca4e7898ee8d592d647"
+  version = "v1.2.0"
   source = "https://github.com/LiveRamp/gorocksdb.git"
