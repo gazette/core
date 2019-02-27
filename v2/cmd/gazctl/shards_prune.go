@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/LiveRamp/gazette/v2/pkg/client"
 	"github.com/LiveRamp/gazette/v2/pkg/consumer"
@@ -14,8 +13,7 @@ import (
 )
 
 type cmdShardsPrune struct {
-	Selector string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on"`
-	DryRun   bool   `long:"dry-run" description:"Perform a dry-run of the apply"`
+	pruneConfig
 }
 
 func init() {
@@ -64,7 +62,7 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 					"name": sf.ContentName(),
 					"size": sf.ContentLength(),
 					"mod":  sf.ModTime,
-				}).Warn("pruning fragment")
+				}).Info("pruning fragment")
 
 				m.nPruned++
 				m.bytesPruned += sf.ContentLength()
@@ -72,7 +70,7 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 				if !cmd.DryRun {
 					err = fragment.Remove(ctx, sf.BackingStore, sf.Fragment)
 					if err != nil {
-						mbp.Must(err, fmt.Sprintf("error removing fragment %v", sf.ContentPath()))
+						mbp.Must(err, "error removing fragment", "path", sf.ContentPath())
 					}
 
 				}
