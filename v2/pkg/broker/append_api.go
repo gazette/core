@@ -6,6 +6,7 @@ import (
 	"hash"
 	"io"
 
+	"github.com/LiveRamp/gazette/v2/pkg/metrics"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -96,6 +97,8 @@ func proxyAppend(stream grpc.ServerStream, req *pb.AppendRequest, jc pb.JournalC
 
 // serveAppend evaluates a client's Append RPC against the local coordinated pipeline.
 func serveAppend(stream pb.Journal_AppendServer, req *pb.AppendRequest, res resolution, pln *pipeline) error {
+	var err error
+	defer instrumentAppend(err)
 	// We start with sole ownership of the _send_ side of the pipeline.
 
 	// The next offset written is always the furthest known journal extent.
@@ -142,7 +145,7 @@ func serveAppend(stream pb.Journal_AppendServer, req *pb.AppendRequest, res reso
 	}
 	addTrace(stream.Context(), "read client EOF => %s", appender)
 
-	var err = releasePipelineAndGatherResponse(stream.Context(), pln, res.replica.pipelineCh)
+	err = releasePipelineAndGatherResponse(stream.Context(), pln, res.replica.pipelineCh)
 	if err != nil {
 		log.WithFields(log.Fields{"err": err, "journal": res.journalSpec.Name}).
 			Warn("serveAppend: pipeline failed")
@@ -159,6 +162,13 @@ func serveAppend(stream pb.Journal_AppendServer, req *pb.AppendRequest, res reso
 			Commit: appender.reqFragment,
 		})
 	}
+}
+
+func instrumentAppend(err error) {
+	if err != nil {
+		metrics.CommitsTotal.WithLabelValues(metrics.Error).Inc()
+	}
+	metrics.CommitsTotal.WithLabelValues(metrics.Success).Inc()
 }
 
 // appender streams Append content through the pipeline, tracking the exact
