@@ -7,43 +7,40 @@ import "github.com/prometheus/client_golang/prometheus"
 
 // Keys for gazette metrics.
 const (
-	CoalescedAppendsTotalKey          = "gazette_coalesced_appends_total"
 	CommittedBytesTotalKey            = "gazette_committed_bytes_total"
-	FailedCommitsTotalKey             = "gazette_failed_commits_total"
-	ItemRouteDurationSecondsKey       = "gazette_item_route_duration_seconds"
+	CommitsTotalKey                   = "gazette_failed_commits_total"
 	RecoveryLogRecoveredBytesTotalKey = "gazette_recoverylog_recovered_bytes_total"
+	StoreRequestKey                   = "gazette_store_requests_total"
+
+	Error   = "error"
+	Success = "success"
 )
 
 // Collectors for gazette metrics.
 var (
-	CoalescedAppendsTotal = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: CoalescedAppendsTotalKey,
-		Help: "Number of journal append requests bundled into a single write transaction.",
-	})
 	CommittedBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: CommittedBytesTotalKey,
 		Help: "Cumulative number of bytes committed.",
 	})
-	FailedCommitsTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: FailedCommitsTotalKey,
-		Help: "Cumulative number of failed commits.",
-	})
-	ItemRouteDurationSeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: ItemRouteDurationSecondsKey,
-		Help: "Benchmarking of Runner.ItemRoute calls.",
-	})
+	CommitsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: CommitsTotalKey,
+		Help: "Cumulative number of commits.",
+	}, []string{"status"})
 	RecoveryLogRecoveredBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: RecoveryLogRecoveredBytesTotalKey,
 		Help: "Cumulative number of bytes recovered.",
 	})
+	StoreRequestTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: StoreRequestKey,
+		Help: "store operation results.",
+	}, []string{"provider", "operation", "status"})
 )
 
+// GazetteBrokerCollectors list of collectors used by the gazette broker.
 func GazetteBrokerCollectors() []prometheus.Collector {
 	return []prometheus.Collector{
-		CoalescedAppendsTotal,
 		CommittedBytesTotal,
-		FailedCommitsTotal,
-		ItemRouteDurationSeconds,
+		CommitsTotal,
 		RecoveryLogRecoveredBytesTotal,
 	}
 }
@@ -61,6 +58,7 @@ var (
 	}, []string{"consumer"})
 )
 
+// GazconsumerCollectors list of collectors used by the gazette consumer.
 func GazconsumerCollectors() []prometheus.Collector {
 	return []prometheus.Collector{GazconsumerLagBytes}
 }
