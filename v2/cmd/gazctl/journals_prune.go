@@ -63,6 +63,9 @@ func fetchAgedFragments(j pb.JournalSpec, now time.Time) []pb.FragmentsResponse_
 
 	var aged = make([]pb.FragmentsResponse__Fragment, 0)
 	for _, f := range resp.Fragments {
+		if f.Spec.BackingStore == "" {
+			continue
+		}
 		var age = now.Sub(time.Unix(f.Spec.ModTime, 0))
 		if age >= retention {
 			aged = append(aged, f)
