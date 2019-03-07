@@ -15,6 +15,10 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
+      {{- if .Values.annotations}}
+      annotations:
+{{ toYaml .Values.annotations | trim | indent 8 }}
+      {{- end }}
       labels:
         app.kubernetes.io/name: {{ include "gazette.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -43,12 +47,12 @@ spec:
             - "-ec"
             - |
               exec /go/bin/gazette serve \
-                --broker.port=8080 \
-                --broker.zone=$(/root/.config/zonemap/node-zone.sh $NODE_NAME) \
-                --etcd.address={{ .Values.etcd.endpoint }} \
-                --etcd.prefix={{ .Values.etcd.prefix }} \
-                --log.format={{ .Values.log.format }} \
-                --log.level={{ .Values.log.level }}
+                --broker.port  8080 \
+                --broker.zone  $(/root/.config/zonemap/node-zone.sh $NODE_NAME) \
+                --etcd.address {{ .Values.etcd.endpoint }} \
+                --etcd.prefix  {{ .Values.etcd.prefix }} \
+                --log.format   {{ .Values.log.format }} \
+                --log.level    {{ .Values.log.level }}
           env:
             - name: BROKER_ID
               valueFrom:

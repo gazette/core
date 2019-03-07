@@ -34,16 +34,17 @@ func (cmd *cmdJournalsPrune) Execute([]string) error {
 	var now = time.Now()
 	for _, j := range resp.Journals {
 		for _, f := range fetchAgedFragments(j.Spec, now) {
+			var spec = f.Spec
 			log.WithFields(log.Fields{
-				"journal": f.Journal,
-				"name":    f.ContentName(),
-				"size":    f.ContentLength(),
-				"mod":     f.ModTime,
+				"journal": spec.Journal,
+				"name":    spec.ContentName(),
+				"size":    spec.ContentLength(),
+				"mod":     spec.ModTime,
 			}).Info("pruning fragment")
 
 			if !cmd.DryRun {
-				err := fragment.Remove(context.Background(), f.BackingStore, f.Fragment)
-				mbp.Must(err, "error removing fragment", "path", f.ContentPath())
+				err := fragment.Remove(context.Background(), spec)
+				mbp.Must(err, "error removing fragment", "path", spec.ContentPath())
 			}
 		}
 	}
@@ -52,7 +53,7 @@ func (cmd *cmdJournalsPrune) Execute([]string) error {
 
 // fetchAgedFragments returns fragments of the journal that are older than the
 // configured retention.
-func fetchAgedFragments(j pb.JournalSpec, now time.Time) []pb.FragmentsResponse_SignedFragment {
+func fetchAgedFragments(j pb.JournalSpec, now time.Time) []pb.FragmentsResponse__Fragment {
 	var ctx = context.Background()
 	var jc = journalsCfg.Broker.RoutedJournalClient(ctx)
 	resp, err := client.ListAllFragments(ctx, jc, pb.FragmentsRequest{Journal: j.Name})
@@ -60,9 +61,9 @@ func fetchAgedFragments(j pb.JournalSpec, now time.Time) []pb.FragmentsResponse_
 
 	var retention = j.Fragment.Retention
 
-	var aged = make([]pb.FragmentsResponse_SignedFragment, 0)
+	var aged = make([]pb.FragmentsResponse__Fragment, 0)
 	for _, f := range resp.Fragments {
-		var age = now.Sub(time.Unix(f.ModTime, 0))
+		var age = now.Sub(time.Unix(f.Spec.ModTime, 0))
 		if age >= retention {
 			aged = append(aged, f)
 		}
