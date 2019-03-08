@@ -36,17 +36,16 @@ func (cmd *cmdJournalsPrune) Execute([]string) error {
 	var now = time.Now()
 	for _, j := range resp.Journals {
 		for _, f := range fetchAgedFragments(j.Spec, now) {
-			var spec = f.Spec
 			log.WithFields(log.Fields{
-				"journal": spec.Journal,
-				"name":    spec.ContentName(),
-				"size":    spec.ContentLength(),
-				"mod":     spec.ModTime,
+				"journal": f.Journal,
+				"name":    f.ContentName(),
+				"size":    f.ContentLength(),
+				"mod":     f.ModTime,
 			}).Info("pruning fragment")
 
 			if !cmd.DryRun {
-				err := fragment.Remove(context.Background(), spec)
-				mbp.Must(err, "error removing fragment", "path", spec.ContentPath())
+				err := fragment.Remove(context.Background(), f)
+				mbp.Must(err, "error removing fragment", "path", f.ContentPath())
 			}
 		}
 	}
@@ -55,7 +54,7 @@ func (cmd *cmdJournalsPrune) Execute([]string) error {
 
 // fetchAgedFragments returns fragments of the journal that are older than the
 // configured retention.
-func fetchAgedFragments(spec pb.JournalSpec, now time.Time) []pb.FragmentsResponse__Fragment {
+func fetchAgedFragments(spec pb.JournalSpec, now time.Time) []pb.Fragment {
 	var ctx = context.Background()
 	var jc = journalsCfg.Broker.RoutedJournalClient(ctx)
 	resp, err := client.ListAllFragments(ctx, jc, pb.FragmentsRequest{Journal: spec.Name})
@@ -63,20 +62,22 @@ func fetchAgedFragments(spec pb.JournalSpec, now time.Time) []pb.FragmentsRespon
 
 	var retention = spec.Fragment.Retention
 
-	var aged = make([]pb.FragmentsResponse__Fragment, 0)
+	var aged = make([]pb.Fragment, 0)
 	for _, f := range resp.Fragments {
-		if f.Spec.BackingStore == "" {
+		var spec = f.Spec
+		if spec.BackingStore == "" {
 			continue
 		}
-		var age = now.Sub(time.Unix(f.Spec.ModTime, 0))
+		var age = now.Sub(time.Unix(spec.ModTime, 0))
 		if age >= retention {
-			aged = append(aged, f)
+			aged = append(aged, spec)
 		}
 	}
 
 	log.WithFields(log.Fields{
-		"total": len(resp.Fragments),
-		"aged":  len(aged),
+		"journal": spec.Name,
+		"total":   len(resp.Fragments),
+		"aged":    len(aged),
 	}).Info("fetched aged fragments")
 
 	return aged
