@@ -33,9 +33,10 @@ func (cmd *cmdJournalsPrune) Execute([]string) error {
 		log.WithField("selector", cmd.Selector).Panic("no journals match selector")
 	}
 
+	var m = journalsPruneMetrics{journalsTotal: len(resp.Journals)}
 	var now = time.Now()
 	for _, j := range resp.Journals {
-		for _, f := range fetchAgedFragments(j.Spec, now) {
+		for _, f := range fetchAgedFragments(j.Spec, now, &m) {
 			log.WithFields(log.Fields{
 				"journal": f.Journal,
 				"name":    f.ContentName(),
@@ -47,14 +48,47 @@ func (cmd *cmdJournalsPrune) Execute([]string) error {
 				err := fragment.Remove(context.Background(), f)
 				mbp.Must(err, "error removing fragment", "path", f.ContentPath())
 			}
+			m.fragmentsPruned++
+			m.bytesPruned += int(f.End - f.Begin)
 		}
+		m.journalsPruned++
+		logJournalsPruneMetrics(m, j.Spec.Name, "pruned journal")
 	}
+	logJournalsPruneMetrics(m, "", "finished pruning all journals")
 	return nil
+}
+
+type journalsPruneMetrics struct {
+	journalsTotal, journalsPruned   int
+	fragmentsTotal, fragmentsPruned int
+	// Represents the number of bytes in the journal which may be different
+	// from the fragment's file size due to framing and compression.
+	bytesTotal, bytesPruned int
+}
+
+func logJournalsPruneMetrics(metrics journalsPruneMetrics, journal pb.Journal, message string) {
+	var f = log.Fields{
+		"journalsTotal":  metrics.journalsTotal,
+		"journalsPruned": metrics.journalsPruned,
+		// This stat is more difficult to deal with because of how the logic is split. We don't ever see the filtered fragments
+		"fragmentsTotal":  metrics.fragmentsTotal,
+		"fragmentsPruned": metrics.fragmentsPruned,
+		"fragmentsKept":   metrics.fragmentsTotal - metrics.fragmentsPruned,
+		"bytesTotal":      metrics.bytesTotal,
+		"bytesPruned":     metrics.bytesPruned,
+		"bytesKept":       metrics.bytesTotal - metrics.bytesPruned,
+	}
+
+	if journal != "" {
+		f["journal"] = journal
+	}
+
+	log.WithFields(f).Info(message)
 }
 
 // fetchAgedFragments returns fragments of the journal that are older than the
 // configured retention.
-func fetchAgedFragments(spec pb.JournalSpec, now time.Time) []pb.Fragment {
+func fetchAgedFragments(spec pb.JournalSpec, now time.Time, metrics *journalsPruneMetrics) []pb.Fragment {
 	var ctx = context.Background()
 	var jc = journalsCfg.Broker.RoutedJournalClient(ctx)
 	resp, err := client.ListAllFragments(ctx, jc, pb.FragmentsRequest{Journal: spec.Name})
@@ -65,6 +99,8 @@ func fetchAgedFragments(spec pb.JournalSpec, now time.Time) []pb.Fragment {
 	var aged = make([]pb.Fragment, 0)
 	for _, f := range resp.Fragments {
 		var spec = f.Spec
+		metrics.fragmentsTotal++
+		metrics.bytesTotal += int(spec.End - spec.Begin)
 		if spec.BackingStore == "" {
 			continue
 		}
