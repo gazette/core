@@ -55,13 +55,13 @@ func (cmd *cmdJournalsPrune) Execute([]string) error {
 
 // fetchAgedFragments returns fragments of the journal that are older than the
 // configured retention.
-func fetchAgedFragments(j pb.JournalSpec, now time.Time) []pb.FragmentsResponse__Fragment {
+func fetchAgedFragments(spec pb.JournalSpec, now time.Time) []pb.FragmentsResponse__Fragment {
 	var ctx = context.Background()
 	var jc = journalsCfg.Broker.RoutedJournalClient(ctx)
-	resp, err := client.ListAllFragments(ctx, jc, pb.FragmentsRequest{Journal: j.Name})
+	resp, err := client.ListAllFragments(ctx, jc, pb.FragmentsRequest{Journal: spec.Name})
 	mbp.Must(err, "failed to fetch fragments")
 
-	var retention = j.Fragment.Retention
+	var retention = spec.Fragment.Retention
 
 	var aged = make([]pb.FragmentsResponse__Fragment, 0)
 	for _, f := range resp.Fragments {
