@@ -128,6 +128,7 @@ type metrics struct {
 
 func logMetrics(m metrics, shard, message string) {
 	var fields = log.Fields{
+		"totalShards":    m.totalShards,
 		"totalFragments": m.totalFragments,
 		"nPruned":        m.nPruned,
 		"nLive":          m.totalFragments - m.nPruned,
