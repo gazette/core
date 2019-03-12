@@ -59,10 +59,16 @@ func (cmd *cmdJournalsPrune) Execute([]string) error {
 }
 
 type journalsPruneMetrics struct {
-	journalsTotal, journalsPruned   int
-	fragmentsTotal, fragmentsPruned int
-	// Represents the number of bytes in the journal which may be different
-	// from the fragment's file size due to framing and compression.
+	journalsTotal  int
+	journalsPruned int
+
+	fragmentsTotal  int
+	fragmentsPruned int
+
+	// For bytesTotal and bytesPruned, the bytes refer to the size of the
+	// content written into the journals. This is likely different from the
+	// sum of the fragment file sizes in the backing store due to framing and
+	// compression.
 	bytesTotal, bytesPruned int
 }
 
@@ -70,13 +76,14 @@ func logJournalsPruneMetrics(metrics journalsPruneMetrics, journal pb.Journal, m
 	var f = log.Fields{
 		"journalsTotal":  metrics.journalsTotal,
 		"journalsPruned": metrics.journalsPruned,
-		// This stat is more difficult to deal with because of how the logic is split. We don't ever see the filtered fragments
+
 		"fragmentsTotal":  metrics.fragmentsTotal,
 		"fragmentsPruned": metrics.fragmentsPruned,
 		"fragmentsKept":   metrics.fragmentsTotal - metrics.fragmentsPruned,
-		"bytesTotal":      metrics.bytesTotal,
-		"bytesPruned":     metrics.bytesPruned,
-		"bytesKept":       metrics.bytesTotal - metrics.bytesPruned,
+
+		"bytesTotal":  metrics.bytesTotal,
+		"bytesPruned": metrics.bytesPruned,
+		"bytesKept":   metrics.bytesTotal - metrics.bytesPruned,
 	}
 
 	if journal != "" {

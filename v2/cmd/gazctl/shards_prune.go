@@ -33,9 +33,9 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 	startup()
 	var ctx = context.Background()
 
-	var m = metrics{}
+	var m = shardsPruneMetrics{}
 	for _, shard := range listShards(cmd.Selector).Shards {
-		m.totalShards++
+		m.shardsTotal++
 		var lastHints = fetchLastHints(ctx, shard.Spec.Id)
 		if lastHints == nil {
 			log.Infof("skipping shard %s, there are no backup hints for this shard", shard.Spec.Id)
@@ -56,7 +56,7 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 		for _, f := range fetchFragments(ctx, lastHints.Log) {
 			var spec = f.Spec
 
-			m.totalFragments++
+			m.fragmentsTotal++
 			m.bytesTotal += spec.ContentLength()
 
 			if len(segments.Intersect(spec.Begin, spec.End)) == 0 {
@@ -67,7 +67,7 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 					"mod":  spec.ModTime,
 				}).Info("pruning fragment")
 
-				m.nPruned++
+				m.fragmentsPruned++
 				m.bytesPruned += spec.ContentLength()
 
 				if !cmd.DryRun {
@@ -79,9 +79,9 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 				}
 			}
 		}
-		logMetrics(m, shard.Spec.Id.String(), "finished pruning log for shard")
+		logShardsPruneMetrics(m, shard.Spec.Id.String(), "finished pruning log for shard")
 	}
-	logMetrics(m, "", "finished pruning log for all shards")
+	logShardsPruneMetrics(m, "", "finished pruning log for all shards")
 	return nil
 }
 
@@ -118,23 +118,23 @@ func fetchFragments(ctx context.Context, journal pb.Journal) []pb.FragmentsRespo
 	return resp.Fragments
 }
 
-type metrics struct {
-	totalShards    int64
-	totalFragments int64
-	nPruned        int64
-	bytesTotal     int64
-	bytesPruned    int64
+type shardsPruneMetrics struct {
+	shardsTotal     int64
+	fragmentsTotal  int64
+	fragmentsPruned int64
+	bytesTotal      int64
+	bytesPruned     int64
 }
 
-func logMetrics(m metrics, shard, message string) {
+func logShardsPruneMetrics(m shardsPruneMetrics, shard, message string) {
 	var fields = log.Fields{
-		"totalShards":    m.totalShards,
-		"totalFragments": m.totalFragments,
-		"nPruned":        m.nPruned,
-		"nLive":          m.totalFragments - m.nPruned,
-		"bytesTotal":     m.bytesTotal,
-		"bytesPruned":    m.bytesPruned,
-		"bytesLive":      m.bytesTotal - m.bytesPruned,
+		"shardsTotal":     m.shardsTotal,
+		"fragmentsTotal":  m.fragmentsTotal,
+		"fragmentsPruned": m.fragmentsPruned,
+		"fragmentsKept":   m.fragmentsTotal - m.fragmentsPruned,
+		"bytesTotal":      m.bytesTotal,
+		"bytesPruned":     m.bytesPruned,
+		"bytesKept":       m.bytesTotal - m.bytesPruned,
 	}
 	if shard != "" {
 		fields["shard"] = shard
