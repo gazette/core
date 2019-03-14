@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/LiveRamp/gazette/v2/pkg/client"
 	"github.com/LiveRamp/gazette/v2/pkg/consumer"
 	"github.com/LiveRamp/gazette/v2/pkg/consumer/shardspace"
 	mbp "github.com/LiveRamp/gazette/v2/pkg/mainboilerplate"
@@ -19,6 +21,7 @@ import (
 
 type cmdShardsList struct {
 	ListConfig
+	Lag bool `long:"lag" description:"Show consumer lag"`
 }
 
 func init() {
@@ -59,7 +62,6 @@ func (cmd *cmdShardsList) Execute([]string) error {
 
 func (cmd *cmdShardsList) outputTable(resp *consumer.ListResponse) {
 	var table = tablewriter.NewWriter(os.Stdout)
-
 	var headers = []string{"ID", "Status"}
 	if cmd.RF {
 		headers = append(headers, "RF")
@@ -73,6 +75,16 @@ func (cmd *cmdShardsList) outputTable(resp *consumer.ListResponse) {
 	for _, l := range cmd.Labels {
 		headers = append(headers, l)
 	}
+
+	var rsc consumer.RoutedShardClient
+	var rjc pb.RoutedJournalClient
+	if cmd.Lag {
+		headers = append(headers, "Lag")
+		var ctx = context.Background()
+		rsc = shardsCfg.Consumer.RoutedShardClient(ctx)
+		rjc = shardsCfg.Broker.RoutedJournalClient(ctx)
+	}
+
 	table.SetHeader(headers)
 
 	for _, j := range resp.Shards {
@@ -115,6 +127,9 @@ func (cmd *cmdShardsList) outputTable(resp *consumer.ListResponse) {
 				row = append(row, strings.Join(v, ","))
 			}
 		}
+		if cmd.Lag {
+			row = append(row, getLag(j.Spec, rsc, rjc))
+		}
 		table.Append(row)
 	}
 	table.Render()
@@ -138,4 +153,29 @@ func writeHoistedYAMLShardSpace(w io.Writer, resp *consumer.ListResponse) {
 	var b, err = yaml.Marshal(shardspace.FromListResponse(resp))
 	_, _ = w.Write(b)
 	mbp.Must(err, "failed to encode shardspace Set")
+}
+
+func getLag(spec consumer.ShardSpec, rsc consumer.RoutedShardClient, rjc pb.RoutedJournalClient) string {
+	var ctx = context.Background()
+	var statReq = consumer.StatRequest{
+		Shard: spec.Id,
+	}
+	var statResp, err = consumer.StatShard(ctx, rsc, &statReq)
+	mbp.Must(err, "failed to stat shard")
+
+	var out = make([]string, 0, len(statResp.Offsets))
+	for journal, offset := range statResp.Offsets {
+		var readReq = pb.ReadRequest{
+			Journal: pb.Journal(journal),
+			Offset:  -1,
+		}
+		var reader = client.NewReader(ctx, rjc, readReq)
+		_, err = reader.Read(nil)
+		if err != nil && err != client.ErrOffsetNotYetAvailable {
+			mbp.Must(err, "failed to read journal", journal)
+		}
+		out = append(out, fmt.Sprintf("%s:%s", journal, strconv.FormatInt(reader.Response.WriteHead-offset, 10)))
+	}
+
+	return strings.Join(out, ", ")
 }
