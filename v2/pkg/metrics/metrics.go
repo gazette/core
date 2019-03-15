@@ -161,6 +161,7 @@ const (
 	GazetteConsumerTxStalledSecondsTotalKey = "gazette_consumer_tx_stalled_seconds_total"
 	GazetteConsumerTxFlushSecondsTotalKey   = "gazette_consumer_tx_flush_seconds_total"
 	GazetteConsumerTxSyncSecondsTotalKey    = "gazette_consumer_tx_sync_seconds_total"
+	GazetteConusmerBytesConsumedTotalKey    = "gazette_consumer_bytes_consumed_total"
 )
 
 // Collectors for consumer.Runner metrics.
@@ -193,6 +194,10 @@ var (
 		Name: GazetteConsumerTxSyncSecondsTotalKey,
 		Help: "Cumulative number of seconds transactions were waiting for their commit to sync.",
 	})
+	GazetteConsumerBytesConsumedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: GazetteConusmerBytesConsumedTotalKey,
+		Help: "Cumulative number of bytes consumed.",
+	})
 )
 
 // GazetteConsumerCollectors returns the metrics used by the consumer package.
@@ -204,5 +209,6 @@ func GazetteConsumerCollectors() []prometheus.Collector {
 		GazetteConsumerTxConsumeSecondsTotal,
 		GazetteConsumerTxStalledSecondsTotal,
 		GazetteConsumerTxFlushSecondsTotal,
+		GazetteConsumerBytesConsumedTotal,
 	}
 }
