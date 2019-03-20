@@ -55,7 +55,7 @@ func AnnounceServeAndAllocate(etcd EtcdContext, srv *server.Server, state *alloc
 	Must(spec.Validate(), "member specification validation error")
 
 	var ann = allocator.Announce(etcd.Etcd, state.LocalKey, spec.MarshalString(), etcd.Session.Lease())
-	Must(state.KS.Load(context.Background(), etcd.Etcd, ann.Revision), "failed to load KeySpace")
+	Must(state.KS.Load(context.Background(), etcd.Etcd, 0), "failed to load KeySpace")
 
 	// Register a signal handler which zeros our advertised limit in Etcd.
 	// Upon seeing this, Allocator will work to discharge all of our assigned

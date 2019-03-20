@@ -35,6 +35,8 @@ func Announce(etcd *clientv3.Client, key, value string, lease clientv3.LeaseID) 
 		}
 
 		if err == nil {
+			// Sleep for some amount of time and wait for the allocator to resolve.
+			time.Sleep(announceConflictRetryInterval)
 			return &Announcement{
 				Key:      key,
 				Revision: resp.Header.Revision,
