@@ -10,7 +10,7 @@ const (
 	CommittedBytesTotalKey            = "gazette_committed_bytes_total"
 	CommitsTotalKey                   = "gazette_commits_total"
 	RecoveryLogRecoveredBytesTotalKey = "gazette_recoverylog_recovered_bytes_total"
-	StoreRequestKey                   = "gazette_store_requests_total"
+	StoreRequestsTotalKey             = "gazette_store_requests_total"
 	StorePersistedBytesTotalKey       = "gazette_store_persisted_bytes_total"
 
 	Fail = "fail"
@@ -32,7 +32,7 @@ var (
 		Help: "Cumulative number of bytes recovered.",
 	})
 	StoreRequestTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: StoreRequestKey,
+		Name: StoreRequestsTotalKey,
 		Help: "Cumulative number of fragment store operations.",
 	}, []string{"provider", "operation", "status"})
 	StorePersistedBytesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
