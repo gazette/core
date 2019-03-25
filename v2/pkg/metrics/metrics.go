@@ -11,6 +11,7 @@ const (
 	CommitsTotalKey                   = "gazette_commits_total"
 	RecoveryLogRecoveredBytesTotalKey = "gazette_recoverylog_recovered_bytes_total"
 	StoreRequestKey                   = "gazette_store_requests_total"
+	ReadRequestKey                    = "gazette_read_request"
 
 	Fail = "fail"
 	Ok   = "ok"
@@ -34,6 +35,10 @@ var (
 		Name: StoreRequestKey,
 		Help: "Cumulative number of fragment store operations.",
 	}, []string{"provider", "operation", "status"})
+	ReadRequestTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: ReadRequestKey,
+		Help: "Cumulative number of borker read requests.",
+	}, []string{"status"})
 )
 
 // GazetteBrokerCollectors lists collectors used by the gazette broker.
@@ -43,6 +48,7 @@ func GazetteBrokerCollectors() []prometheus.Collector {
 		CommitsTotal,
 		RecoveryLogRecoveredBytesTotal,
 		StoreRequestTotal,
+		ReadRequestTotal,
 	}
 }
 

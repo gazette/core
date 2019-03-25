@@ -7,6 +7,7 @@ import (
 
 	"github.com/LiveRamp/gazette/v2/pkg/client"
 	"github.com/LiveRamp/gazette/v2/pkg/fragment"
+	"github.com/LiveRamp/gazette/v2/pkg/metrics"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -41,6 +42,7 @@ func (svc *Service) Read(req *pb.ReadRequest, stream pb.Journal_ReadServer) erro
 	if err = serveRead(stream, req, &res.Header, res.replica.index); err == context.Canceled {
 		err = nil // Gracefully terminate RPC.
 	} else if err != nil {
+		metrics.ReadRequestTotal.WithLabelValues(metrics.Fail).Inc()
 		log.WithFields(log.Fields{"err": err, "req": req}).Warn("failed to serve Read")
 	}
 	return err
