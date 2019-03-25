@@ -89,7 +89,6 @@ func (s *gcsBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) erro
 		err = wc.Close()
 	}
 
-	// Log the num bytes persisted
 	return err
 }
 

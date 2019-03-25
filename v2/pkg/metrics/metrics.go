@@ -11,6 +11,7 @@ const (
 	CommitsTotalKey                   = "gazette_commits_total"
 	RecoveryLogRecoveredBytesTotalKey = "gazette_recoverylog_recovered_bytes_total"
 	StoreRequestKey                   = "gazette_store_requests_total"
+	StorePersistedBytesTotalKey       = "gazette_store_persisted_bytes_total"
 
 	Fail = "fail"
 	Ok   = "ok"
@@ -20,7 +21,7 @@ const (
 var (
 	CommittedBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: CommittedBytesTotalKey,
-		Help: "Cumulative number of bytes committed.",
+		Help: "Cumulative number of bytes committed to journals.",
 	})
 	CommitsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: CommitsTotalKey,
@@ -34,6 +35,10 @@ var (
 		Name: StoreRequestKey,
 		Help: "Cumulative number of fragment store operations.",
 	}, []string{"provider", "operation", "status"})
+	StorePersistedBytesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: StorePersistedBytesTotalKey,
+		Help: "Cumulative number of bytes persisted to fragment stores.",
+	}, []string{"provider"})
 )
 
 // GazetteBrokerCollectors lists collectors used by the gazette broker.
