@@ -21,8 +21,7 @@ type fsCfg struct {
 	rewriterCfg
 }
 
-type fsBackend struct {
-}
+type fsBackend struct{}
 
 func (s fsBackend) Provider() string {
 	return "fs"

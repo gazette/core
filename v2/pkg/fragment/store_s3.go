@@ -43,13 +43,13 @@ type s3Cfg struct {
 }
 
 type s3Backend struct {
-	s3Clients   map[[2]string]*s3.S3
-	s3ClientsMu sync.Mutex
+	clients   map[[2]string]*s3.S3
+	clientsMu sync.Mutex
 }
 
 func newS3Backend() *s3Backend {
 	return &s3Backend{
-		s3Clients: make(map[[2]string]*s3.S3),
+		clients: make(map[[2]string]*s3.S3),
 	}
 }
 
@@ -189,11 +189,11 @@ func (s *s3Backend) s3Client(ep *url.URL) (cfg s3Cfg, client *s3.S3, err error) 
 	// enforces that URL Paths end in '/'.
 	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
 
-	defer s.s3ClientsMu.Unlock()
-	s.s3ClientsMu.Lock()
+	defer s.clientsMu.Unlock()
+	s.clientsMu.Lock()
 
 	var key = [2]string{cfg.Endpoint, cfg.Profile}
-	if client = s.s3Clients[key]; client != nil {
+	if client = s.clients[key]; client != nil {
 		return
 	}
 
@@ -240,7 +240,7 @@ func (s *s3Backend) s3Client(ep *url.URL) (cfg s3Cfg, client *s3.S3, err error) 
 	}).Info("constructed new aws.Session")
 
 	client = s3.New(awsSession)
-	s.s3Clients[key] = client
+	s.clients[key] = client
 
 	return
 }

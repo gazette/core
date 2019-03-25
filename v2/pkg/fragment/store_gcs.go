@@ -24,11 +24,9 @@ type gcsCfg struct {
 }
 
 type gcsBackend struct {
-	sharedGCS struct {
-		*storage.Client
-		storage.SignedURLOptions
-		sync.Mutex
-	}
+	client           *storage.Client
+	signedURLOptions storage.SignedURLOptions
+	clientMu         sync.Mutex
 }
 
 func (s *gcsBackend) Provider() string {
@@ -135,12 +133,12 @@ func (s *gcsBackend) gcsClient(ep *url.URL) (cfg gcsCfg, client *storage.Client,
 	// enforces that URL Paths end in '/'.
 	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
 
-	s.sharedGCS.Lock()
-	defer s.sharedGCS.Unlock()
+	s.clientMu.Lock()
+	defer s.clientMu.Unlock()
 
-	if s.sharedGCS.Client != nil {
-		client = s.sharedGCS.Client
-		opts = s.sharedGCS.SignedURLOptions
+	if s.client != nil {
+		client = s.client
+		opts = s.signedURLOptions
 		return
 	}
 	var ctx = context.Background()
@@ -164,7 +162,7 @@ func (s *gcsBackend) gcsClient(ep *url.URL) (cfg gcsCfg, client *storage.Client,
 		GoogleAccessID: conf.Email,
 		PrivateKey:     conf.PrivateKey,
 	}
-	s.sharedGCS.Client, s.sharedGCS.SignedURLOptions = client, opts
+	s.client, s.signedURLOptions = client, opts
 
 	log.WithFields(log.Fields{
 		"ProjectID":      creds.ProjectID,
