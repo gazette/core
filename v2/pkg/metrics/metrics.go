@@ -12,6 +12,7 @@ const (
 	RecoveryLogRecoveredBytesTotalKey = "gazette_recoverylog_recovered_bytes_total"
 	StoreRequestsTotalKey             = "gazette_store_requests_total"
 	StorePersistedBytesTotalKey       = "gazette_store_persisted_bytes_total"
+	AllocatorConvergeTotalKey         = "gazette_allocator_converge_total"
 
 	Fail = "fail"
 	Ok   = "ok"
@@ -39,6 +40,10 @@ var (
 		Name: StorePersistedBytesTotalKey,
 		Help: "Cumulative number of bytes persisted to fragment stores.",
 	}, []string{"provider"})
+	AllocatorConvergeTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: AllocatorConvergeTotalKey,
+		Help: "Cumulative number of converge iterations.",
+	})
 )
 
 // GazetteBrokerCollectors lists collectors used by the gazette broker.
@@ -48,6 +53,7 @@ func GazetteBrokerCollectors() []prometheus.Collector {
 		CommitsTotal,
 		RecoveryLogRecoveredBytesTotal,
 		StoreRequestTotal,
+		StorePersistedBytesTotal,
 	}
 }
 
