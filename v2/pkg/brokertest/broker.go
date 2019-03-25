@@ -83,6 +83,8 @@ func NewBroker(c *gc.C, etcd *clientv3.Client, zone, suffix string) *Broker {
 			Etcd:    etcd,
 			State:   bk.state,
 			TestHook: func(_ int, isIdle bool) {
+				// TODO: Log some metrics about the number of members, items, and zones (total desired replication slots across items)?
+
 				if !isIdle {
 					signalOnIdle = true
 					return
