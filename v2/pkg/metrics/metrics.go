@@ -7,12 +7,15 @@ import "github.com/prometheus/client_golang/prometheus"
 
 // Keys for gazette metrics.
 const (
-	CommittedBytesTotalKey            = "gazette_committed_bytes_total"
-	CommitsTotalKey                   = "gazette_commits_total"
-	RecoveryLogRecoveredBytesTotalKey = "gazette_recoverylog_recovered_bytes_total"
-	StoreRequestsTotalKey             = "gazette_store_requests_total"
-	StorePersistedBytesTotalKey       = "gazette_store_persisted_bytes_total"
-	AllocatorConvergeTotalKey         = "gazette_allocator_converge_total"
+	CommittedBytesTotalKey              = "gazette_committed_bytes_total"
+	CommitsTotalKey                     = "gazette_commits_total"
+	RecoveryLogRecoveredBytesTotalKey   = "gazette_recoverylog_recovered_bytes_total"
+	StoreRequestsTotalKey               = "gazette_store_requests_total"
+	StorePersistedBytesTotalKey         = "gazette_store_persisted_bytes_total"
+	AllocatorConvergeTotalKey           = "gazette_allocator_converge_total"
+	AllocatorMembersKey                 = "gazette_allocator_members"
+	AllocatorItemsKey                   = "gazette_allocator_items"
+	AllocatorDesiredReplicationSlotsKey = "gazette_allocator_desired_replication_slots"
 
 	Fail = "fail"
 	Ok   = "ok"
@@ -43,6 +46,18 @@ var (
 	AllocatorConvergeTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: AllocatorConvergeTotalKey,
 		Help: "Cumulative number of converge iterations.",
+	})
+	AllocatorMembers = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: AllocatorMembersKey,
+		Help: "Number of members known to the allocator.",
+	})
+	AllocatorItems = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: AllocatorItemsKey,
+		Help: "Number of items known to the allocator.",
+	})
+	AllocatorDesiredReplicationSlots = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: AllocatorDesiredReplicationSlotsKey,
+		Help: "Number of desired replicaiton slots summed across all items.",
 	})
 )
 

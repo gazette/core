@@ -113,6 +113,10 @@ func Allocate(args AllocateArgs) error {
 					Info("converge iteration successful")
 				metrics.AllocatorConvergeTotal.Inc()
 
+				metrics.AllocatorMembers.Set(float64(len(state.Members)))
+				metrics.AllocatorItems.Set(float64(len(state.Items)))
+				metrics.AllocatorDesiredReplicationSlots.Set(float64(state.ItemSlots))
+
 				if args.TestHook != nil {
 					args.TestHook(round, txn.noop)
 				}
