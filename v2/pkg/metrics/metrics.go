@@ -16,6 +16,7 @@ const (
 	AllocatorMembersKey                 = "gazette_allocator_members"
 	AllocatorItemsKey                   = "gazette_allocator_items"
 	AllocatorDesiredReplicationSlotsKey = "gazette_allocator_desired_replication_slots"
+	JournalServerResponseTimeSecondsKey = "gazette_journal_server_response_time_seconds"
 
 	Fail = "fail"
 	Ok   = "ok"
@@ -59,6 +60,10 @@ var (
 		Name: AllocatorDesiredReplicationSlotsKey,
 		Help: "Number of desired replicaiton slots summed across all items.",
 	})
+	JournalServerResponseTimeSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name: JournalServerResponseTimeSecondsKey,
+		Help: "Response time of JournalServer.Append.",
+	}, []string{"operation", "status"})
 )
 
 // GazetteBrokerCollectors lists collectors used by the gazette broker.
