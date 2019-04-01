@@ -74,6 +74,11 @@ func GazetteBrokerCollectors() []prometheus.Collector {
 		RecoveryLogRecoveredBytesTotal,
 		StoreRequestTotal,
 		StorePersistedBytesTotal,
+		AllocatorConvergeTotal,
+		AllocatorMembers,
+		AllocatorItems,
+		AllocatorDesiredReplicationSlots,
+		JournalServerResponseTimeSeconds,
 	}
 }
 
