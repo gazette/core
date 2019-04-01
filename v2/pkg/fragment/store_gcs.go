@@ -82,13 +82,11 @@ func (s *gcsBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) erro
 	} else {
 		_, err = io.Copy(wc, io.NewSectionReader(spool.File, 0, spool.ContentLength()))
 	}
-
 	if err != nil {
 		cancel() // Abort |wc|.
 	} else {
 		err = wc.Close()
 	}
-
 	return err
 }
 
