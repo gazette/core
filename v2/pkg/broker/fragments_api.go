@@ -14,7 +14,7 @@ var defaultPageLimit = int32(1000)
 // ListFragments dispatches the JournalServer.ListFragments API.
 func (svc *Service) ListFragments(ctx context.Context, req *pb.FragmentsRequest) (*pb.FragmentsResponse, error) {
 	var err error
-	defer observeResponseTimes("list_fragments", &err, time.Now())
+	defer instrumentJournalServerOp("list_fragments", &err, time.Now())
 
 	if err = req.Validate(); err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (svc *Service) ListFragments(ctx context.Context, req *pb.FragmentsRequest)
 		return nil, err
 	}
 
-	return resp, err
+	return resp, nil
 }
 
 // List FragmentsResponse__Fragment matching the query, and return the

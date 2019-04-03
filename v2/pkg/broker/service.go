@@ -150,15 +150,15 @@ func addTrace(ctx context.Context, format string, args ...interface{}) {
 	}
 }
 
-// observeResponseTimes measures and reports the response time of
+// instrumentJournalServerOp measures and reports the response time of
 // |JournalServer| endpoints tagged by operation name and status (success or
 // failure). This is typically used with a defer statement.
 //
 // Example Usage:
 //
-//  defer observeResponseTimes("append", &err, time.Now())
-func observeResponseTimes(op string, err *error, start time.Time) {
-	var elapsed = time.Now().Sub(start)
+//  defer instrumentJournalServerOp("append", &err, time.Now())
+func instrumentJournalServerOp(op string, err *error, start time.Time) {
+	var elapsed = time.Since(start)
 	var status = metrics.Fail
 	if err == nil || *err == nil {
 		status = metrics.Ok

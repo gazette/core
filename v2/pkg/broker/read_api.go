@@ -15,7 +15,7 @@ import (
 
 // Read dispatches the JournalServer.Read API.
 func (svc *Service) Read(req *pb.ReadRequest, stream pb.Journal_ReadServer) (err error) {
-	defer observeResponseTimes("read", &err, time.Now())
+	defer instrumentJournalServerOp("read", &err, time.Now())
 	if err = req.Validate(); err != nil {
 		return err
 	}

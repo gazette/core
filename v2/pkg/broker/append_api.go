@@ -16,7 +16,7 @@ import (
 // Append dispatches the JournalServer.Append API.
 func (srv *Service) Append(stream pb.Journal_AppendServer) error {
 	var err error
-	defer observeResponseTimes("append", &err, time.Now())
+	defer instrumentJournalServerOp("append", &err, time.Now())
 
 	req, err := stream.Recv()
 	if err != nil {

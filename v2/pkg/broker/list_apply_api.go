@@ -13,7 +13,7 @@ import (
 // List dispatches the JournalServer.List API.
 func (srv *Service) List(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
 	var err error
-	defer observeResponseTimes("list", &err, time.Now())
+	defer instrumentJournalServerOp("list", &err, time.Now())
 
 	var s = srv.resolver.state
 
@@ -63,7 +63,7 @@ func (srv *Service) List(ctx context.Context, req *pb.ListRequest) (*pb.ListResp
 // Apply dispatches the JournalServer.Apply API.
 func (srv *Service) Apply(ctx context.Context, req *pb.ApplyRequest) (*pb.ApplyResponse, error) {
 	var err error
-	defer observeResponseTimes("apply", &err, time.Now())
+	defer instrumentJournalServerOp("apply", &err, time.Now())
 
 	var s = srv.resolver.state
 

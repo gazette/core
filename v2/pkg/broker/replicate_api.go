@@ -13,7 +13,7 @@ import (
 // Replicate dispatches the JournalServer.Replicate API.
 func (srv *Service) Replicate(stream pb.Journal_ReplicateServer) error {
 	var err error
-	defer observeResponseTimes("replicate", &err, time.Now())
+	defer instrumentJournalServerOp("replicate", &err, time.Now())
 
 	req, err := stream.Recv()
 	if err != nil {
