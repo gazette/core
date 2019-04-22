@@ -31,6 +31,7 @@ type replica struct {
 	// which brings the journal and its Etcd route advertisements to consistency.
 	pulsePipelineCh chan struct{}
 	// done is called when the replica has completed graceful shutdown.
+	// C.f. sync.WaitGroup.Done.
 	done func()
 }
 

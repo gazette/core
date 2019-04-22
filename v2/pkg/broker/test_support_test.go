@@ -93,7 +93,7 @@ func newTestBroker(c *gc.C, tf testFixture, id pb.ProcessSpec_ID,
 
 	var tasks = task.NewGroup(tf.ctx)
 	srv.QueueTasks(tasks)
-	tasks.Start()
+	tasks.GoRun()
 
 	return testBroker{
 		id:             id,

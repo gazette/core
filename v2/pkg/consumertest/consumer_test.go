@@ -50,7 +50,7 @@ func (s *ConsumerSuite) TestConsumeWithHandoff(c *gc.C) {
 		App:      testApp{},
 		Zone:     "zone-1",
 	})
-	cmr1.Tasks.Start()
+	cmr1.Tasks.GoRun()
 
 	CreateShards(c, cmr1, &consumer.ShardSpec{
 		Id:                "a-shard",
@@ -88,7 +88,7 @@ func (s *ConsumerSuite) TestConsumeWithHandoff(c *gc.C) {
 		App:      testApp{},
 		Zone:     "zone-2",
 	})
-	cmr2.Tasks.Start()
+	cmr2.Tasks.GoRun()
 
 	// |cmr1|, which is allocation leader, assigns |cmr2| as standby.
 	<-cmr1.AllocateIdleCh()
@@ -149,7 +149,7 @@ func (s *ConsumerSuite) TestConsumeWithHotStandby(c *gc.C) {
 		App:      testApp{},
 		Zone:     "zone-1",
 	})
-	cmr1.Tasks.Start()
+	cmr1.Tasks.GoRun()
 
 	CreateShards(c, cmr1, &consumer.ShardSpec{
 		Id:                "a-shard",
@@ -168,7 +168,7 @@ func (s *ConsumerSuite) TestConsumeWithHotStandby(c *gc.C) {
 		App:      testApp{},
 		Zone:     "zone-2",
 	})
-	cmr2.Tasks.Start()
+	cmr2.Tasks.GoRun()
 
 	<-cmr1.AllocateIdleCh() // |cmr2| is assigned as standby.
 

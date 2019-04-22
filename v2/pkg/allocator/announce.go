@@ -85,13 +85,14 @@ type SessionArgs struct {
 }
 
 // StartSession starts an allocator session. It:
-// * Establishes an Etcd lease, which establishes "liveness" of this member to its peers.
-// * Validates and announces a MemberSpec under the lease.
+// * Validates the MemberSpec.
+// * Establishes an Etcd lease which conveys "liveness" of this member to its peers.
+// * Announces the MemberSpec under the lease.
 // * Loads the KeySpace as-of the announcement revision.
 // * Queues tasks to the *task.Group which:
-//   - Runs the Allocate loop, cancelling the *task.Group on completion.
-//   - Monitors SignalCh and zeros the MemberSpec ItemLimit on its signal.
 //   - Closes the Etcd lease on task.Group cancellation.
+//   - Monitors SignalCh and zeros the MemberSpec ItemLimit on its signal.
+//   - Runs the Allocate loop, cancelling the *task.Group on completion.
 func StartSession(args SessionArgs) error {
 	if err := args.Spec.Validate(); err != nil {
 		return errors.WithMessage(err, "spec.Validate")
@@ -103,7 +104,7 @@ func StartSession(args SessionArgs) error {
 
 	// Close |lease| when the task.Group is cancelled.
 	args.Tasks.Queue("lease.Close", func() error {
-		<-args.Tasks.Context.Done()
+		<-args.Tasks.Context().Done()
 		return lease.Close()
 	})
 
@@ -119,7 +120,7 @@ func StartSession(args SessionArgs) error {
 		select {
 		case sig := <-args.SignalCh:
 			log.WithField("signal", sig).Info("caught signal")
-		case <-args.Tasks.Context.Done():
+		case <-args.Tasks.Context().Done():
 			return nil
 		}
 
@@ -135,7 +136,7 @@ func StartSession(args SessionArgs) error {
 		defer args.Tasks.Cancel()
 
 		var err = Allocate(AllocateArgs{
-			Context:  args.Tasks.Context,
+			Context:  args.Tasks.Context(),
 			Etcd:     args.Etcd,
 			State:    args.State,
 			TestHook: args.TestHook,

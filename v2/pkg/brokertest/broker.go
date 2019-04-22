@@ -76,7 +76,7 @@ func NewBroker(c *gc.C, etcd *clientv3.Client, zone, suffix string) *Broker {
 				select {
 				case bk.idleCh <- struct{}{}:
 					// Pass.
-				case <-bk.Tasks.Context.Done():
+				case <-bk.Tasks.Context().Done():
 					return
 				case <-time.After(5 * time.Second):
 					panic("deadlock in broker TestHook; is your test ignoring a signal to AllocateIdleCh()?")
@@ -88,12 +88,12 @@ func NewBroker(c *gc.C, etcd *clientv3.Client, zone, suffix string) *Broker {
 	c.Assert(allocator.StartSession(args), gc.IsNil)
 
 	bk.srv.QueueTasks(bk.Tasks)
-	bk.Tasks.Queue("service.Watch", func() error { return bk.svc.Watch(bk.Tasks.Context) })
+	bk.Tasks.Queue("service.Watch", func() error { return bk.svc.Watch(bk.Tasks.Context()) })
 
 	// TODO(jskelcy): Shared Persister race condition in integration tests (Issue #130)
 	broker.SetSharedPersister(fragment.NewPersister(ks))
 
-	bk.Tasks.Start()
+	bk.Tasks.GoRun()
 	return bk
 }
 

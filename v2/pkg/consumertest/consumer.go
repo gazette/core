@@ -100,7 +100,7 @@ func NewConsumer(args Args) *Consumer {
 				select {
 				case idleCh <- struct{}{}:
 					// Pass.
-				case <-tasks.Context.Done():
+				case <-tasks.Context().Done():
 					return
 				case <-time.After(5 * time.Second):
 					panic("deadlock in consumer TestHook; is your test ignoring a signal to AllocateIdleCh()?")
@@ -112,9 +112,9 @@ func NewConsumer(args Args) *Consumer {
 	args.C.Assert(allocator.StartSession(sessionArgs), gc.IsNil)
 
 	srv.QueueTasks(tasks)
-	tasks.Queue("service.Watch", func() error { return svc.Watch(tasks.Context) })
+	tasks.Queue("service.Watch", func() error { return svc.Watch(tasks.Context()) })
 	tasks.Queue("loopback.Close", func() error {
-		<-tasks.Context.Done()
+		<-tasks.Context().Done()
 		return svc.Loopback.Close()
 	})
 

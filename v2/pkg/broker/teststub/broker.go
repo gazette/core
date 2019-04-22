@@ -31,7 +31,7 @@ func NewLoopbackServer(journalServer pb.JournalServer) LoopbackServer {
 
 func (s LoopbackServer) QueueTasks(tasks *task.Group) {
 	tasks.Queue("conn.Close", func() error {
-		<-tasks.Context.Done()
+		<-tasks.Context().Done()
 		return s.Conn.Close()
 	})
 	s.Server.QueueTasks(tasks)
@@ -78,7 +78,7 @@ func NewBroker(c *gc.C, ctx context.Context) *Broker {
 	}
 	p.LoopbackServer = NewLoopbackServer(p)
 	p.LoopbackServer.QueueTasks(p.Tasks)
-	p.Tasks.Start()
+	p.Tasks.GoRun()
 	return p
 }
 

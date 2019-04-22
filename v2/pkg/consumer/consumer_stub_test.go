@@ -51,10 +51,10 @@ func newShardServerStub(c *gc.C, ctx context.Context) *shardServerStub {
 	s.loopbackServer.QueueTasks(s.tasks)
 
 	s.tasks.Queue("Conn.Close", func() error {
-		<-s.tasks.Context.Done()
+		<-s.tasks.Context().Done()
 		return s.loopbackServer.Conn.Close()
 	})
-	s.tasks.Start()
+	s.tasks.GoRun()
 
 	return s
 }

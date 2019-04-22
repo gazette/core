@@ -89,17 +89,17 @@ func (s *AnnounceSuite) TestBasicSessionStart(c *gc.C) {
 
 	// Expect our MemberSpec was announced and loaded by the KeySpace.
 	c.Assert(state.Members, gc.HasLen, 1)
-	c.Check(string(state.Members[0].Raw.Key), gc.DeepEquals, "/root/members/a#member")
-	c.Check(string(state.Members[0].Raw.Value), gc.DeepEquals, `{"R":10}`)
+	c.Check(string(state.Members[0].Raw.Key), gc.Equals, "/root/members/a#member")
+	c.Check(string(state.Members[0].Raw.Value), gc.Equals, `{"R":10}`)
 	c.Check(state.Members[0].Raw.Lease, gc.Not(gc.Equals), 0)
 
 	args.Tasks.Queue("Watch", func() error {
-		if err := ks.Watch(args.Tasks.Context, etcd); err != context.Canceled {
+		if err := ks.Watch(args.Tasks.Context(), etcd); err != context.Canceled {
 			return err
 		}
 		return nil
 	})
-	args.Tasks.Start()
+	args.Tasks.GoRun()
 
 	// By signaling, expect that our limit R is zero'd, Allocate exits and
 	// cancels the task.Group, and the lease is cancelled.

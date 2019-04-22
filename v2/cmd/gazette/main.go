@@ -88,7 +88,7 @@ func (serveBroker) Execute(args []string) error {
 	}), "starting allocator session")
 
 	tasks.Queue("service.Watch", func() error {
-		var err = service.Watch(tasks.Context)
+		var err = service.Watch(tasks.Context())
 		// At Watch return, we're assured that all journal replicas have been
 		// fully shut down. Ask the persister to Finish persisting any
 		// outstanding local spools.
@@ -98,7 +98,7 @@ func (serveBroker) Execute(args []string) error {
 
 	// Install signal handler & start broker tasks.
 	signal.Notify(signalCh, syscall.SIGTERM, syscall.SIGINT)
-	tasks.Start()
+	tasks.GoRun()
 
 	// Block until all tasks complete. Assert none returned an error.
 	mbp.Must(tasks.Wait(), "broker task failed")

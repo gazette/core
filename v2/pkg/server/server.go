@@ -110,7 +110,7 @@ func (s *Server) QueueTasks(tg *task.Group) {
 		return nil // GracefulStop was called before GoServe.
 	})
 	tg.Queue("GRPCServer.GracefulStop", func() error {
-		<-tg.Context.Done() // Block until task.Group is cancelled.
+		<-tg.Context().Done() // Block until task.Group is cancelled.
 
 		// GRPCServer.GracefulStop will close GRPCListener, which closes RawListener.
 		// Cancel |s.Ctx| so Serve loops and dialed loopback clients recognize this
