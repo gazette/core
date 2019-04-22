@@ -99,7 +99,7 @@ func (s *AnnounceSuite) TestBasicSessionStart(c *gc.C) {
 		}
 		return nil
 	})
-	args.Tasks.Start()
+	args.Tasks.GoRun()
 
 	// By signaling, expect that our limit R is zero'd, Allocate exits and
 	// cancels the task.Group, and the lease is cancelled.

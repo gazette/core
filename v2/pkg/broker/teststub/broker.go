@@ -78,7 +78,7 @@ func NewBroker(c *gc.C, ctx context.Context) *Broker {
 	}
 	p.LoopbackServer = NewLoopbackServer(p)
 	p.LoopbackServer.QueueTasks(p.Tasks)
-	p.Tasks.Start()
+	p.Tasks.GoRun()
 	return p
 }
 

@@ -143,7 +143,7 @@ func (sc serveConsumer) Execute(args []string) error {
 
 	// Install signal handler, and launch consumer tasks.
 	signal.Notify(signalCh, syscall.SIGTERM, syscall.SIGINT)
-	tasks.Start()
+	tasks.GoRun()
 
 	// Block until all tasks complete. Assert none returned an error.
 	mbp.Must(tasks.Wait(), "consumer task failed")

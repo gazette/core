@@ -167,7 +167,7 @@ func (s *StreamSumSuite) TestEndToEnd(c *gc.C) {
 		Journals: rjc,
 		App:      Summer{},
 	})
-	cmr.Tasks.Start()
+	cmr.Tasks.GoRun()
 
 	consumertest.CreateShards(c, cmr, testShards...)
 

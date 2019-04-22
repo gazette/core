@@ -54,7 +54,7 @@ func newShardServerStub(c *gc.C, ctx context.Context) *shardServerStub {
 		<-s.tasks.Context.Done()
 		return s.loopbackServer.Conn.Close()
 	})
-	s.tasks.Start()
+	s.tasks.GoRun()
 
 	return s
 }

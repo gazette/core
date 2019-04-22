@@ -98,7 +98,7 @@ func (serveBroker) Execute(args []string) error {
 
 	// Install signal handler & start broker tasks.
 	signal.Notify(signalCh, syscall.SIGTERM, syscall.SIGINT)
-	tasks.Start()
+	tasks.GoRun()
 
 	// Block until all tasks complete. Assert none returned an error.
 	mbp.Must(tasks.Wait(), "broker task failed")

@@ -50,7 +50,7 @@ func (s *WordCountSuite) TestPublishAndQuery(c *gc.C) {
 		Server:  cmr.Server,
 		Service: cmr.Service,
 	}), gc.IsNil)
-	cmr.Tasks.Start()
+	cmr.Tasks.GoRun()
 
 	consumertest.CreateShards(c, cmr, testShards...)
 

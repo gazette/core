@@ -93,7 +93,7 @@ func NewBroker(c *gc.C, etcd *clientv3.Client, zone, suffix string) *Broker {
 	// TODO(jskelcy): Shared Persister race condition in integration tests (Issue #130)
 	broker.SetSharedPersister(fragment.NewPersister(ks))
 
-	bk.Tasks.Start()
+	bk.Tasks.GoRun()
 	return bk
 }
 
