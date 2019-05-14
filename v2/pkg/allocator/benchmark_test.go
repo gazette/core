@@ -7,7 +7,10 @@ import (
 
 	"github.com/LiveRamp/gazette/v2/pkg/etcdtest"
 	"github.com/LiveRamp/gazette/v2/pkg/keyspace"
+	"github.com/LiveRamp/gazette/v2/pkg/metrics"
 	gc "github.com/go-check/check"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
@@ -127,6 +130,12 @@ func benchmarkSimulatedDeploy(b *testing.B) {
 		State:    state,
 		TestHook: testHook,
 	}))
+
+	log.WithFields(log.Fields{
+		"adds":    counterVal(metrics.AllocatorAssignmentAddedTotal),
+		"removes": counterVal(metrics.AllocatorAssignmentRemovedTotal),
+		"packs":   counterVal(metrics.AllocatorAssignmentPackedTotal),
+	}).Info("final metrics")
 }
 
 func benchMemberKey(ks *keyspace.KeySpace, i int) string {
@@ -139,4 +148,12 @@ func benchMemberKey(ks *keyspace.KeySpace, i int) string {
 		zone = "zone-b"
 	}
 	return MemberKey(ks, zone, fmt.Sprintf("m%05d", i))
+}
+
+func counterVal(c prometheus.Counter) float64 {
+	var out dto.Metric
+	if err := c.Write(&out); err != nil {
+		panic(err)
+	}
+	return *out.Counter.Value
 }

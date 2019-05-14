@@ -1028,6 +1028,7 @@
     "github.com/pkg/sftp",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
+    "github.com/prometheus/client_model/go",
     "github.com/satori/go.uuid",
     "github.com/sirupsen/logrus",
     "github.com/soheilhy/cmux",
