@@ -7,9 +7,11 @@ import (
 	"io"
 	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/LiveRamp/gazette/v2/pkg/client"
 	"github.com/LiveRamp/gazette/v2/pkg/labels"
+	"github.com/LiveRamp/gazette/v2/pkg/metrics"
 	pb "github.com/LiveRamp/gazette/v2/pkg/protocol"
 )
 
@@ -17,12 +19,16 @@ import (
 // Message's marshaled content under the mapped journal framing. If Message
 // implements Validate, the message is first validated and any error returned.
 func Publish(broker client.AsyncJournalClient, mapping MappingFunc, msg Message) (*client.AsyncAppend, error) {
+	var err error
+	defer instrumentPublish(&err, time.Now())
 	if v, ok := msg.(interface{ Validate() error }); ok {
 		if err := v.Validate(); err != nil {
 			return nil, err
 		}
 	}
-	var journal, framing, err = mapping(msg)
+	var journal pb.Journal
+	var framing Framing
+	journal, framing, err = mapping(msg)
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +39,14 @@ func Publish(broker client.AsyncJournalClient, mapping MappingFunc, msg Message)
 		return nil, err
 	}
 	return aa, nil
+}
+
+func instrumentPublish(err *error, start time.Time) {
+	metrics.GazettePublishDurationTotal.Add(float64(time.Since(start) / time.Second))
+	if err != nil {
+		metrics.GazettePublishFailureTotal.Inc()
+	}
+	metrics.GazettePublishesCountTotal.Inc()
 }
 
 // FramingByContentType returns the Framing having the corresponding |contentType|,

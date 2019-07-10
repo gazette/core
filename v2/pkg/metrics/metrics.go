@@ -139,12 +139,15 @@ func GazretentionCollectors() []prometheus.Collector {
 
 // Keys for gazette.Client and gazette.WriteService metrics.
 const (
-	GazetteDiscardBytesTotalKey         = "gazette_discard_bytes_total"
-	GazetteReadBytesTotalKey            = "gazette_read_bytes_total"
-	GazetteWriteBytesTotalKey           = "gazette_write_bytes_total"
-	GazetteWriteCountTotalKey           = "gazette_write_count_total"
-	GazetteWriteDurationSecondsTotalKey = "gazette_write_duration_seconds_total"
-	GazetteWriteFailureTotalKey         = "gazette_write_failure_total"
+	GazetteDiscardBytesTotalKey           = "gazette_discard_bytes_total"
+	GazetteReadBytesTotalKey              = "gazette_read_bytes_total"
+	GazetteWriteBytesTotalKey             = "gazette_write_bytes_total"
+	GazetteWriteCountTotalKey             = "gazette_write_count_total"
+	GazetteWriteDurationSecondsTotalKey   = "gazette_write_duration_seconds_total"
+	GazetteWriteFailureTotalKey           = "gazette_write_failure_total"
+	GazettePublishCountTotalKey           = "gazette_publish_count_total"
+	GazettePublishDurationSecondsTotalKey = "gazette_publish_duration_seconds_total"
+	GazettePublishFailureTotalKey         = "gazette_piblish_failure_total"
 )
 
 // Collectors for gazette.Client and gazette.WriteService metrics.
@@ -174,6 +177,18 @@ var (
 		Name: GazetteWriteFailureTotalKey,
 		Help: "Cumulative number of write errors returned to clients.",
 	})
+	GazettePublishesCountTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: GazettePublishCountTotalKey,
+		Help: "Cumulative number of publishes.",
+	})
+	GazettePublishDurationTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: GazettePublishDurationSecondsTotalKey,
+		Help: "Cumulative number of seconds spent publishing.",
+	})
+	GazettePublishFailureTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: GazettePublishFailureTotalKey,
+		Help: "Cumulative number of write errors returned to publishing.",
+	})
 )
 
 // GazetteClientCollectors returns the metrics used by gazette.Client and
@@ -185,6 +200,9 @@ func GazetteClientCollectors() []prometheus.Collector {
 		GazetteWriteBytesTotal,
 		GazetteWriteCountTotal,
 		GazetteWriteDurationTotal,
+		GazettePublishesCountTotal,
+		GazettePublishDurationTotal,
+		GazettePublishFailureTotal,
 	}
 }
 
