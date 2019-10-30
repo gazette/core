@@ -47,7 +47,7 @@ manifest for running using local, development builds.
 
 ```bash
 # Run the soak test with official `latest` images.
-$ kubectl kustomize ./kustomize/test/deploy-stream-sum-with-crash-tests/
+$ kubectl kustomize ./kustomize/test/bases/soak/ | kubectl apply -f -
 ```
 
 
