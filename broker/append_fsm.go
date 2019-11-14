@@ -404,15 +404,20 @@ func (b *appendFSM) onAwaitDesiredReplicas() {
 // that current registers match the request's expectation, and if not it will
 // fail the RPC with REGISTER_MISMATCH.
 //
-// It also validates next offset to be written.
+// It also validates the next offset to be written.
 // Appended data must always be written at the furthest known journal extent.
-// Usually this will be the pipeline Spool offset. However if journal
-// consistency is lost (due to too many broker or Etcd failures), a larger
+// Usually this will be the offset of the pipeline's Spool. However if journal
+// consistency was lost (due to too many broker or Etcd failures), a larger
 // offset could exist in the fragment index.
 //
-// We don't attempt to automatically recover if consistency is lost. Instead
-// the operator is required to craft an AppendRequest which explicitly
-// captures the new, maximum journal offset to use.
+// We don't attempt to automatically handle this scenario. There may be other
+// brokers that were partitioned from Etcd, but which still have local
+// fragments not yet persisted to the store. If we were to attempt automatic
+// recovery, we risk double-writing an offset already committed by those brokers.
+//
+// Instead the operator is required to craft an AppendRequest which explicitly
+// captures the new, maximum journal offset to use, as a confirmation that all
+// previous brokers have exited or failed (see `gazctl journals reset-head --help`).
 //
 // We do make an exception if the journal is not writable, in which case
 // appendFSM can be used only for issuing zero-byte transaction barriers
@@ -420,8 +425,8 @@ func (b *appendFSM) onAwaitDesiredReplicas() {
 // carve-out allows a journal to be a read-only view of a fragment store
 // being written to by a separate & disconnected gazette cluster.
 //
-// Note request offsets may also be used outside of recovery, for example
-// to implement at-most-once writes.
+// Note that an AppendRequest offset may also be used outside of recovery,
+// for example to implement at-most-once writes.
 func (b *appendFSM) onValidatePreconditions() {
 	b.mustState(stateValidatePreconditions)
 
@@ -474,7 +479,7 @@ func (b *appendFSM) onValidatePreconditions() {
 // from the Append RPC client. On its first call, it may "roll" the present
 // Fragment to a new and empty Fragment (for example, if the Fragment is
 // at its target length, or if the compression codec changed). Each non-empty
-// content chunks is forwarded to all peers of the FSM's pipeline. An error
+// content chunk is forwarded to all peers of the FSM's pipeline. An error
 // of the client causes a roll-back to be sent to all peers. A final empty
 // content chunk followed by an io.EOF causes a commit proposal to be sent
 // to each peer, which (if adopted) extends the current Fragment with the
@@ -589,9 +594,10 @@ func (b *appendFSM) onStreamContent(req *pb.AppendRequest, err error) {
 // reads responses from each replication peer.
 //
 // Recall that pipelines are full-duplex, and there may be other FSMs
-// which completed onStreamContent before we did, and which have not yet read
-// their acknowledgements from peers. Blocks on a cooperative pipeline "barrier"
-// to determine when it's our turn to read our peer acknowledgements.
+// which completed stateStreamContent before we did, and which have not yet read
+// their acknowledgements from peers. To account for this, a cooperative pipeline
+// "barrier" is installed which is signaled upon our turn to read ordered
+// peer acknowledgements, and which we in turn then signal having done so.
 func (b *appendFSM) onReadAcknowledgements() {
 	b.mustState(stateReadAcknowledgements)
 
