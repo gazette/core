@@ -33,6 +33,9 @@ var _ Store = &JSONFileStore{} // JSONFileStore is-a Store.
 // of the Store's state, which is decoded into, encoded from, and retained
 // as JSONFileState.State.
 func NewJSONFileStore(rec *recoverylog.Recorder, state interface{}) (*JSONFileStore, error) {
+	if state == nil {
+		return nil, errors.New("state must not be nil")
+	}
 	var store = &JSONFileStore{
 		State:    state,
 		fs:       recoverylog.RecordedAferoFS{Recorder: rec, Fs: afero.NewOsFs()},
