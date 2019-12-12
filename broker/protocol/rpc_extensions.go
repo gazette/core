@@ -324,13 +324,13 @@ func (m *ApplyRequest_Change) Validate() error {
 			return NewValidationError("both Upsert and Delete are set (expected exactly one)")
 		} else if err := m.Upsert.Validate(); err != nil {
 			return ExtendContext(err, "Upsert")
-		} else if m.ExpectModRevision < 0 {
+		} else if m.ExpectModRevision < 0 && (m.ExpectModRevision != -1) {
 			return NewValidationError("invalid ExpectModRevision (%d; expected >= 0)", m.ExpectModRevision)
 		}
 	} else if m.Delete != "" {
 		if err := m.Delete.Validate(); err != nil {
 			return ExtendContext(err, "Delete")
-		} else if m.ExpectModRevision <= 0 {
+		} else if m.ExpectModRevision <= 0 && (m.ExpectModRevision != -1){
 			return NewValidationError("invalid ExpectModRevision (%d; expected > 0)", m.ExpectModRevision)
 		}
 	} else {

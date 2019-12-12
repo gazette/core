@@ -349,7 +349,7 @@ func (s *RPCSuite) TestApplyRequestValidationCases(c *gc.C) {
 	var req = ApplyRequest{
 		Changes: []ApplyRequest_Change{
 			{
-				ExpectModRevision: -1,
+				ExpectModRevision: -2,
 				Upsert:            &JournalSpec{Name: "a/journal"},
 				Delete:            "a/journal",
 			},
@@ -377,7 +377,7 @@ func (s *RPCSuite) TestApplyRequestValidationCases(c *gc.C) {
 			Retention:        time.Hour,
 		},
 	}
-	c.Check(req.Validate(), gc.ErrorMatches, `Changes\[0\]: invalid ExpectModRevision \(-1; expected >= 0\)`)
+	c.Check(req.Validate(), gc.ErrorMatches, `Changes\[0\]: invalid ExpectModRevision \(-2; expected >= 0\)`)
 	req.Changes[0].ExpectModRevision = 0
 	c.Check(req.Validate(), gc.ErrorMatches, `Changes\[1\].Delete: not a valid token \(.*\)`)
 	req.Changes[1].Delete = "a/journal"
