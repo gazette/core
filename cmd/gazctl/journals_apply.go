@@ -34,6 +34,8 @@ JournalSpecs; this check ensures concurrent modifications are caught.
 
 You may explicitly inform the broker to apply your JournalSpecs regardless of the
 current state of specifications in Etcd by passing in a revision value of -1.
+This commonly done when operators keep JournalSpecs in version control as their
+source of truth.
 
 JournalSpecs may be created by setting "revision" to zero or omitting altogether.
 
