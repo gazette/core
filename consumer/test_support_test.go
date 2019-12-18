@@ -119,7 +119,7 @@ func (a *testApplication) NewStore(shard Shard, rec *recoverylog.Recorder) (Stor
 		return NewJSONFileStore(rec, nil)
 	} else {
 		var state = make(map[string]string)
-		return NewJSONFileStore(rec, state)
+		return NewJSONFileStore(rec, &state)
 	}
 }
 
