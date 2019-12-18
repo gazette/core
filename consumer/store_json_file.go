@@ -31,7 +31,7 @@ var _ Store = &JSONFileStore{} // JSONFileStore is-a Store.
 
 // NewJSONFileStore returns a new JSONFileStore. |state| is the runtime instance
 // of the Store's state, which is decoded into, encoded from, and retained
-// as JSONFileState.State.
+// as JSONFileState.State. |state| must not be nil.
 func NewJSONFileStore(rec *recoverylog.Recorder, state interface{}) (*JSONFileStore, error) {
 	if state == nil {
 		return nil, errors.New("state must not be nil")
@@ -117,7 +117,9 @@ func (s *JSONFileStore) StartCommit(_ Shard, cp pc.Checkpoint, waitFor OpFutures
 
 // Destroy the JSONFileStore directory and state file.
 func (s *JSONFileStore) Destroy() {
-	if err := os.RemoveAll(s.recorder.Dir); err != nil {
+	if s == nil {
+		return
+	} else if err := os.RemoveAll(s.recorder.Dir); err != nil {
 		log.WithFields(log.Fields{
 			"dir": s.recorder.Dir,
 			"err": err,
