@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.etcd.io/etcd/clientv3"
 	"go.gazette.dev/core/allocator"
+	bpe "go.gazette.dev/core/broker/broker_protocol_extensions"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/keyspace"
 )
@@ -69,7 +70,7 @@ type resolution struct {
 	// broker can locally serve the request, or the primary broker is required.
 	pb.Header
 	// JournalSpec of the Journal at the current Etcd Revision.
-	journalSpec *pb.JournalSpec
+	brokerJournalSpec *bpe.BrokerJournalSpec
 	// Assignments of the Journal at the current Etcd Revision.
 	assignments keyspace.KeyValues
 	// Local replica of the assigned journal, if one exists.
@@ -127,18 +128,19 @@ func (r *resolver) resolve(args resolveArgs) (res *resolution, err error) {
 		addTrace(args.ctx, "WaitForRevision(%d) => %d",
 			args.minEtcdRevision, ks.Header.Revision)
 	}
-	res.Etcd = pb.FromEtcdResponseHeader(ks.Header)
+	res.Etcd = bpe.FromEtcdResponseHeader(ks.Header)
 
 	// Extract JournalSpec.
 	if item, ok := allocator.LookupItem(ks, args.journal.String()); ok {
-		res.journalSpec = item.ItemValue.(*pb.JournalSpec)
+		res.brokerJournalSpec = item.ItemValue.(*bpe.BrokerJournalSpec)
 	}
 	// Extract Assignments and build Route.
 	res.assignments = ks.KeyValues.Prefixed(
 		allocator.ItemAssignmentsPrefix(ks, args.journal.String())).Copy()
 
-	res.Route.Init(res.assignments)
-	res.Route.AttachEndpoints(ks)
+	brokerRoute := bpe.BrokerRoute{Route: res.Route}
+	brokerRoute.Init(res.assignments)
+	brokerRoute.AttachEndpoints(ks)
 
 	// Select a definite ProcessID if we require the primary and there is one,
 	// or if we're a member of the Route (and authoritative).
@@ -169,7 +171,7 @@ func (r *resolver) resolve(args resolveArgs) (res *resolution, err error) {
 	}
 
 	// Select a response Status code.
-	if res.journalSpec == nil {
+	if res.brokerJournalSpec == nil {
 		res.status = pb.Status_JOURNAL_NOT_FOUND
 	} else if args.requirePrimary && res.Route.Primary == -1 {
 		res.status = pb.Status_NO_JOURNAL_PRIMARY_BROKER
@@ -218,12 +220,12 @@ func (r *resolver) updateResolutions() {
 				signalCh:    make(chan struct{}),
 			}
 
-			var rt pb.Route
+			var rt bpe.BrokerRoute
 			rt.Init(li.Assignments)
 
 			log.WithFields(log.Fields{
 				"name":  replica.journal,
-				"route": rt,
+				"route": rt.Route,
 			}).Info("starting local journal replica")
 
 		} else {

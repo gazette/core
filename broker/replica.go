@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.etcd.io/etcd/clientv3"
 	"go.gazette.dev/core/allocator"
+	bpe "go.gazette.dev/core/broker/broker_protocol_extensions"
 	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/keyspace"
@@ -68,11 +69,11 @@ func fragmentRefreshDaemon(ks *keyspace.KeySpace, r *replica) {
 		case _ = <-timer.C:
 		}
 
-		var spec *pb.JournalSpec
+		var spec *bpe.BrokerJournalSpec
 
 		ks.Mu.RLock()
 		if item, ok := allocator.LookupItem(ks, r.journal.String()); ok {
-			spec = item.ItemValue.(*pb.JournalSpec)
+			spec = item.ItemValue.(*bpe.BrokerJournalSpec)
 		}
 		ks.Mu.RUnlock()
 
@@ -82,16 +83,16 @@ func fragmentRefreshDaemon(ks *keyspace.KeySpace, r *replica) {
 			return
 		}
 
-		if set, err := fragment.WalkAllStores(r.ctx, spec.Name, spec.Fragment.Stores); err == nil {
+		if set, err := fragment.WalkAllStores(r.ctx, spec.JournalSpec.Name, spec.JournalSpec.Fragment.Stores); err == nil {
 			r.index.ReplaceRemote(set)
 		} else {
 			log.WithFields(log.Fields{
-				"name":     spec.Name,
+				"name":     spec.JournalSpec.Name,
 				"err":      err,
-				"interval": spec.Fragment.RefreshInterval,
+				"interval": spec.JournalSpec.Fragment.RefreshInterval,
 			}).Warn("failed to refresh remote fragments (will retry)")
 		}
-		timer.Reset(spec.Fragment.RefreshInterval)
+		timer.Reset(spec.JournalSpec.Fragment.RefreshInterval)
 	}
 }
 
@@ -180,7 +181,7 @@ func shutDownReplica(r *replica, done func()) {
 // updateAssignments values to reflect the Route implied by |assignments|,
 // as an Etcd transaction.
 func updateAssignments(ctx context.Context, assignments keyspace.KeyValues, etcd clientv3.KV) (int64, error) {
-	var rt pb.Route
+	var rt bpe.BrokerRoute
 	rt.Init(assignments)
 
 	// Construct an Etcd transaction which asserts |assignments| are unchanged
@@ -188,12 +189,12 @@ func updateAssignments(ctx context.Context, assignments keyspace.KeyValues, etcd
 	// bringing them to a state of advertised consistency.
 	var cmp []clientv3.Cmp
 	var ops []clientv3.Op
-	var value = rt.MarshalString()
+	var value = rt.Route.MarshalString()
 
 	for _, kv := range assignments {
 		var key = string(kv.Raw.Key)
 
-		if !rt.Equivalent(kv.Decoded.(allocator.Assignment).AssignmentValue.(*pb.Route)) {
+		if !rt.Equivalent(kv.Decoded.(allocator.Assignment).AssignmentValue.(*bpe.BrokerRoute)) {
 			ops = append(ops, clientv3.OpPut(key, value, clientv3.WithIgnoreLease()))
 		}
 		cmp = append(cmp, clientv3.Compare(clientv3.ModRevision(key), "=", kv.Raw.ModRevision))

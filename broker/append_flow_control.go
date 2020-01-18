@@ -75,7 +75,7 @@ func (fc *appendFlowControl) start(res *resolution, recv func() (*pb.AppendReque
 // reset the appendFlowControl for a new Append RPC with the given resolution.
 func (fc *appendFlowControl) reset(res *resolution, nowMillis int64) {
 	*fc = appendFlowControl{
-		maxRate:    res.journalSpec.MaxAppendRate,
+		maxRate:    res.brokerJournalSpec.JournalSpec.MaxAppendRate,
 		balance:    fc.balance,    // Keep prior balance.
 		lastMillis: fc.lastMillis, // Keep prior lastMillis.
 

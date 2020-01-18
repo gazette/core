@@ -1,4 +1,4 @@
-module go.gazette.dev/core
+module github.com/michaelschiff/core 
 
 go 1.13
 

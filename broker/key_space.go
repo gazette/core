@@ -3,6 +3,7 @@ package broker
 import (
 	"go.etcd.io/etcd/mvcc/mvccpb"
 	"go.gazette.dev/core/allocator"
+	bpe "go.gazette.dev/core/broker/broker_protocol_extensions"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/keyspace"
 )
@@ -33,7 +34,7 @@ func (d decoder) DecodeItem(id string, raw *mvccpb.KeyValue) (allocator.ItemValu
 	} else if s.Name.String() != id {
 		return nil, pb.NewValidationError("JournalSpec Name doesn't match Item ID (%+v vs %+v)", s.Name, id)
 	}
-	return s, nil
+	return &bpe.BrokerJournalSpec{JournalSpec: *s}, nil
 }
 
 func (d decoder) DecodeMember(zone, suffix string, raw *mvccpb.KeyValue) (allocator.MemberValue, error) {
@@ -53,9 +54,9 @@ func (d decoder) DecodeMember(zone, suffix string, raw *mvccpb.KeyValue) (alloca
 
 func (d decoder) DecodeAssignment(itemID, memberZone, memberSuffix string, slot int, raw *mvccpb.KeyValue) (allocator.AssignmentValue, error) {
 	var s = new(pb.Route)
-
+	br := bpe.BrokerRoute{Route: *s}
 	if len(raw.Value) == 0 {
-		s.Init(nil)
+		br.Init(nil)
 	} else if err := s.Unmarshal(raw.Value); err != nil {
 		return nil, err
 	} else if err = s.Validate(); err != nil {

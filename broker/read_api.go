@@ -50,7 +50,7 @@ func (svc *Service) Read(req *pb.ReadRequest, stream pb.Journal_ReadServer) (err
 		return err
 	} else if resolved.status != pb.Status_OK {
 		return stream.Send(&pb.ReadResponse{Status: resolved.status, Header: &resolved.Header})
-	} else if !resolved.journalSpec.Flags.MayRead() {
+	} else if !resolved.brokerJournalSpec.JournalSpec.Flags.MayRead() {
 		return stream.Send(&pb.ReadResponse{Status: pb.Status_NOT_ALLOWED, Header: &resolved.Header})
 	} else if resolved.ProcessId != resolved.localID {
 		req.Header = &resolved.Header // Attach resolved Header to |req|, which we'll forward.

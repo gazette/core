@@ -7,6 +7,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/allocator"
+	bpe "go.gazette.dev/core/broker/broker_protocol_extensions"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/keyspace"
 )
@@ -106,8 +107,8 @@ func (p *Persister) attemptPersist(spool Spool) {
 		return
 	}
 
-	var spec = item.ItemValue.(*pb.JournalSpec)
-	if err := p.persistFn(context.Background(), spool, spec); err != nil {
+	var spec = item.ItemValue.(*bpe.BrokerJournalSpec)
+	if err := p.persistFn(context.Background(), spool, &spec.JournalSpec); err != nil {
 		log.WithFields(log.Fields{
 			"journal": spool.Journal,
 			"name":    spool.ContentName(),

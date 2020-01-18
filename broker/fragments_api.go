@@ -49,7 +49,7 @@ func (svc *Service) ListFragments(ctx context.Context, req *pb.FragmentsRequest)
 		return nil, err
 	} else if res.status != pb.Status_OK {
 		return &pb.FragmentsResponse{Status: res.status, Header: res.Header}, nil
-	} else if !res.journalSpec.Flags.MayRead() {
+	} else if !res.brokerJournalSpec.JournalSpec.Flags.MayRead() {
 		return &pb.FragmentsResponse{Status: pb.Status_NOT_ALLOWED, Header: res.Header}, nil
 	} else if res.replica == nil {
 		req.Header = &res.Header // Attach resolved Header to |req|, which we'll forward.

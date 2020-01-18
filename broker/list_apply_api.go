@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.etcd.io/etcd/clientv3"
 	"go.gazette.dev/core/allocator"
+	bpe "go.gazette.dev/core/broker/broker_protocol_extensions"
 	pb "go.gazette.dev/core/broker/protocol"
 	"google.golang.org/grpc/peer"
 )
@@ -32,7 +33,7 @@ func (svc *Service) List(ctx context.Context, req *pb.ListRequest) (resp *pb.Lis
 
 	resp = &pb.ListResponse{
 		Status: pb.Status_OK,
-		Header: pb.NewUnroutedHeader(s),
+		Header: bpe.NewUnroutedHeader(s),
 	}
 	if err = req.Validate(); err != nil {
 		return resp, err
@@ -55,9 +56,10 @@ func (svc *Service) List(ctx context.Context, req *pb.ListRequest) (resp *pb.Lis
 		},
 	}
 	for cur, ok := it.Next(); ok; cur, ok = it.Next() {
+		var bjs *bpe.BrokerJournalSpec = s.Items[cur.Left].Decoded.(allocator.Item).ItemValue.(*bpe.BrokerJournalSpec)
 		var journal = pb.ListResponse_Journal{
-			Spec: *s.Items[cur.Left].Decoded.(allocator.Item).ItemValue.(*pb.JournalSpec)}
-
+			Spec: bjs.JournalSpec,
+		}
 		metaLabels = pb.ExtractJournalSpecMetaLabels(&journal.Spec, metaLabels)
 		allLabels = pb.UnionLabelSets(metaLabels, journal.Spec.LabelSet, allLabels)
 
@@ -65,8 +67,9 @@ func (svc *Service) List(ctx context.Context, req *pb.ListRequest) (resp *pb.Lis
 			continue
 		}
 		journal.ModRevision = s.Items[cur.Left].Raw.ModRevision
-		journal.Route.Init(s.Assignments[cur.RightBegin:cur.RightEnd])
-		journal.Route.AttachEndpoints(s.KS)
+		brokerRoute := &bpe.BrokerRoute{Route: journal.Route}
+		brokerRoute.Init(s.Assignments[cur.RightBegin:cur.RightEnd])
+		brokerRoute.AttachEndpoints(s.KS)
 
 		resp.Journals = append(resp.Journals, journal)
 	}
@@ -92,7 +95,7 @@ func (svc *Service) Apply(ctx context.Context, req *pb.ApplyRequest) (resp *pb.A
 
 	resp = &pb.ApplyResponse{
 		Status: pb.Status_OK,
-		Header: pb.NewUnroutedHeader(s),
+		Header: bpe.NewUnroutedHeader(s),
 	}
 	if err = req.Validate(); err != nil {
 		return resp, err

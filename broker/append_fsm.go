@@ -9,6 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	bpe "go.gazette.dev/core/broker/broker_protocol_extensions"
 	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
 )
@@ -249,7 +250,7 @@ func (b *appendFSM) onStartPipeline() {
 func (b *appendFSM) onSendPipelineSync() {
 	b.mustState(stateSendPipelineSync)
 
-	var proposal = maybeRollFragment(b.pln.spool, b.rollToOffset, b.resolved.journalSpec.Fragment)
+	var proposal = maybeRollFragment(b.pln.spool, b.rollToOffset, b.resolved.brokerJournalSpec.JournalSpec.Fragment)
 	var req = &pb.ReplicateRequest{
 		Proposal:    &proposal,
 		Registers:   &b.registers,
@@ -318,7 +319,7 @@ func (b *appendFSM) onUpdateAssignments() {
 
 	// Do the Etcd-advertised values of our resolved journal assignments match
 	// the current journal Route (indicating the journal is consistent)?
-	if pb.JournalRouteMatchesAssignments(b.resolved.Route, b.resolved.assignments) {
+	if bpe.JournalRouteMatchesAssignments(bpe.BrokerRoute{Route: b.resolved.Route}, b.resolved.assignments) {
 		b.state = stateAwaitDesiredReplicas
 		return
 	}
@@ -344,7 +345,7 @@ func (b *appendFSM) onUpdateAssignments() {
 func (b *appendFSM) onAwaitDesiredReplicas() {
 	b.mustState(stateAwaitDesiredReplicas)
 
-	if n, d := len(b.resolved.Route.Members), b.resolved.journalSpec.DesiredReplication(); n > d {
+	if n, d := len(b.resolved.Route.Members), b.resolved.brokerJournalSpec.DesiredReplication(); n > d {
 		var nHeap, dHeap = n, d
 		addTrace(b.ctx, " ... too many assignments @ rev %d (%d > %d);"+
 			" waiting for allocator", b.resolved.Etcd.Revision, nHeap, dHeap)
@@ -420,7 +421,7 @@ func (b *appendFSM) onValidatePreconditions() {
 	if b.req.CheckRegisters != nil && !b.req.CheckRegisters.Matches(b.registers) {
 		b.resolved.status = pb.Status_REGISTER_MISMATCH
 		b.state = stateError
-	} else if b.pln.spool.End != maxOffset && b.req.Offset == 0 && b.resolved.journalSpec.Flags.MayWrite() {
+	} else if b.pln.spool.End != maxOffset && b.req.Offset == 0 && b.resolved.brokerJournalSpec.JournalSpec.Flags.MayWrite() {
 		b.resolved.status = pb.Status_INDEX_HAS_GREATER_OFFSET
 		b.state = stateError
 	} else if b.req.Offset != 0 && b.req.Offset != maxOffset {
@@ -454,7 +455,7 @@ func (b *appendFSM) onStreamContent(req *pb.AppendRequest, err error) {
 		// Potentially roll the Fragment forward ahead of this append. Our
 		// pipeline is synchronized, so we expect this will always succeed
 		// and don't ask for an acknowledgement.
-		var proposal = maybeRollFragment(b.pln.spool, 0, b.resolved.journalSpec.Fragment)
+		var proposal = maybeRollFragment(b.pln.spool, 0, b.resolved.brokerJournalSpec.JournalSpec.Fragment)
 
 		if b.pln.spool.Fragment.Fragment != proposal {
 			b.pln.scatter(&pb.ReplicateRequest{
@@ -491,7 +492,7 @@ func (b *appendFSM) onStreamContent(req *pb.AppendRequest, err error) {
 		// Empty chunk indicates an EOF will follow, at which point we commit.
 		b.clientCommit = true
 		return
-	} else if err == nil && !b.resolved.journalSpec.Flags.MayWrite() {
+	} else if err == nil && !b.resolved.brokerJournalSpec.JournalSpec.Flags.MayWrite() {
 		// Non-empty appends cannot be made to non-writable journals.
 		b.resolved.status = pb.Status_NOT_ALLOWED
 	} else if err == nil {
