@@ -90,7 +90,6 @@ interface, however this only supports non-partitioned topics.
 - Golang X Oauth2 BSD 3-Clause https://github.com/golang/oauth2/blob/master/LICENSE
 - Golang X Sync Modified BSD https://github.com/golang/sync/blob/master/LICENSE
 - Golang X Sys Modified BSD https://github.com/golang/sync/blob/master/LICENSE
-- Golang API - Modified BSD https://golang.org/LICENSE
 - Golang GRPC - Apache 2.0 https://github.com/grpc/grpc-go/blob/master/LICENSE 
 - Alec Thomas Kingping - MIT https://github.com/alecthomas/kingpin/blob/master/COPYING
 - Go Yaml - Apache https://github.com/go-yaml/yaml/blob/v2/LICENSE
