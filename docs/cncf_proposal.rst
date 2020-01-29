@@ -15,9 +15,9 @@ serving reads and writes. Gazette uses a system of labels and selectors to
 define "topics" on an application-specific, ex post facto basis. Producers
 and Consumers use selectors to specify the set of journals with which they
 are concerned, and can discover new journals that meet their criteria as
-they are created. Gazette's Consumer framework supports 
-end-to-end effectively-once semantics and integrates with a variety of local
-and remote systems for storing storing application-defined states materialized
+they are created. Gazette's Consumer framework supports end-to-end
+effectively-once semantics and integrates with a variety of local and
+remote systems for storing storing application-defined states materialized
 from streams.
 
 **Alignment with CNCF Charter Mission**
@@ -51,8 +51,8 @@ interface, however this only supports non-partitioned topics.
 
 **External Dependencies**
 
-- Golang - BSD ???
-- Google Cloud - ??? ???
+- Golang - Modified BSD https://golang.org/LICENSE
+- Google Cloud - Apache 2.0 https://github.com/googleapis/google-cloud-go/blob/master/LICENSE
 - ZSTD - Simplified BSD https://github.com/DataDog/zstd/blob/1.x/LICENSE
 - AWS SDK - Apache 2.0 https://github.com/aws/aws-sdk-go/blob/master/LICENSE.txt
 - Go Humanize - MIT https://github.com/dustin/go-humanize/blob/master/LICENSE
@@ -61,7 +61,7 @@ interface, however this only supports non-partitioned topics.
 - FacebookGo Stack - BSD https://github.com/facebookarchive/stack/blob/master/license
 - FacebookGo Subset - BSD https://github.com/facebookarchive/subset/blob/master/license
 - Go-Check Check - Simplified BSD https://github.com/go-check/check/blob/v1/LICENSE
-- Gogo Protobuf - Modified BSD? https://github.com/gogo/protobuf/blob/master/LICENSE
+- Gogo Protobuf - Modified BSD https://github.com/gogo/protobuf/blob/master/LICENSE
 - Golang Protobuf - BSD 3-Clause https://github.com/golang/protobuf/blob/master/LICENSE
 - Golang Snappy - BSD 3-Clause https://github.com/golang/snappy/blob/master/LICENSE
 - Google UUID - BSD 3-Clause https://github.com/google/uuid/blob/master/LICENSE
@@ -73,7 +73,7 @@ interface, however this only supports non-partitioned topics.
 - Klauspost Compress - BSD 3-Clause https://github.com/klauspost/compress/blob/master/LICENSE
 - Klauspost CPUID - MIT https://github.com/klauspost/cpuid/blob/master/LICENSE
 - Kr Pretty - MIT https://github.com/kr/pretty/blob/main/License
-- Lib Pq - ??? https://github.com/lib/pq/blob/master/LICENSE.md
+- Lib Pq - https://github.com/lib/pq/blob/master/LICENSE.md
 - Mattn Go-Sqlite3 - MIT https://github.com/mattn/go-sqlite3/blob/master/LICENSE
 - Olekukonko Tablewriter - MIT https://github.com/olekukonko/tablewriter/blob/master/LICENSE.md
 - Pkg Errors - BSD 2-Clause https://github.com/pkg/errors/blob/master/LICENSE
@@ -85,16 +85,16 @@ interface, however this only supports non-partitioned topics.
 - Stretchr Testify - MIT https://github.com/stretchr/testify/blob/master/LICENSE
 - Tecbot GoRocksDB - MIT https://github.com/tecbot/gorocksdb/blob/master/LICENSE
 - Etcd - Apache 2.0 https://github.com/etcd-io/etcd/blob/master/LICENSE
-- Golang X Crypto BSD ???
-- Goalng X Net BSD ???
-- Golang X Oauth2 BSD ???
-- Golang X Sync BSD ???
-- Golang X Sys BSD ???
-- Golang API - BSD ??? 
-- Golang GRPC - BSD ??? 
+- Golang X Crypto Modified BSD https://github.com/golang/crypto/blob/master/LICENSE
+- Goalng X Net Modified BSD https://github.com/golang/net/blob/master/LICENSE
+- Golang X Oauth2 BSD 3-Clause https://github.com/golang/oauth2/blob/master/LICENSE
+- Golang X Sync Modified BSD https://github.com/golang/sync/blob/master/LICENSE
+- Golang X Sys Modified BSD https://github.com/golang/sync/blob/master/LICENSE
+- Golang API - Modified BSD https://golang.org/LICENSE
+- Golang GRPC - Apache 2.0 https://github.com/grpc/grpc-go/blob/master/LICENSE 
 - Alec Thomas Kingping - MIT https://github.com/alecthomas/kingpin/blob/master/COPYING
 - Go Yaml - Apache https://github.com/go-yaml/yaml/blob/v2/LICENSE
-- Kubernetes API - ??? ??
+- Kubernetes API - Apache 2.0 https://github.com/kubernetes/api/blob/master/LICENSE
 
 **Initial Committers:** 
 
