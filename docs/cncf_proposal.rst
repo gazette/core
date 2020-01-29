@@ -15,9 +15,10 @@ serving reads and writes. Gazette uses a system of labels and selectors to
 define "topics" on an application-specific, ex post facto basis. Producers
 and Consumers use selectors to specify the set of journals with which they
 are concerned, and can discover new journals that meet their criteria as
-they are created. Gazette's Publisher and Consumer framework supports 
+they are created. Gazette's Consumer framework supports 
 end-to-end effectively-once semantics and integrates with a variety of local
-and remote systems for storing stream state.  
+and remote systems for storing storing application-defined states materialized
+from streams.
 
 **Alignment with CNCF Charter Mission**
 
@@ -115,7 +116,25 @@ interface, however this only supports non-partitioned topics.
 
 **Release Methodology and Mechanics:**
 
-TODO
+Releases follow semver (deliberately pre 1.0 major version).  Currently new
+versions are released on an ad-hoc basis.
+
+Release process is roughly:
+
+* Create new major/minor branch and run CI build & test
+    * CI builds: container-based build environment for hermetic and reproducible
+      builds
+    * CI tests: 15 rounds, with race detection
+* Package, tag, and push docker images ``gazette/broker`` and ``gazette/examples``
+
+
+gazette/core repository includes kustomize compatible kubernetes manifests for:
+
+* Deploying brokers
+* Base manifests for consumer applications
+* Example applications, with bootstrapped cluster dependencies (etcd, minio) for self-contained test environments.
+* Jepsen style integration tests, which introduce controlled faults (process stops, crashes, and network partitions) and verify processing semantics and recovery.
+
 
 **Social Media Accounts:** N/A
 
@@ -123,8 +142,11 @@ TODO
 
 **Current User-base:**
 
-- LiveRamp
+- LiveRamp (https://liveramp.com)
     Production deployment scaled to millions of streamed records per second.
+- Estuary Tech, Inc (https://estuary.dev)
+    Supports Gazette development and is exploring commercialization of products built
+    upon it.
 
 **Project Logo**
 
