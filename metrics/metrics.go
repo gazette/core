@@ -21,6 +21,7 @@ const (
 	RecoveryLogRecoveredBytesTotalKey   = "gazette_recoverylog_recovered_bytes_total"
 	StorePersistedBytesTotalKey         = "gazette_store_persisted_bytes_total"
 	StoreRequestsTotalKey               = "gazette_store_requests_total"
+	WriteHeadKey                        = "gazette_write_head"
 
 	Fail = "fail"
 	Ok   = "ok"
@@ -84,6 +85,10 @@ var (
 		Name: JournalServerResponseTimeSecondsKey,
 		Help: "Response time of JournalServer.Append.",
 	}, []string{"operation", "status"})
+	WriteHead = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: WriteHeadKey,
+		Help: "Current write head.",
+	}, []string{"journal"})
 )
 
 // GazetteBrokerCollectors lists collectors used by the gazette broker.
@@ -102,25 +107,8 @@ func GazetteBrokerCollectors() []prometheus.Collector {
 		JournalServerResponseTimeSeconds,
 		StorePersistedBytesTotal,
 		StoreRequestTotal,
+		WriteHead,
 	}
-}
-
-// Keys for gazconsumer metrics.
-const (
-	GazconsumerLagBytesKey = "gazconsumer_lag_bytes"
-)
-
-// Collectors for gazconsumer metrics.
-var (
-	GazconsumerLagBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: GazconsumerLagBytesKey,
-		Help: "Lag of the consumer on a per shard basis.",
-	}, []string{"consumer"})
-)
-
-// GazetteconsumerCollectors lists collectors used by the gazette broker.
-func GazconsumerCollectors() []prometheus.Collector {
-	return []prometheus.Collector{GazconsumerLagBytes}
 }
 
 // Keys for gazretention metrics.
@@ -164,6 +152,8 @@ func GazretentionCollectors() []prometheus.Collector {
 const (
 	GazetteDiscardBytesTotalKey         = "gazette_discard_bytes_total"
 	GazetteReadBytesTotalKey            = "gazette_read_bytes_total"
+	GazetteSequencerQueued              = "gazette_sequencer_queued"
+	GazetteSequencerReplay              = "gazette_sequencer_replay"
 	GazetteWriteBytesTotalKey           = "gazette_write_bytes_total"
 	GazetteWriteCountTotalKey           = "gazette_write_count_total"
 	GazetteWriteDurationSecondsTotalKey = "gazette_write_duration_seconds_total"
@@ -175,12 +165,20 @@ const (
 var (
 	GazetteDiscardBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: GazetteDiscardBytesTotalKey,
-		Help: "Cumulative number of bytes read but discarded.",
+		Help: "Cumulative number of bytes read and discarded during a fragment seek.",
 	})
 	GazetteReadBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: GazetteReadBytesTotalKey,
 		Help: "Cumulative number of bytes read.",
 	})
+	GazetteSequencerQueuedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: GazetteSequencerQueued,
+		Help: "Cumulative number of read-uncommitted messages which were sequenced.",
+	}, []string{"journal", "flag", "outcome"})
+	GazetteSequencerReplayTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: GazetteSequencerReplay,
+		Help: "Cumulative number of messages re-read from source journal due to insufficient Sequencer ring-buffer size.",
+	}, []string{"journal"})
 	GazetteWriteBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: GazetteWriteBytesTotalKey,
 		Help: "Cumulative number of bytes written.",
@@ -205,6 +203,8 @@ func GazetteClientCollectors() []prometheus.Collector {
 	return []prometheus.Collector{
 		GazetteDiscardBytesTotal,
 		GazetteReadBytesTotal,
+		GazetteSequencerQueuedTotal,
+		GazetteSequencerReplayTotal,
 		GazetteWriteBytesTotal,
 		GazetteWriteCountTotal,
 		GazetteWriteDurationTotal,
@@ -221,6 +221,7 @@ const (
 	GazetteConsumerTxFlushSecondsTotalKey   = "gazette_consumer_tx_flush_seconds_total"
 	GazetteConsumerTxSyncSecondsTotalKey    = "gazette_consumer_tx_sync_seconds_total"
 	GazetteConsumerConsumedBytesTotalKey    = "gazette_consumer_consumed_bytes_total"
+	GazetteConsumerReadHeadKey              = "gazette_consumer_read_head"
 )
 
 // Collectors for consumer.Runner metrics.
@@ -257,6 +258,10 @@ var (
 		Name: GazetteConsumerConsumedBytesTotalKey,
 		Help: "Cumulative number of bytes consumed.",
 	})
+	GazetteConsumerReadHead = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: GazetteConsumerReadHeadKey,
+		Help: "Consumer read head",
+	}, []string{"journal"})
 )
 
 // GazetteConsumerCollectors returns the metrics used by the consumer package.
@@ -269,5 +274,6 @@ func GazetteConsumerCollectors() []prometheus.Collector {
 		GazetteConsumerTxStalledSecondsTotal,
 		GazetteConsumerTxFlushSecondsTotal,
 		GazetteConsumerBytesConsumedTotal,
+		GazetteConsumerReadHead,
 	}
 }

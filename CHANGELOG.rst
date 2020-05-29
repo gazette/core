@@ -2,7 +2,37 @@
 master (unreleased)
 --------------------
 
-- Various doc improvements.
+- BUGFIX: Fix potential UUID sequencing race in concurrent calls to PublishCommitted
+  of the same message.Publisher, and add new regression testing (GH-259_).
+- Instrument message.Sequencer with Prometheus metrics.
+- Add `curl` to release images, making it much simpler for node-zone.sh mappings
+  to directly query cloud metadata APIs.
+- Fix omitted registration of broker WriteHead metric.
+- Various improvements to tests, addressing or instrumenting flakes.
+
+.. _GH-259: https://github.com/gazette/core/issues/259
+
+v0.86.1
+--------
+
+- Update RocksDB to 6.7.3, and Go to 1.14.2, along with many other package dependencies.
+- The ``etcdtest`` package no longer embeds an Etcd server. Instead, an ``etcd``
+  binary *must* be available on the PATH and is invoked as a sub-process,
+  using Unix domain sockets. Users who use ``etcdtest`` themselves, or are running
+  Gazette tests outside of the hermetic Docker build environment, must provide a
+  reasonably recent version of ``etcd``.
+- Relatedly, the gazette client_ package no longer depends on Etcd (including the Etcd client).
+- JSON-framed messages are now able to use custom marshal/demarshal routines.
+- ``gazctl journals/shards apply`` now interprets revision ``-1`` (previously
+  disallowed) to mean "don't care", allowing specs to be applied which will always
+  overwrite what's in Etcd.
+  This makes sense for specs managed in another source-of-truth (eg, git).
+- Mitigations and improved logging for issue GH-248_.
+- Remove explicit TCP keep-alive management, as this is now Go default.
+- Various doc improvements & cleanups.
+
+.. _GH-248: GH-248
+.. _client: https://godoc.org/go.gazette.dev/core/broker/client
 
 v0.85.2
 --------

@@ -20,11 +20,14 @@ RUN apt-get update -y \
       zlib1g-dev \
  && rm -rf /var/lib/apt/lists/*
 
-ARG GOLANG_VERSION=1.13.7
-ARG GOLANG_SHA256=b3dd4bd781a0271b33168e627f7f43886b4c5d1c794a4015abf34e99c6526ca3
+ARG GOLANG_VERSION=1.14.2
+ARG GOLANG_SHA256=6272d6e940ecb71ea5636ddb5fab3933e087c1356173c61f4a803895e947ebb3
 
-ARG DOCKER_VERSION=19.03.5
-ARG DOCKER_SHA256=50cdf38749642ec43d6ac50f4a3f1f7f6ac688e8d8b4e1c5b7be06e1a82f06e9
+ARG DOCKER_VERSION=19.03.8
+ARG DOCKER_SHA256=7f4115dc6a3c19c917f8b9664d7b51c904def1c984e082c4600097433323cf6f
+
+ARG ETCD_VERSION=v3.4.7
+ARG ETCD_SHA256=4ad86e663b63feb4855e1f3a647e719d6d79cf6306410c52b7f280fa56f8eb6b
 
 ENV PATH=/usr/local/go/bin:$PATH
 
@@ -39,7 +42,6 @@ RUN curl -L -o /tmp/golang.tgz \
 
 RUN curl -L -o /tmp/docker.tgz \
       https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz \
- && sha256sum /tmp/docker.tgz \
  && echo "${DOCKER_SHA256} /tmp/docker.tgz" | sha256sum -c - \
  && tar --extract \
       --file /tmp/docker.tgz \
@@ -47,5 +49,17 @@ RUN curl -L -o /tmp/docker.tgz \
       --directory /usr/local/bin/ \
  && rm /tmp/docker.tgz \
  && docker --version
+
+RUN curl -L -o /tmp/etcd.tgz \
+     https://github.com/etcd-io/etcd/releases/download/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz \
+ && echo "${ETCD_SHA256} /tmp/etcd.tgz" | sha256sum -c - \
+ && tar --extract \
+      --file /tmp/etcd.tgz \
+      --directory /tmp/ \
+ && mv /tmp/etcd-${ETCD_VERSION}-linux-amd64/etcd /tmp/etcd-${ETCD_VERSION}-linux-amd64/etcdctl /usr/local/bin \
+ && chown 1000:1000 /usr/local/bin/etcd /usr/local/bin/etcdctl \
+ && rm -r /tmp/etcd-${ETCD_VERSION}-linux-amd64/ \
+ && rm /tmp/etcd.tgz \
+ && etcd --version
 
 WORKDIR /gazette
