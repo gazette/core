@@ -20,13 +20,13 @@
 # -- Project information -----------------------------------------------------
 
 project = u'Gazette'
-copyright = u'2019, The Gazette Authors'
+copyright = u'2020, The Gazette Authors'
 author = u'The Gazette Authors'
 
 # The short X.Y version
-version = u'v0.85'
+version = u'v0.87'
 # The full version, including alpha/beta/rc tags
-release = u'v0.85'
+release = u'v0.87'
 
 
 # -- General configuration ---------------------------------------------------
