@@ -45,6 +45,10 @@ extensions = [
     'sphinxcontrib.programoutput',
 ]
 
+extlinks = {
+        'githubsource': ('https://github.com/gazette/core/blob/' + version + '/%s', 'View on Gitbub')
+}
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
