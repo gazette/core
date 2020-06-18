@@ -21,7 +21,7 @@ in the RocksDB build (and it's turned off in the standard Debian package, for ex
 Continuous Integration
 -----------------------
 
-Gazette uses a `Make-based build system`__ which pulls down and stages
+Gazette uses a :githubsource:`Make-based build system<Makefile>` which pulls down and stages
 development dependencies into a ``.build`` sub-directory of the repository root.
 
 The Make build system offers fully hermetic builds using a Docker-in-Docker

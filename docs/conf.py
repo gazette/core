@@ -23,10 +23,11 @@ project = u'Gazette'
 copyright = u'2020, The Gazette Authors'
 author = u'The Gazette Authors'
 
+# These are set to 'master', only to make it clear that we're not updating this on each release
 # The short X.Y version
-version = u'v0.87'
+version = u'master'
 # The full version, including alpha/beta/rc tags
-release = u'v0.87'
+release = u'master'
 
 
 # -- General configuration ---------------------------------------------------
@@ -46,7 +47,9 @@ extensions = [
 ]
 
 extlinks = {
-        'githubsource': ('https://github.com/gazette/core/blob/' + version + '/%s', 'View on Gitbub')
+        # This allows references in rst files in the format: :githubsource:`path/to/some/file.go`
+        # These references will be converted to a link to the given file in our github repository.
+        'githubsource': ('https://github.com/gazette/core/blob/master/%s', None)
 }
 
 # Add any paths that contain templates here, relative to this directory.
