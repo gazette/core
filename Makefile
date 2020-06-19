@@ -40,22 +40,22 @@ include mk/cmd-reference.mk
 # Push the broker & example image to a specified private registry.
 # Override the registry to use by passing a "registry=" flag to make.
 registry=localhost:32000
+release_tag=latest
 push-to-registry:
-	docker tag gazette/broker:latest   $(registry)/broker:latest
-	docker tag gazette/examples:latest $(registry)/examples:latest
-	docker push $(registry)/broker:latest
-	docker push $(registry)/examples:latest
+	docker tag gazette/broker:latest   $(registry)/broker:$(release_tag)
+	docker tag gazette/examples:latest $(registry)/examples:$(release_tag)
+	docker push $(registry)/broker:$(release_tag)
+	docker push $(registry)/examples:$(release_tag)
 
-# Push gazette/ci-builder to docker.io for distribution (used by CircleCI).
-push-ci-builder-image:
-	docker push gazette/ci-builder:latest
+${WORKDIR}/gazette-x86_64-linux-gnu.zip: go-install
+	cd ${WORKDIR}/go-path/bin/
+	zip gazette-x86_64-linux-gnu.zip gazette gazctl
 
-# Push images to docker.io for distribution. "release_tag" is a required make
-# flag, and docker must already be authenticated to docker hub.
-push-release-images:
-	docker tag gazette/broker:latest gazette/broker:${release_tag}
-	docker tag gazette/examples:latest gazette/examples:${release_tag}
-	docker push gazette/broker:${release_tag}
-	docker push gazette/examples:${release_tag}
+release-linux-binaries: go-install
+	# sanity check, since our make builds don't support cross-compilation at the moment
+	@test "$(shell uname -io)" = "x86_64 GNU/Linux" || (echo "only x86_64 linux binaries are produced" && exit 1)
+	@rm -f ${WORKDIR}/gazette-x86_64-linux-gnu.zip
+	zip -j ${WORKDIR}/gazette-x86_64-linux-gnu.zip ${WORKDIR}/go-path/bin/gazette ${WORKDIR}/go-path/bin/gazctl
 
-.PHONY: push-ci-builder-image push-release-images ${WORKDIR}/go-path/bin/integration.test
+
+.PHONY: release-linux-binaries ${WORKDIR}/go-path/bin/integration.test
