@@ -51,8 +51,11 @@ ${WORKDIR}/gazette-x86_64-linux-gnu.zip: go-install
 	cd ${WORKDIR}/go-path/bin/
 	zip gazette-x86_64-linux-gnu.zip gazette gazctl
 
+# Builds a zip file containing both the gazette and gazctl release binaries. This target may only be run
+# on a linux host, since we don't currently support cross-compilation (we may want to in the
+# future).
 release-linux-binaries: go-install
-	# sanity check, since our make builds don't support cross-compilation at the moment
+	@# sanity check, since our make builds don't support cross-compilation at the moment
 	@test "$(shell uname -io)" = "x86_64 GNU/Linux" || (echo "only x86_64 linux binaries are produced" && exit 1)
 	@rm -f ${WORKDIR}/gazette-x86_64-linux-gnu.zip
 	zip -j ${WORKDIR}/gazette-x86_64-linux-gnu.zip ${WORKDIR}/go-path/bin/gazette ${WORKDIR}/go-path/bin/gazctl

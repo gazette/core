@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - '*'
-    # ignore pushes to tags, since those ought to be handled by the release created event
+    # Ignore pushes to tags, since those ought to be handled by the release created event.
     tags-ignore:
       - '*'
   release:
@@ -16,7 +16,7 @@ on:
 env:
   # This is only used as the cache key to prevent rebuilding rocksdb every time. Eventually
   # we'll need to figure out a solution that doesn't duplicate this version everywhere.
-  # For now, ensure that it's changed both here and in mk/common-config.mk
+  # For now, ensure that it's changed both here and in mk/common-config.mk.
   ROCKSDB_VERSION: "6.7.3"
   GITHUB_EVENT_JSON: '${{ toJson(github.event) }}'
 
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
 
-        # This is just really useful info to have when debugging issues with the action itself
+        # This is just really useful info to have when debugging issues with the action itself.
       - name: 'Print event info'
         run: |
           echo 'event_name=${{ github.event_name }}';
@@ -37,8 +37,8 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v2
 
-        # sets outputs for version, docker tag, and whether we should push images and upload release
-        # artifacts. These outputs are used by later steps
+        # Sets outputs for version, docker tag, and whether we should push images and upload release
+        # artifacts. These outputs are used by later steps.
       - name: 'Release Info'
         id: release_info
         run: |
@@ -46,28 +46,28 @@ jobs:
           if [[ "$is_release" == "true" ]]; then
             push_images=true
             tag_name=${{ github.event.release.tag_name }}
-            # the version regex doesn't need to be super sophisticated, since the goal is not to
-            # validate that this is a semantic version number. Rather the goal is just to see if 
+            # The version regex doesn't need to be super sophisticated, since the goal is not to
+            # validate that this is a semantic version number. Rather the goal is just to see if
             # matches the typical pattern we use for release tags (e.g. v0.86.1). If it does, then
             # we'll remove the 'v' prefix and use the remainder as the docker tag
-            # If a release tag does not match that format, then we'll just use the tag value as is
+            # If a release tag does not match that format, then we'll just use the tag value as is.
             if echo "$tag_name" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+'; then
               version="${tag_name#v}"
             else
               version="${tag_name}"
             fi
           else
-            # this is not a release, so we'll use 'latest-dev-<sha>' for the version number
-            # and just 'latest-dev' for the docker tag
+            # This is not a release, so we'll use 'latest-dev-<sha>' for the version number
+            # and just 'latest-dev' for the docker tag.
             sha=${{ github.sha }}
             version="${docker_tag}-${sha:0:7}"
-            # if this is a master build, then we'll treat this as a release and just use the 
-            # hard-coded tag as the docker image tag
+            # If this is a master build, then we'll treat this as a release and just use the 
+            # hard-coded tag as the docker image tag.
             if [[ '${{ github.ref }}' == 'refs/heads/master' ]]; then
-                # we don't want to put the git sha in the docker tag because otherwise they'll
+                # We don't want to put the git sha in the docker tag because otherwise they'll
                 # accumulate forever and just clutter up the page on docker hub. So 'latest-dev'
                 # just always gets you the most recent master build, and if you want a specific master
-                # build, then you can use the '@sha256:...' syntax
+                # build, then you can use the '@sha256:...' syntax.
                 docker_tag="latest-dev"
                 push_images='true'
             else
@@ -79,7 +79,7 @@ jobs:
           echo ::set-output name=PUSH_IMAGES::${push_images}
           echo ::set-output name=IS_RELEASE::${is_release}
 
-        # try to load the ci-builder docker image from the cache. If this misses, then it will be 
+        # Try to load the ci-builder docker image from the cache. If this misses, then it will be 
         # built automatically by a make rule. A later step will then run 'docker save' to export the
         # image as a tar archive so we can cache it.
       - name: 'CI Builder Docker Image Cache'
@@ -90,7 +90,7 @@ jobs:
           path: ".build/ci-builder-image.tar"
 
         # The 'c<n>' in these Cache steps is just for changing the cache key so that
-        # we can manually invalidate the cache if we need
+        # we can manually invalidate the cache if we need.
       - name: 'RocksDB Cache'
         uses: actions/cache@v2
         with:
@@ -104,7 +104,7 @@ jobs:
           path: ".build-ci/go-path/pkg"
           # If we don't have a cached directory that matches the hash exactly,
           # then this will allow a non-matching directory to be pulled in. This is safe
-          # because go will use its own finer-grained cache invalidation logic
+          # because go will use its own finer-grained cache invalidation logic.
           restore-keys: "go-mod-c3-"
 
       - name: 'Build Binaries'
@@ -114,7 +114,7 @@ jobs:
         run: "make as-ci target=go-test-ci VERSION=${{ steps.release_info.outputs.VERSION }}"
 
         # We upload this to the artifacts that are attached to the action just to make it easy for
-        # someone to pull down a build from another branch
+        # someone to pull down a build from another branch.
       - name: 'Upload Binaries'
         uses: actions/upload-artifact@v2
         with:
