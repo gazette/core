@@ -1,8 +1,11 @@
 name: Gazette Continuous Integration
 
-# We build on any push, or when a release is created.
+# We build on any push to a branch, or when a release is created.
 on:
   push:
+    branches:
+      - '*'
+    # ignore pushes to tags, since those ought to be handled by the release created event
     tags-ignore:
       - '*'
   release:
