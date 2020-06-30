@@ -12,6 +12,7 @@ ci-builder-image: ${WORKDIR}/ci-builder-image.tar
 # layer, and also allows the tar file to be cached
 ${WORKDIR}/ci-builder-image.tar:
 	docker build -t gazette/ci-builder:latest - <  ${COREDIR}/mk/ci-builder.Dockerfile
+	mkdir -p ${WORKDIR}
 	docker save -o ${WORKDIR}/ci-builder-image.tar gazette/ci-builder:latest
 
 # The as-ci rule recursively calls `make` _within_ a instance of the ci-builder-image,
