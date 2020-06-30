@@ -38,14 +38,14 @@ include mk/microk8s.mk
 include mk/cmd-reference.mk
 
 # Push the broker & example image to a specified private registry.
-# Override the registry to use by passing a "registry=" flag to make.
-registry=localhost:32000
-release_tag=latest
+# Override the registry to use by passing a "REGISTRY=" flag to make.
+REGISTRY=localhost:32000
+RELEASE_TAG=latest
 push-to-registry:
-	docker tag gazette/broker:latest   $(registry)/broker:$(release_tag)
-	docker tag gazette/examples:latest $(registry)/examples:$(release_tag)
-	docker push $(registry)/broker:$(release_tag)
-	docker push $(registry)/examples:$(release_tag)
+	docker tag gazette/broker:latest $(REGISTRY)/broker:$(RELEASE_TAG)
+	docker tag gazette/examples:latest $(REGISTRY)/examples:$(RELEASE_TAG)
+	docker push $(REGISTRY)/broker:$(RELEASE_TAG)
+	docker push $(REGISTRY)/examples:$(RELEASE_TAG)
 
 ${WORKDIR}/gazette-x86_64-linux-gnu.zip: go-install
 	cd ${WORKDIR}/go-path/bin/
