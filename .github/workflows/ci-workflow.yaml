@@ -2,7 +2,9 @@ name: Gazette Continuous Integration
 
 # We build on any push, or when a release is created.
 on:
-  push: {}
+  push:
+    tags-ignore:
+      - '*'
   release:
     # Without this additional restriction, GH actions will trigger multiple runs for a single
     # release, because it fires off separate events creating vs publishing the release.
