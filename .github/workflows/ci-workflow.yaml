@@ -60,7 +60,7 @@ jobs:
             # This is not a release, so we'll use 'latest-dev-<sha>' for the version number
             # and just 'latest-dev' for the docker tag.
             sha=${{ github.sha }}
-            version="${docker_tag}-${sha:0:7}"
+            version="latest-dev-${sha:0:7}"
             # If this is a master build, then we'll treat this as a release and just use the 
             # hard-coded tag as the docker image tag.
             if [[ '${{ github.ref }}' == 'refs/heads/master' ]]; then
