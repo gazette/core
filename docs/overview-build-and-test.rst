@@ -88,14 +88,12 @@ instead of using ``as-ci``, then the following dependencies are required:
     * ``libsqlite3`` (development headers)
     * It's also probably useful to have the sqlite3 CLI for debugging
 
-* RocksDB: On linux systems, this will be downloaded and built automatically. You'll need to have a
-  few things in order for this to work. Most systems will already have this stuff, but it's listed
-  here anyway just for the sake of being thorough
-
-    * A C compiler toolchain (on debian-based distros, the ``build-essential`` package will have you covered)
-    * ``curl``
-    * ``ca-certificates`` (so that curl can validate the certificate of the rocksdb download server)
-    * ``tar``
+* RocksDB: This typically needs to be built from source, since we require the "Runtime Type
+  Information" feature to be enabled at compile time. The variable ``USE_RTTI=1`` is used to enable
+  that during compilation. Check out the gazette 
+  :githubsource:`ci-builder dockerfile<mk/ci-builder.Dockerfile>` to see an example of how to 
+  build and install rocksdb. Check out the `rocksdb installation docs<https://github.com/facebook/rocksdb/blob/master/INSTALL.md>`
+  for more information.
 
 Other Build Targets
 --------------------
