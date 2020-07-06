@@ -2,6 +2,7 @@
 # go.gazette.dev/core, and external consumer application projects
 # which re-use the Gazette build infrastructure.
 
+
 # The ci-builder-image target builds a Docker image suitable for building
 # gazette. It is the primary image used by gazette continuous integration builds.
 ci-builder-image: ${WORKDIR}/ci-builder-image.tar
@@ -14,6 +15,22 @@ ${WORKDIR}/ci-builder-image.tar:
 	docker build -t gazette/ci-builder:latest - <  ${COREDIR}/mk/ci-builder.Dockerfile
 	mkdir -p ${WORKDIR}
 	docker save -o ${WORKDIR}/ci-builder-image.tar gazette/ci-builder:latest
+
+# On OSX, there's magix behind the scenes to make files created by a docker container automatically
+# be owned by the current user on the host. This is not so in linux, so we need to set the
+# appropriate user and group ids for the container. We use the same groupid that's used in
+# /var/run/docker.sock to ensure that the process in the container will be allowed to access it
+host_os = $(shell uname -s)
+DOCKER_USER_ARG = 
+ifeq ($(host_os),Linux)
+	DOCKER_USER_ARG = --user $(shell id -u):$(shell id -g) --group-add $(shell stat -c '%g' /var/run/docker.sock)
+endif
+
+
+STATIC =
+ifdef STATIC
+GOTAGS = -tags static
+endif
 
 # The as-ci rule recursively calls `make` _within_ a instance of the ci-builder-image,
 # and bind-mounting the gazette repository into the container. This rule allows for
@@ -33,26 +50,28 @@ as-ci: ci-builder-image
 	# Strip root prefix from WORKDIR to build its equivalent within the container. 
 	ROOT_CI=/gazette ;\
 	WORK_CI=$${ROOT_CI}$(subst ${ROOTDIR},,${WORKDIR}) ;\
-	docker run \
+	docker run $(DOCKER_USER_ARG) \
 		--rm \
 		--tty \
-		--user "$(shell id -u):$(shell id -g)" \
 		--mount src=${WORKDIR}-ci,target=$${WORK_CI},type=bind \
 		--mount src=${ROOTDIR},target=$${ROOT_CI},type=bind \
 		--env  GOPATH=$${WORK_CI}/go-path \
 		--env GOCACHE=$${WORK_CI}/go-build-cache \
 		--mount src=/var/run/docker.sock,target=/var/run/docker.sock,type=bind \
 		gazette/ci-builder /bin/sh -ec \
-			"make ${target} VERSION=${VERSION} DATE=${DATE} REGISTRY=${REGISTRY} RELEASE_TAG=${RELEASE_TAG}"
+			"go mod download && make ${target} VERSION=${VERSION} DATE=${DATE} REGISTRY=${REGISTRY} RELEASE_TAG=${RELEASE_TAG} STATIC=$(STATIC)"
+
 
 # Go build & test targets.
-go-install:   $(ROCKSDIR)/librocksdb.so $(protobuf-targets)
+go-install: $(protobuf-targets)
+	$(info using dynamic libs)
 	MBP=go.gazette.dev/core/mainboilerplate ;\
-	go install -v \
-		-ldflags "-X $${MBP}.Version=${VERSION} -X $${MBP}.BuildDate=${DATE}" ./...
-go-test-fast: ${ROCKSDIR}/librocksdb.so ${protobuf-targets}
+	go install -v $(GOTAGS) \
+		-ldflags '-X $${MBP}.Version=${VERSION} -X $${MBP}.BuildDate=${DATE}' ./...
+
+go-test-fast: ${protobuf-targets}
 	go test -p ${NPROC} ./...
-go-test-ci:   ${ROCKSDIR}/librocksdb.so ${protobuf-targets}
+go-test-ci: ${protobuf-targets}
 	GORACE="halt_on_error=1" go test -p ${NPROC} -race -count=15 ./...
 
 # The ci-release-% implicit rule builds a Docker image named by the rule
@@ -60,37 +79,17 @@ go-test-ci:   ${ROCKSDIR}/librocksdb.so ${protobuf-targets}
 # an invocation with `ci-release-gazette-examples` has a stem `gazette-examples`, and will
 # package binaries listed in `ci-release-gazette-examples-targets` into a docker
 # image named `gazette/examples:latest`.
+# Note that the release image does not contain dynamic libraries for rocksdb and such, so
+# anything that requires those should use `STATIC=1` to link those statically
 .SECONDEXPANSION:
-ci-release-%: $(ROCKSDIR)/librocksdb.so go-install $$($$@-targets)
+ci-release-%: go-install $$($$@-targets)
 	rm -rf ${WORKDIR}/ci-release
 	mkdir -p ${WORKDIR}/ci-release
-	ln ${$@-targets} ${ROCKSDIR}/librocksdb.so.${ROCKSDB_VERSION} \
-		${WORKDIR}/ci-release
+	ln ${$@-targets} ${WORKDIR}/ci-release
 	docker build \
 		-f ${COREDIR}/mk/ci-release.Dockerfile \
 		-t $(subst -,/,$*):latest \
 		${WORKDIR}/ci-release/
-
-# The librocksdb.so fetches and builds the version of RocksDB identified by 
-# the rule stem (eg, 5.17.2). We require a custom rule to build RocksDB as
-# it's necessary to build with run-time type information (USE_RTTI=1), which
-# is not enabled by default in third-party packages.
-${WORKDIR}/rocksdb-v%/librocksdb.so:
-	# Fetch RocksDB source.
-	mkdir -p ${WORKDIR}/rocksdb-v$*
-	curl -L -o ${WORKDIR}/tmp.tgz https://github.com/facebook/rocksdb/archive/v$*.tar.gz
-	tar xzf ${WORKDIR}/tmp.tgz -C ${WORKDIR}/rocksdb-v$* --strip-components=1
-	rm ${WORKDIR}/tmp.tgz
-	@# PORTABLE=1 prevents rocks from passing `-march=native`. This is important because it will cause gcc
-	@# to automatically use avx512 extensions if they're avaialable, which would cause it to break on CPUs
-	@# that don't support it.
-	PORTABLE=1 USE_SSE=1 DEBUG_LEVEL=0 USE_RTTI=1 \
-		$(MAKE) -C $(dir $@) shared_lib -j${NPROC}
-	strip --strip-all $@
-	
-	# Cleanup for less disk use / faster CI caching.
-	rm -rf $(dir $@)/shared-objects
-	find $(dir $@) -name "*.[oda]" -exec rm -f {} \;
 
 # Run the protobuf compiler to generate message and gRPC service implementations.
 # Invoke protoc with local and third-party include paths set. The `go list` tool

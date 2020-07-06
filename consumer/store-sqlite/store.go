@@ -1,7 +1,8 @@
 package store_sqlite
 
 /*
-#cgo LDFLAGS: -lsqlite3 -lrocksdb
+#cgo static LDFLAGS: -l:libsqlite3.a
+#cgo !static LDFLAGS: -lsqlite3
 
 #include "store.h"
 */

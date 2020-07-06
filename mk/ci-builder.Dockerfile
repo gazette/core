@@ -7,6 +7,17 @@
 # workflow yaml
 FROM ubuntu:18.04
 
+ARG GOLANG_VERSION=1.14.2
+ARG GOLANG_SHA256=6272d6e940ecb71ea5636ddb5fab3933e087c1356173c61f4a803895e947ebb3
+
+ARG DOCKER_VERSION=19.03.8
+ARG DOCKER_SHA256=7f4115dc6a3c19c917f8b9664d7b51c904def1c984e082c4600097433323cf6f
+
+ARG ETCD_VERSION=v3.4.7
+ARG ETCD_SHA256=4ad86e663b63feb4855e1f3a647e719d6d79cf6306410c52b7f280fa56f8eb6b
+
+ARG ROCKSDB_VERSION=6.7.3
+
 RUN apt-get update -y \
  && apt-get upgrade -y \
  && apt-get install --no-install-recommends -y \
@@ -25,15 +36,6 @@ RUN apt-get update -y \
       zlib1g-dev \
       zip \
  && rm -rf /var/lib/apt/lists/*
-
-ARG GOLANG_VERSION=1.14.2
-ARG GOLANG_SHA256=6272d6e940ecb71ea5636ddb5fab3933e087c1356173c61f4a803895e947ebb3
-
-ARG DOCKER_VERSION=19.03.8
-ARG DOCKER_SHA256=7f4115dc6a3c19c917f8b9664d7b51c904def1c984e082c4600097433323cf6f
-
-ARG ETCD_VERSION=v3.4.7
-ARG ETCD_SHA256=4ad86e663b63feb4855e1f3a647e719d6d79cf6306410c52b7f280fa56f8eb6b
 
 ENV PATH=/usr/local/go/bin:$PATH
 
@@ -68,5 +70,20 @@ RUN curl -L -o /tmp/etcd.tgz \
  && rm /tmp/etcd.tgz \
  && etcd --version
 
+# We require a custom rule to build RocksDB as it's necessary to build with run-time type
+# information (USE_RTTI=1), which is not enabled by default in third-party packages.
+# PORTABLE=1 prevents rocks from passing `-march=native`. This is important because it would cause gcc
+# to automatically use avx512 extensions if they're avaialable, which would cause it to break on CPUs
+# that don't support it. Using the PORTABLE flag prevents that, and allows it to run on any system
+# that supports SSE4.2, which is a lot more common.
+RUN mkdir -p /tmp/rocksdb \
+ && curl -L -o /tmp/rocksdb/tmp.tgz https://github.com/facebook/rocksdb/archive/v${ROCKSDB_VERSION}.tar.gz \
+ && tar xzf /tmp/rocksdb/tmp.tgz -C /tmp/rocksdb --strip-components=1 \
+ && PORTABLE=1 USE_SSE=1 DEBUG_LEVEL=0 USE_RTTI=1 make -C /tmp/rocksdb shared_lib static_lib \
+ && strip --strip-all /tmp/rocksdb/librocksdb.so \
+ && mv /tmp/rocksdb/librocksdb.* /usr/lib/ \
+ && mv /tmp/rocksdb/include/rocksdb /usr/include/ \
+ && rm -rf /tmp/rocksdb
+ 
 WORKDIR /gazette
 

@@ -1,9 +1,8 @@
 package store_rocksdb
 
 /*
-#cgo CFLAGS:   -I../../.build/rocksdb-current/include
-#cgo CPPFLAGS: -I../../.build/rocksdb-current/include
-#cgo LDFLAGS:  -L../../.build/rocksdb-current/ -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -ldl
+#cgo static LDFLAGS: -l:librocksdb.a -l:libz.a -l:libbz2.a -l:libsnappy.a -l:liblz4.a -l:libzstd.a -lm -ldl
+#cgo !static LDFLAGS: -lrocksdb -lz -lbz2 -lsnappy -llz4 -lzstd -lm -ldl
 
 #include <sys/types.h>
 #include "rocksdb/c.h"
