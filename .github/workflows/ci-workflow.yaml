@@ -88,14 +88,6 @@ jobs:
           key: ci-builder-${{ hashFiles('mk/ci-builder.Dockerfile') }}
           path: ".build/ci-builder-image.tar"
 
-        # The 'c<n>' in these Cache steps is just for changing the cache key so that
-        # we can manually invalidate the cache if we need.
-      - name: 'RocksDB Cache'
-        uses: actions/cache@v2
-        with:
-          key: rocksdb-c3-${{ env.ROCKSDB_VERSION }}
-          path: ".build-ci/rocksdb-v${{ env.ROCKSDB_VERSION }}"
-
       - name: 'Go Module Cache'
         uses: actions/cache@v2
         with:
