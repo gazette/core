@@ -15,6 +15,12 @@ ${WORKDIR}/ci-builder-image.tar:
 	mkdir -p ${WORKDIR}
 	docker save -o ${WORKDIR}/ci-builder-image.tar gazette/ci-builder:latest
 
+host_os=$(shell uname -s)
+AS_CI_RUN_ARGS=
+ifeq ($(host_os),Linux)
+	AS_CI_RUN_ARGS = --user $(shell id -u):$(shell id -g) --group-add $(shell stat -c '%g' /var/run/docker.sock)
+endif
+
 # The as-ci rule recursively calls `make` _within_ a instance of the ci-builder-image,
 # and bind-mounting the gazette repository into the container. This rule allows for
 # idempotent gazette builds which exactly match those produced by the CI builder.
@@ -33,10 +39,9 @@ as-ci: ci-builder-image
 	# Strip root prefix from WORKDIR to build its equivalent within the container. 
 	ROOT_CI=/gazette ;\
 	WORK_CI=$${ROOT_CI}$(subst ${ROOTDIR},,${WORKDIR}) ;\
-	docker run \
+	docker run ${AS_CI_RUN_ARGS} \
 		--rm \
 		--tty \
-		--user "$(shell id -u):$(shell id -g)" \
 		--mount src=${WORKDIR}-ci,target=$${WORK_CI},type=bind \
 		--mount src=${ROOTDIR},target=$${ROOT_CI},type=bind \
 		--env  GOPATH=$${WORK_CI}/go-path \
