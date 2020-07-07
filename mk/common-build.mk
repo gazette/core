@@ -34,6 +34,13 @@ endif
 #    cache, and the go build cache.
 #  * The Host's Docker socket is bind-mounted into the container, which has a docker
 #    client. This allows the ci-builder container to itself build Docker images.
+#
+# This will always run 'go mod download' before running the desired make target. This is
+# done because users of gazette libraries are also depending on this makefile and so
+# they need go to download the modules so that these files will be present before calling
+# make. End-to-end, the process is to use 'go mod download' to download the makefile within
+# the container, then the consumer's makefile will import this file, then make continues 
+# to build the target.
 as-ci: ci-builder-image
 	mkdir -p ${WORKDIR} ${WORKDIR}-ci
 	# Strip root prefix from WORKDIR to build its equivalent within the container. 
@@ -48,7 +55,7 @@ as-ci: ci-builder-image
 		--env GOCACHE=$${WORK_CI}/go-build-cache \
 		--mount src=/var/run/docker.sock,target=/var/run/docker.sock,type=bind \
 		gazette/ci-builder /bin/sh -ec \
-			"make ${target} VERSION=${VERSION} DATE=${DATE} REGISTRY=${REGISTRY} RELEASE_TAG=${RELEASE_TAG}"
+			"go mod download && make ${target} VERSION=${VERSION} DATE=${DATE} REGISTRY=${REGISTRY} RELEASE_TAG=${RELEASE_TAG}"
 
 # Go build & test targets.
 go-install:   $(ROCKSDIR)/librocksdb.so $(protobuf-targets)
