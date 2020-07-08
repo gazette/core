@@ -55,7 +55,8 @@ as-ci: ci-builder-image
 		--env GOCACHE=$${WORK_CI}/go-build-cache \
 		--mount src=/var/run/docker.sock,target=/var/run/docker.sock,type=bind \
 		gazette/ci-builder /bin/sh -ec \
-			"go mod download && make ${target} VERSION=${VERSION} DATE=${DATE} REGISTRY=${REGISTRY} RELEASE_TAG=${RELEASE_TAG}"
+			"go mod download && \
+				make ${target} VERSION=${VERSION} DATE=${DATE} REGISTRY=${REGISTRY} RELEASE_TAG=${RELEASE_TAG}"
 
 # Go build & test targets.
 go-install:   $(ROCKSDIR)/librocksdb.so $(protobuf-targets)
