@@ -160,6 +160,7 @@ func serveStandby(s *shard) (err error) {
 				Errors: []string{err.Error()},
 			})
 		}
+		shardUp.WithLabelValues(s.Spec().Id.String(), "standby").Set(0)
 		s.wg.Done()
 	}()
 
@@ -170,6 +171,7 @@ func serveStandby(s *shard) (err error) {
 		return nil
 	}
 
+	shardUp.WithLabelValues(s.Spec().Id.String(), "standby").Set(1)
 	go func() {
 		updateStatusWithRetry(s, pc.ReplicaStatus{Code: pc.ReplicaStatus_BACKFILL})
 
@@ -204,6 +206,7 @@ func servePrimary(s *shard) (err error) {
 				Errors: []string{err.Error()},
 			})
 		}
+		shardUp.WithLabelValues(s.Spec().Id.String(), "primary").Set(0)
 		s.wg.Done()
 	}()
 
@@ -211,6 +214,7 @@ func servePrimary(s *shard) (err error) {
 		"id":  s.Spec().Id,
 		"log": s.recovery.log,
 	}).Info("promoted to primary")
+	shardUp.WithLabelValues(s.Spec().Id.String(), "primary").Set(1)
 
 	var msgCh = make(chan readMessage, messageBufferSize)
 

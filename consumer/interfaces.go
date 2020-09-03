@@ -261,6 +261,10 @@ type BeginFinisher interface {
 }
 
 var (
+	shardUp = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "gazette_shard_up",
+		Help: "Indicates shard is being served",
+	}, []string{"shard", "role"})
 	shardTxnTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "gazette_shard_transactions_total",
 		Help: "Total number of consumer transactions.",
