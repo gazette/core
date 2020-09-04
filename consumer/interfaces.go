@@ -16,6 +16,7 @@ package consumer
 
 import (
 	"context"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -261,10 +262,15 @@ type BeginFinisher interface {
 }
 
 var (
-	shardUp = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "gazette_shard_up",
-		Help: "Indicates shard is being served",
-	}, []string{"shard", "role"})
+	shardUpDesc = prometheus.NewDesc(
+		"gazette_shard_up",
+		"Indicates the processing status of a shard by this consumer.",
+		[]string{"shard", "status"}, nil)
+	shardStatus = make(map[pc.ShardID]string)
+	shardStatusLock = sync.Mutex{}
+)
+
+var (
 	shardTxnTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "gazette_shard_transactions_total",
 		Help: "Total number of consumer transactions.",

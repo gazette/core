@@ -3,6 +3,7 @@ package consumer
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -43,6 +44,7 @@ func NewResolver(state *allocator.State, newShard func(keyspace.KeyValue) *shard
 	state.KS.Mu.Lock()
 	state.KS.Observers = append(state.KS.Observers, r.updateLocalShards, r.updateJournalsIndex)
 	state.KS.Mu.Unlock()
+	prometheus.MustRegister(r)
 	return r
 }
 
@@ -362,6 +364,26 @@ func (r *Resolver) watch(ctx context.Context, etcd *clientv3.Client) error {
 		err = nil
 	}
 	return err
+}
+
+
+// Describe implements prometheus.Collector
+func (r *Resolver) Describe(ch chan<- *prometheus.Desc) {
+	prometheus.DescribeByCollect(r, ch)
+}
+
+// Collect implements prometheus.Collector
+func (r *Resolver) Collect(ch chan<- prometheus.Metric) {
+	shardStatusLock.Lock()
+	defer shardStatusLock.Unlock()
+	for shardID, status := range shardStatus {
+		ch <- prometheus.MustNewConstMetric(
+			shardUpDesc,
+			prometheus.GaugeValue,
+			1,
+			shardID.String(),
+			status)
+	}
 }
 
 // ErrResolverStopped is returned by Resolver if a ShardID resolves to a local
