@@ -374,15 +374,16 @@ func (r *Resolver) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector
 func (r *Resolver) Collect(ch chan<- prometheus.Metric) {
-	shardStatusLock.Lock()
-	defer shardStatusLock.Unlock()
-	for shardID, status := range shardStatus {
+	r.state.KS.Mu.RLock()
+	defer r.state.KS.Mu.RUnlock()
+	for shardID, shard := range r.shards {
+		status := shard.resolved.assignment.Decoded.(allocator.Assignment).AssignmentValue.(pc.ReplicaStatus)
 		ch <- prometheus.MustNewConstMetric(
 			shardUpDesc,
 			prometheus.GaugeValue,
 			1,
 			shardID.String(),
-			status)
+			status.String())
 	}
 }
 

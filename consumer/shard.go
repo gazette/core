@@ -273,23 +273,6 @@ func updateStatus(s *shard, status pc.ReplicaStatus) error {
 		_ = s.svc.State.KS.WaitForRevision(s.ctx, resp.Header.Revision)
 		s.svc.State.KS.Mu.RUnlock()
 	}
-
-	id := s.Spec().Id
-	shardStatusLock.Lock()
-	switch status.Code {
-	case pc.ReplicaStatus_BACKFILL:
-		shardStatus[id] = "backfill"
-	case pc.ReplicaStatus_IDLE:
-		shardStatus[id] = "idle"
-	case pc.ReplicaStatus_STANDBY:
-		shardStatus[id] = "standby"
-	case pc.ReplicaStatus_PRIMARY:
-		shardStatus[id] = "primary"
-	case pc.ReplicaStatus_FAILED:
-		shardStatus[id] = "failed"
-	}
-	shardStatusLock.Unlock()
-
 	return err
 }
 

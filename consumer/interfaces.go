@@ -16,8 +16,6 @@ package consumer
 
 import (
 	"context"
-	"sync"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.gazette.dev/core/broker/client"
@@ -266,8 +264,6 @@ var (
 		"gazette_shard_up",
 		"Indicates the processing status of a shard by this consumer.",
 		[]string{"shard", "status"}, nil)
-	shardStatus = make(map[pc.ShardID]string)
-	shardStatusLock = sync.Mutex{}
 )
 
 var (
