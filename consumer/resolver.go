@@ -3,10 +3,10 @@ package consumer
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"sync"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 	"go.etcd.io/etcd/clientv3"
 	"go.gazette.dev/core/allocator"
@@ -44,7 +44,6 @@ func NewResolver(state *allocator.State, newShard func(keyspace.KeyValue) *shard
 	state.KS.Mu.Lock()
 	state.KS.Observers = append(state.KS.Observers, r.updateLocalShards, r.updateJournalsIndex)
 	state.KS.Mu.Unlock()
-	prometheus.MustRegister(r)
 	return r
 }
 
@@ -377,13 +376,13 @@ func (r *Resolver) Collect(ch chan<- prometheus.Metric) {
 	r.state.KS.Mu.RLock()
 	defer r.state.KS.Mu.RUnlock()
 	for shardID, shard := range r.shards {
-		status := shard.resolved.assignment.Decoded.(allocator.Assignment).AssignmentValue.(pc.ReplicaStatus)
+		status := shard.resolved.assignment.Decoded.(allocator.Assignment).AssignmentValue.(*pc.ReplicaStatus)
 		ch <- prometheus.MustNewConstMetric(
 			shardUpDesc,
 			prometheus.GaugeValue,
 			1,
 			shardID.String(),
-			status.String())
+			status.Code.String())
 	}
 }
 

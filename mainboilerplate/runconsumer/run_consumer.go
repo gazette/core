@@ -7,6 +7,7 @@ package runconsumer
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"os"
 	"os/signal"
 	"syscall"
@@ -147,6 +148,9 @@ func (sc cmdServe) Execute(args []string) error {
 		signalCh = make(chan os.Signal, 1)
 	)
 	pc.RegisterShardServer(srv.GRPCServer, service)
+
+	// Register Resolver as a prometheus.Collector for tracking shard status
+	prometheus.MustRegister(service.Resolver)
 
 	log.WithFields(log.Fields{
 		"zone":     spec.Id.Zone,

@@ -16,6 +16,7 @@ package consumer
 
 import (
 	"context"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.gazette.dev/core/broker/client"
