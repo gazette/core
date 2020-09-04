@@ -37,6 +37,8 @@ type Server struct {
 	GRPCServer *grpc.Server
 	// GRPCLoopback is a dialed connection to this GRPCServer.
 	GRPCLoopback *grpc.ClientConn
+
+	httpServer http.Server
 }
 
 // New builds and returns a Server of the given TCP network interface |iface|
@@ -65,6 +67,11 @@ func New(iface string, port uint16) (*Server, error) {
 		}
 		return true // Continue serving RawListener.
 	})
+	// CMux ReadTimeout controls how long we'll wait for an opening send from
+	// the client which allows CMux to sniff a matching listening mux. It has
+	// no effect once the connection has been matched to a mux.
+	// See: https://github.com/soheilhy/cmux/issues/76
+	srv.CMux.SetReadTimeout(GracefulStopTimeout / 2)
 
 	// GRPCListener sniffs for HTTP/2 in-the-clear connections which have
 	// "Content-Type: application/grpc". Note this matcher will send an initial
@@ -127,7 +134,13 @@ func (s *Server) QueueTasks(tg *task.Group) {
 		return nil // Swallow error on cancellation.
 	})
 	tg.Queue("server.ServeHTTP", func() error {
-		if err := http.Serve(s.HTTPListener, s.HTTPMux); err != nil && tg.Context().Err() == nil {
+		// Disable Close() of the HTTPListener, because http.Server Shutdown()
+		// is invoked after grpc.Server GracefulStop(), which has already closed
+		// the underlying listener.
+		var ln = noopCloser{s.HTTPListener}
+
+		s.httpServer.Handler = s.HTTPMux
+		if err := s.httpServer.Serve(ln); err != nil && tg.Context().Err() == nil {
 			return err
 		}
 		return nil // Swallow error on cancellation.
@@ -139,3 +152,38 @@ func (s *Server) QueueTasks(tg *task.Group) {
 		return nil
 	})
 }
+
+// BoundedGracefulStop attempts to perform a graceful stop of the server,
+// but falls back to a hard stop if the graceful stop doesn't complete
+// reasonably quickly.
+func (s *Server) BoundedGracefulStop() {
+	var ctx, cancel = context.WithCancel(context.Background())
+	var timer = time.AfterFunc(GracefulStopTimeout, func() {
+		log.Error("grpc.GracefulStop took too long, issuing a hard Stop")
+
+		// Close loopback even though the server isn't stopped, to unblock any
+		// requests which may be wedged sending to an unresponsive peer.
+		_ = s.GRPCLoopback.Close()
+
+		s.GRPCServer.Stop()
+		cancel()
+	})
+	// GracefulStop immediately closes the underlying RawListener.
+	s.GRPCServer.GracefulStop()
+
+	// Shutdown causes httpServer.Serve to return immediately.
+	if err := s.httpServer.Shutdown(ctx); err != nil {
+		log.WithField("err", err).Error("http.Server Shutdown finished with error")
+	}
+	timer.Stop()
+}
+
+type noopCloser struct {
+	net.Listener
+}
+
+func (noopCloser) Close() error { return nil }
+
+// GracefulStopTimeout is the amount of time BoundedGracefulStop will wait
+// before performing a hard server Stop.
+var GracefulStopTimeout = 15 * time.Second

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	pb "go.gazette.dev/core/broker/protocol"
 	pbx "go.gazette.dev/core/broker/protocol/ext"
 	pc "go.gazette.dev/core/consumer/protocol"
@@ -22,7 +22,7 @@ func TestResolverCases(t *testing.T) {
 			args.Context = context.Background()
 		}
 		var r, err = tf.resolver.Resolve(args)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		return r
 	}
 	var etcdHeader = func() pb.Header_Etcd {
@@ -32,7 +32,7 @@ func TestResolverCases(t *testing.T) {
 	}
 
 	// Case: Shard does not exist, nor does our local MemberSpec (yet; it's created by allocateShard below).
-	assert.Equal(t, Resolution{
+	require.Equal(t, Resolution{
 		Status: pc.Status_SHARD_NOT_FOUND,
 		Header: pb.Header{
 			ProcessId: pb.ProcessSpec_ID{Zone: "local ConsumerSpec", Suffix: "missing from Etcd"},
@@ -44,7 +44,7 @@ func TestResolverCases(t *testing.T) {
 	// Case: Shard is remote, but has no primary.
 	tf.allocateShard(makeShard(shardA), pb.ProcessSpec_ID{}, remoteID)
 
-	assert.Equal(t, Resolution{
+	require.Equal(t, Resolution{
 		Status: pc.Status_NO_SHARD_PRIMARY,
 		Header: pb.Header{
 			ProcessId: localID,
@@ -60,8 +60,9 @@ func TestResolverCases(t *testing.T) {
 
 	// Case: Shard is local, but has a remote primary.
 	tf.allocateShard(makeShard(shardA), remoteID, localID)
+	expectStatusCode(t, tf.state, pc.ReplicaStatus_STANDBY)
 
-	assert.Equal(t, Resolution{
+	require.Equal(t, Resolution{
 		Status: pc.Status_NOT_SHARD_PRIMARY,
 		Header: pb.Header{
 			ProcessId: localID,
@@ -76,7 +77,7 @@ func TestResolverCases(t *testing.T) {
 	}, resolve(ResolveArgs{ShardID: shardA}))
 
 	// Case: Shard is local, has a remote primary, and we may proxy.
-	assert.Equal(t, Resolution{
+	require.Equal(t, Resolution{
 		Status: pc.Status_OK,
 		Header: pb.Header{
 			ProcessId: remoteID,
@@ -90,11 +91,14 @@ func TestResolverCases(t *testing.T) {
 		Spec: makeShard(shardA),
 	}, resolve(ResolveArgs{ShardID: shardA, MayProxy: true}))
 
+<<<<<<< HEAD
 	// Interlude: wait for our assignment to reach STANDBY, so its status update
 	// doesn't race the following allocateShard() etcd transaction.
 	expectStatusCode(t, tf.state, pc.ReplicaStatus_STANDBY)
 	collectAndAssert(t, tf.resolver, map[string]string{"shard-A":"STANDBY"})
 
+=======
+>>>>>>> master
 	// Case: Shard is transitioning to primary. Resolution request includes a
 	// ProxyHeader referencing a Revision we don't know about yet, but which will
 	// make us primary. Expect Resolve blocks until the Revision is applied, and
@@ -112,8 +116,8 @@ func TestResolverCases(t *testing.T) {
 			Etcd:      proxyEtcd,
 		},
 	})
-	assert.Equal(t, pc.Status_OK, r.Status)
-	assert.Equal(t, pb.Header{
+	require.Equal(t, pc.Status_OK, r.Status)
+	require.Equal(t, pb.Header{
 		ProcessId: localID,
 		Route: pb.Route{
 			Members:   []pb.ProcessSpec_ID{localID, remoteID},
@@ -122,9 +126,9 @@ func TestResolverCases(t *testing.T) {
 		},
 		Etcd: r.Header.Etcd,
 	}, r.Header)
-	assert.Equal(t, makeShard(shardA), r.Spec)
-	assert.NotNil(t, r.Shard)
-	assert.Equal(t, &map[string]string{}, r.Store.(*JSONFileStore).State)
+	require.Equal(t, makeShard(shardA), r.Spec)
+	require.NotNil(t, r.Shard)
+	require.Equal(t, &map[string]string{}, r.Store.(*JSONFileStore).State)
 	r.Done()
 
 	expectStatusCode(t, tf.state, pc.ReplicaStatus_PRIMARY)
@@ -137,11 +141,17 @@ func TestResolverCases(t *testing.T) {
 		ShardID:     shardA,
 		ReadThrough: pb.Offsets{sourceB.Name: 1},
 	})
+<<<<<<< HEAD
 	assert.Equal(t, pc.Status_OK, r.Status)
 	assert.NotNil(t, r.Shard)
 	assert.Equal(t, &map[string]string{"read": "through"}, r.Store.(*JSONFileStore).State)
 	collectAndAssert(t, tf.resolver, map[string]string{"shard-A":"PRIMARY"})
 
+=======
+	require.Equal(t, pc.Status_OK, r.Status)
+	require.NotNil(t, r.Shard)
+	require.Equal(t, &map[string]string{"read": "through"}, r.Store.(*JSONFileStore).State)
+>>>>>>> master
 	r.Done()
 
 	// Interlude: Resolver is asked to stop local serving.
@@ -150,13 +160,13 @@ func TestResolverCases(t *testing.T) {
 	// Case: resolving to a remote peer still succeeds.
 	tf.allocateShard(makeShard(shardA), remoteID, localID)
 	r = resolve(ResolveArgs{ShardID: shardA, MayProxy: true})
-	assert.Equal(t, pc.Status_OK, r.Status)
-	assert.Equal(t, remoteID, r.Header.ProcessId)
+	require.Equal(t, pc.Status_OK, r.Status)
+	require.Equal(t, remoteID, r.Header.ProcessId)
 
 	// Case: but an attempt to resolve to a local replica fails.
 	tf.allocateShard(makeShard(shardA), localID)
 	var _, err = tf.resolver.Resolve(ResolveArgs{Context: context.Background(), ShardID: shardA})
-	assert.Equal(t, ErrResolverStopped, err)
+	require.Equal(t, ErrResolverStopped, err)
 
 	tf.allocateShard(makeShard(shardA)) // Cleanup.
 	cleanup()
@@ -182,7 +192,7 @@ func TestResolverErrorCases(t *testing.T) {
 			},
 		},
 	})
-	assert.Regexp(t, `proxied request Etcd ClusterId doesn't match our own \(\d+ vs \d+\)`, err)
+	require.Regexp(t, `proxied request Etcd ClusterId doesn't match our own \(\d+ vs \d+\)`, err)
 
 	// Case: ProxyHeader has wrong ProcessID.
 	_, err = tf.resolver.Resolve(ResolveArgs{
@@ -195,7 +205,7 @@ func TestResolverErrorCases(t *testing.T) {
 			},
 		},
 	})
-	assert.Regexp(t, `proxied request ProcessId doesn't match our own \(zone.*\)`, err)
+	require.Regexp(t, `proxied request ProcessId doesn't match our own \(zone.*\)`, err)
 
 	// Case: Context cancelled while waiting for a future revision.
 	var ctx, cancel = context.WithCancel(context.Background())
@@ -212,14 +222,14 @@ func TestResolverErrorCases(t *testing.T) {
 			},
 		},
 	})
-	assert.Equal(t, context.Canceled, err)
+	require.Equal(t, context.Canceled, err)
 
 	// Case: Request context cancelled while waiting for store (which never resolves, because NewStore fails).
 	ctx, cancel = context.WithCancel(context.Background())
 	time.AfterFunc(time.Millisecond, cancel)
 
 	_, err = tf.resolver.Resolve(ResolveArgs{Context: ctx, ShardID: shardA})
-	assert.Equal(t, context.Canceled, err)
+	require.Equal(t, context.Canceled, err)
 
 	// Case: Shard context is cancelled.
 	tf.state.KS.Mu.Lock()
@@ -227,13 +237,13 @@ func TestResolverErrorCases(t *testing.T) {
 	tf.state.KS.Mu.Unlock()
 
 	_, err = tf.resolver.Resolve(ResolveArgs{Context: context.Background(), ShardID: shardA})
-	assert.Equal(t, context.Canceled, err)
+	require.Equal(t, context.Canceled, err)
 
 	// Case: Resolver is in the process of halting.
 	tf.resolver.stopServingLocalShards()
 
 	_, err = tf.resolver.Resolve(ResolveArgs{Context: context.Background(), ShardID: shardA})
-	assert.Equal(t, ErrResolverStopped, err)
+	require.Equal(t, ErrResolverStopped, err)
 
 	tf.allocateShard(makeShard(shardA)) // Cleanup.
 }
@@ -248,7 +258,7 @@ func TestResolverShardTransitions(t *testing.T) {
 
 
 	tf.ks.Mu.RLock()
-	assert.Len(t, tf.resolver.shards, 2)
+	require.Len(t, tf.resolver.shards, 2)
 	var sB = tf.resolver.shards[shardB]
 	var sC = tf.resolver.shards[shardC]
 	collectAndAssert(t, tf.resolver, map[string]string{"shard-B":"BACKFILL", "shard-C":"IDLE"})
@@ -264,7 +274,7 @@ func TestResolverShardTransitions(t *testing.T) {
 	tf.allocateShard(makeShard(shardC))
 
 	tf.ks.Mu.RLock()
-	assert.Len(t, tf.resolver.shards, 1)
+	require.Len(t, tf.resolver.shards, 1)
 	collectAndAssert(t, tf.resolver, map[string]string{"shard-B":"IDLE"})
 	tf.ks.Mu.RUnlock()
 
@@ -280,7 +290,7 @@ func TestResolverShardTransitions(t *testing.T) {
 	tf.allocateShard(makeShard(shardB))
 
 	tf.ks.Mu.RLock()
-	assert.Len(t, tf.resolver.shards, 0)
+	require.Len(t, tf.resolver.shards, 0)
 	collectAndAssert(t, tf.resolver, map[string]string{})
 	tf.ks.Mu.RUnlock()
 
@@ -294,24 +304,24 @@ func TestResolverJournalIndexing(t *testing.T) {
 	defer cleanup()
 
 	// Progress through a sequence of adding shards & confirming they're index.
-	assert.Nil(t, tf.resolver.ShardsWithSource(sourceA.Name))
+	require.Nil(t, tf.resolver.ShardsWithSource(sourceA.Name))
 	ch := make(chan prometheus.Metric)
 	tf.resolver.Collect(ch)
 
 	var specA = makeShard(shardA)
 	tf.allocateShard(specA)
-	assert.Equal(t, []*pc.ShardSpec{specA}, tf.resolver.ShardsWithSource(sourceA.Name))
-	assert.Equal(t, []*pc.ShardSpec{specA}, tf.resolver.ShardsWithSource(sourceB.Name))
+	require.Equal(t, []*pc.ShardSpec{specA}, tf.resolver.ShardsWithSource(sourceA.Name))
+	require.Equal(t, []*pc.ShardSpec{specA}, tf.resolver.ShardsWithSource(sourceB.Name))
 
 	var specB = makeShard(shardB)
 	tf.allocateShard(specB)
-	assert.Equal(t, []*pc.ShardSpec{specA, specB}, tf.resolver.ShardsWithSource(sourceA.Name))
-	assert.Equal(t, []*pc.ShardSpec{specA, specB}, tf.resolver.ShardsWithSource(sourceB.Name))
+	require.Equal(t, []*pc.ShardSpec{specA, specB}, tf.resolver.ShardsWithSource(sourceA.Name))
+	require.Equal(t, []*pc.ShardSpec{specA, specB}, tf.resolver.ShardsWithSource(sourceB.Name))
 
 	specA.Sources = specA.Sources[:1] // Drop sourceB.
 	tf.allocateShard(specA)
-	assert.Equal(t, []*pc.ShardSpec{specA, specB}, tf.resolver.ShardsWithSource(sourceA.Name))
-	assert.Equal(t, []*pc.ShardSpec{specB}, tf.resolver.ShardsWithSource(sourceB.Name))
+	require.Equal(t, []*pc.ShardSpec{specA, specB}, tf.resolver.ShardsWithSource(sourceA.Name))
+	require.Equal(t, []*pc.ShardSpec{specB}, tf.resolver.ShardsWithSource(sourceB.Name))
 }
 
 func collectAndAssert(t *testing.T, r *Resolver, shardStatus map[string]string) {
@@ -322,21 +332,21 @@ func collectAndAssert(t *testing.T, r *Resolver, shardStatus map[string]string) 
 		for m := range ch {
 			dtom := &dto.Metric{}
 			m.Write(dtom)
-			assert.Equal(t, 1.0, *dtom.Gauge.Value)
-			assert.Equal(t, "shard", *dtom.Label[0].Name)
-			assert.Equal(t, "status", *dtom.Label[1].Name)
+			require.Equal(t, 1.0, *dtom.Gauge.Value)
+			require.Equal(t, "shard", *dtom.Label[0].Name)
+			require.Equal(t, "status", *dtom.Label[1].Name)
 			metrics[*dtom.Label[0].Value] = *dtom.Label[1].Value
 		}
 
 		// Confirm we found the exact same set of label that we expected
-		assert.Equal(t, len(shardStatus), len(metrics))
+		require.Equal(t, len(shardStatus), len(metrics))
 		for shard, status := range metrics {
 			expectedStatus, ok := shardStatus[shard]
-			assert.True(t, ok)
-			assert.Equal(t, expectedStatus, status)
+			require.True(t, ok)
+			require.Equal(t, expectedStatus, status)
 			delete(shardStatus, shard)
 		}
-		assert.Empty(t, shardStatus)
+		require.Empty(t, shardStatus)
 	}()
 	r.Collect(ch)
 	close(ch)

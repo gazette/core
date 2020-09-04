@@ -2,10 +2,10 @@ package teststub
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/server"
@@ -66,10 +66,10 @@ func (b *Broker) Endpoint() pb.Endpoint { return b.srv.Endpoint() }
 // Cleanup cancels the Broker tasks.Group and asserts that it exits cleanly.
 func (b *Broker) Cleanup() {
 	b.tasks.Cancel()
-	b.srv.GRPCServer.GracefulStop()
+	b.srv.BoundedGracefulStop()
 	b.wg.Wait() // Ensure all read loops have exited.
-	assert.NoError(b.t, b.srv.GRPCLoopback.Close())
-	assert.NoError(b.t, b.tasks.Wait())
+	require.NoError(b.t, b.srv.GRPCLoopback.Close())
+	require.NoError(b.t, b.tasks.Wait())
 }
 
 // Replicate implements the JournalServer interface by proxying requests &
@@ -84,7 +84,7 @@ func (b *Broker) Replicate(srv pb.Journal_ReplicateServer) error {
 				select {
 				case b.ReplReqCh <- *msg:
 				case <-time.After(timeout):
-					require.FailNow(b.t, "test didn't recv from ReplReqCh", "msg", msg)
+					log.Panic("test didn't recv from ReplReqCh", "msg", msg)
 				}
 			} else {
 				if srv.Context().Err() != nil {
@@ -93,7 +93,7 @@ func (b *Broker) Replicate(srv pb.Journal_ReplicateServer) error {
 				select {
 				case b.ReadLoopErrCh <- err:
 				case <-time.After(timeout):
-					require.FailNow(b.t, "test didn't recv from ReadLoopErrCh", "err", err)
+					log.Panic("test didn't recv from ReadLoopErrCh", "err", err)
 				}
 				return
 			}
@@ -103,11 +103,11 @@ func (b *Broker) Replicate(srv pb.Journal_ReplicateServer) error {
 	for {
 		select {
 		case resp := <-b.ReplRespCh:
-			assert.NoError(b.t, srv.Send(&resp))
+			require.NoError(b.t, srv.Send(&resp))
 		case err := <-b.WriteLoopErrCh:
 			return err
 		case <-time.After(timeout):
-			require.FailNow(b.t, "test didn't send to ReplRespCh or WriteLoopErrCh")
+			log.Panic("test didn't send to ReplRespCh or WriteLoopErrCh")
 		}
 	}
 }
@@ -119,7 +119,7 @@ func (b *Broker) Read(req *pb.ReadRequest, srv pb.Journal_ReadServer) error {
 	case b.ReadReqCh <- *req:
 		// |req| passed to test.
 	case <-time.After(timeout):
-		require.FailNow(b.t, "test didn't read from ReadReqCh")
+		log.Panic("test didn't read from ReadReqCh")
 	}
 
 	for {
@@ -128,12 +128,12 @@ func (b *Broker) Read(req *pb.ReadRequest, srv pb.Journal_ReadServer) error {
 			// We may be sending into a cancelled context (c.f. TestReaderRetries).
 			// Otherwise, we expect to be able to send without error.
 			if err := srv.Send(&resp); srv.Context().Err() == nil {
-				assert.NoError(b.t, err)
+				require.NoError(b.t, err)
 			}
 		case err := <-b.WriteLoopErrCh:
 			return err
 		case <-time.After(timeout):
-			require.FailNow(b.t, "test didn't send to ReadRespCh or WriteLoopErrCh")
+			log.Panic("test didn't send to ReadRespCh or WriteLoopErrCh")
 		}
 	}
 }
@@ -150,7 +150,7 @@ func (b *Broker) Append(srv pb.Journal_AppendServer) error {
 				select {
 				case b.AppendReqCh <- *msg:
 				case <-time.After(timeout):
-					require.FailNow(b.t, "test didn't recv from AppendReqCh", "msg", msg)
+					log.Panic("test didn't recv from AppendReqCh", "msg", msg)
 				}
 			} else {
 				if srv.Context().Err() != nil {
@@ -159,7 +159,7 @@ func (b *Broker) Append(srv pb.Journal_AppendServer) error {
 				select {
 				case b.ReadLoopErrCh <- err:
 				case <-time.After(timeout):
-					require.FailNow(b.t, "test didn't recv from ReadLoopErrCh", "err", err)
+					log.Panic("test didn't recv from ReadLoopErrCh", "err", err)
 				}
 				return
 			}
@@ -169,12 +169,12 @@ func (b *Broker) Append(srv pb.Journal_AppendServer) error {
 	for {
 		select {
 		case resp := <-b.AppendRespCh:
-			assert.NoError(b.t, srv.SendAndClose(&resp))
+			require.NoError(b.t, srv.SendAndClose(&resp))
 			return nil
 		case err := <-b.WriteLoopErrCh:
 			return err
 		case <-time.After(timeout):
-			require.FailNow(b.t, "test didn't send to AppendRespCh or WriteLoopErrCh")
+			log.Panic("test didn't send to AppendRespCh or WriteLoopErrCh")
 		}
 	}
 }
@@ -196,4 +196,4 @@ func (b *Broker) ListFragments(ctx context.Context, req *pb.FragmentsRequest) (*
 
 func init() { pb.RegisterGRPCDispatcher("local") }
 
-const timeout = time.Second
+const timeout = time.Minute

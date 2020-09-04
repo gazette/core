@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"net/http"
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/etcdtest"
+	"go.gazette.dev/core/server"
 	"google.golang.org/grpc"
 )
 
@@ -36,21 +39,21 @@ func TestSimpleReadAndWrite(t *testing.T) {
 	var as = client.NewAppendService(context.Background(), rjc)
 	var txn = as.StartAppend(pb.AppendRequest{Journal: "foo/bar"}, nil)
 	_, _ = txn.Writer().WriteString("hello, gazette\ngoodbye, gazette")
-	assert.NoError(t, txn.Release())
+	require.NoError(t, txn.Release())
 
 	// Expect to read appended content.
 	var str, err = br.ReadString('\n')
-	assert.NoError(t, err)
-	assert.Equal(t, str, "hello, gazette\n")
+	require.NoError(t, err)
+	require.Equal(t, str, "hello, gazette\n")
 
 	bk.Tasks.Cancel() // Non-graceful exit.
 
 	// We receive an EOF on server-initiated close.
 	str, err = br.ReadString('\n')
-	assert.Error(t, io.EOF, err)
-	assert.Equal(t, str, "goodbye, gazette")
+	require.Error(t, io.EOF, err)
+	require.Equal(t, str, "goodbye, gazette")
 
-	assert.NoError(t, bk.Tasks.Wait())
+	require.NoError(t, bk.Tasks.Wait())
 }
 
 func TestReplicatedReadAndWrite(t *testing.T) {
@@ -79,12 +82,12 @@ func TestReplicatedReadAndWrite(t *testing.T) {
 		pb.NewRoutedJournalClient(bkB.Client(), pb.NoopDispatchRouter{}))
 	var txn = as.StartAppend(pb.AppendRequest{Journal: "foo/bar"}, nil)
 	_, _ = txn.Writer().WriteString("hello, gazette\n")
-	assert.NoError(t, txn.Release())
+	require.NoError(t, txn.Release())
 
 	// Expect to read appended content.
 	str, err := br.ReadString('\n')
-	assert.NoError(t, err)
-	assert.Equal(t, str, "hello, gazette\n")
+	require.NoError(t, err)
+	require.Equal(t, str, "hello, gazette\n")
 
 	// Zero required replicas, allowing brokers to exit.
 	updateReplication(t, ctx, rjcA, "foo/bar", 0)
@@ -94,11 +97,11 @@ func TestReplicatedReadAndWrite(t *testing.T) {
 
 	// Read stream is closed cleanly.
 	str, err = br.ReadString('\n')
-	assert.Equal(t, io.EOF, err)
-	assert.Equal(t, str, "")
+	require.Equal(t, io.EOF, err)
+	require.Equal(t, str, "")
 
-	assert.NoError(t, bkB.Tasks.Wait())
-	assert.NoError(t, bkA.Tasks.Wait())
+	require.NoError(t, bkB.Tasks.Wait())
+	require.NoError(t, bkA.Tasks.Wait())
 }
 
 func TestReassignment(t *testing.T) {
@@ -113,8 +116,8 @@ func TestReassignment(t *testing.T) {
 
 	// Precondition: journal is assigned to A & B.
 	var rt pb.Route
-	assert.NoError(t, bkA.WaitForConsistency(ctx, "foo/bar", &rt))
-	assert.Equal(t, rt, pb.Route{
+	require.NoError(t, bkA.WaitForConsistency(ctx, "foo/bar", &rt))
+	require.Equal(t, rt, pb.Route{
 		Members: []pb.ProcessSpec_ID{
 			{"zone", "broker-A"},
 			{"zone", "broker-B"},
@@ -126,11 +129,11 @@ func TestReassignment(t *testing.T) {
 	var bkC = NewBroker(t, etcd, "zone", "broker-C")
 
 	bkA.Signal()
-	assert.NoError(t, bkA.Tasks.Wait()) // Exits gracefully.
+	require.NoError(t, bkA.Tasks.Wait()) // Exits gracefully.
 
 	// Expect journal was re-assigned to C, with B promoted to primary.
-	assert.NoError(t, bkB.WaitForConsistency(ctx, "foo/bar", &rt))
-	assert.Equal(t, rt, pb.Route{
+	require.NoError(t, bkB.WaitForConsistency(ctx, "foo/bar", &rt))
+	require.Equal(t, rt, pb.Route{
 		Members: []pb.ProcessSpec_ID{
 			{"zone", "broker-B"},
 			{"zone", "broker-C"},
@@ -143,16 +146,77 @@ func TestReassignment(t *testing.T) {
 	bkB.Signal()
 	bkC.Signal()
 
-	assert.NoError(t, bkB.Tasks.Wait())
-	assert.NoError(t, bkC.Tasks.Wait())
+	require.NoError(t, bkB.Tasks.Wait())
+	require.NoError(t, bkC.Tasks.Wait())
 }
 
-func updateReplication(t assert.TestingT, ctx context.Context, bk pb.JournalClient, journal pb.Journal, r int32) {
+func TestGracefulStopTimeout(t *testing.T) {
+	var etcd = etcdtest.TestClient()
+	defer etcdtest.Cleanup()
+
+	// Shorten the graceful stop timeout during this test.
+	defer func(d time.Duration) {
+		server.GracefulStopTimeout = d
+	}(server.GracefulStopTimeout)
+	server.GracefulStopTimeout = time.Millisecond * 50
+
+	var ctx = pb.WithDispatchDefault(context.Background())
+	var bkA = NewBroker(t, etcd, "zone", "broker-A")
+	var bkB = NewBroker(t, etcd, "zone", "broker-B")
+
+	// Journal is exclusively owned by |bkA|.
+	CreateJournals(t, bkA, Journal(pb.JournalSpec{Name: "foo/bar", Replication: 1}))
+
+	var connA, rjcA = newDialedClient(t, bkA)
+	defer connA.Close()
+
+	// Append a large amount of content, enough to fill a read congestion window.
+	var w = client.NewAppender(ctx, rjcA, pb.AppendRequest{Journal: "foo/bar"})
+	for i := 0; i != 256; i++ {
+		var buf [1 << 15]byte // 32K
+		var n, err = w.Write(buf[:])
+		require.NoError(t, err)
+		require.Equal(t, n, len(buf))
+	}
+	require.NoError(t, w.Close())
+
+	var connB, rjcB = newDialedClient(t, bkB)
+	defer connB.Close()
+
+	// Begin a blocking read over |bkB|'s gRPC service.
+	// This request is proxied to |bkA|. Then, don't make progress.
+	var r = client.NewReader(ctx, rjcB,
+		pb.ReadRequest{Journal: "foo/bar", Block: true})
+	var _, err = r.Read(nil)
+	require.NoError(t, err)
+
+	// Begin a blocking read over |bkB|'s HTTP gateway.
+	// This request is also proxied to |bkA|. Also don't make progress.
+	httpResp, err := http.Get("http://" + bkB.Server.Endpoint().URL().Host + "/foo/bar?block=true")
+	require.NoError(t, err)
+
+	var oneByte [1]byte
+	n, err := httpResp.Body.Read(oneByte[:])
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	// Signal the broker to exit. It will, despite the hung RPCs,
+	// upon hitting the graceful-stop timeout.
+	bkB.Signal()
+	require.NotNil(t, bkB.Tasks.Wait())
+
+	// Drop replication, allowing broker A to exit gracefully.
+	updateReplication(t, ctx, bkA.Client(), "foo/bar", 0)
+	bkA.Signal()
+	require.NoError(t, bkA.Tasks.Wait())
+}
+
+func updateReplication(t require.TestingT, ctx context.Context, bk pb.JournalClient, journal pb.Journal, r int32) {
 	var lResp, err = bk.List(ctx, &pb.ListRequest{
 		Selector: pb.LabelSelector{Include: pb.MustLabelSet("name", journal.String())},
 	})
-	assert.NoError(t, err)
-	assert.Len(t, lResp.Journals, 1)
+	require.NoError(t, err)
+	require.Len(t, lResp.Journals, 1)
 
 	var req = &pb.ApplyRequest{
 		Changes: []pb.ApplyRequest_Change{
@@ -172,8 +236,8 @@ func updateReplication(t assert.TestingT, ctx context.Context, bk pb.JournalClie
 	}
 
 	aResp, err := bk.Apply(ctx, req)
-	assert.NoError(t, err)
-	assert.Equal(t, aResp.Status, pb.Status_OK)
+	require.NoError(t, err)
+	require.Equal(t, aResp.Status, pb.Status_OK)
 }
 
 // newDialedClient dials & returns a new ClientConn and wrapping RoutedJournalClient.
@@ -182,7 +246,7 @@ func updateReplication(t assert.TestingT, ctx context.Context, bk pb.JournalClie
 // before the final EOF response is read.
 func newDialedClient(t *testing.T, bk *Broker) (*grpc.ClientConn, pb.RoutedJournalClient) {
 	var conn, err = grpc.Dial(bk.Endpoint().URL().Host, grpc.WithInsecure())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	return conn, pb.NewRoutedJournalClient(pb.NewJournalClient(conn), pb.NoopDispatchRouter{})
 }
 

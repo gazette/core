@@ -3,16 +3,18 @@ package brokertest
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"syscall"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/clientv3"
 	"go.gazette.dev/core/allocator"
 	"go.gazette.dev/core/broker"
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/fragment"
+	"go.gazette.dev/core/broker/http_gateway"
 	pb "go.gazette.dev/core/broker/protocol"
 	pbx "go.gazette.dev/core/broker/protocol/ext"
 	"go.gazette.dev/core/keyspace"
@@ -33,7 +35,7 @@ type Broker struct {
 }
 
 // NewBroker builds and returns an in-process Broker identified by |zone| and |suffix|.
-func NewBroker(t assert.TestingT, etcd *clientv3.Client, zone, suffix string) *Broker {
+func NewBroker(t require.TestingT, etcd *clientv3.Client, zone, suffix string) *Broker {
 	var (
 		id    = pb.ProcessSpec_ID{Zone: zone, Suffix: suffix}
 		ks    = broker.NewKeySpace("/broker.test")
@@ -41,7 +43,9 @@ func NewBroker(t assert.TestingT, etcd *clientv3.Client, zone, suffix string) *B
 			allocator.MemberKey(ks, id.Zone, id.Suffix),
 			broker.JournalIsConsistent)
 		srv       = server.MustLoopback()
-		svc       = broker.NewService(state, pb.NewJournalClient(srv.GRPCLoopback), etcd)
+		lo        = pb.NewJournalClient(srv.GRPCLoopback)
+		service   = broker.NewService(state, lo, etcd)
+		rjc       = pb.NewRoutedJournalClient(lo, service)
 		tasks     = task.NewGroup(context.Background())
 		sigCh     = make(chan os.Signal, 1)
 		allocArgs = allocator.SessionArgs{
@@ -57,14 +61,18 @@ func NewBroker(t assert.TestingT, etcd *clientv3.Client, zone, suffix string) *B
 		}
 	)
 
-	assert.NoError(t, allocator.StartSession(allocArgs))
-	pb.RegisterJournalServer(srv.GRPCServer, svc)
+	require.NoError(t, allocator.StartSession(allocArgs))
+	pb.RegisterJournalServer(srv.GRPCServer, service)
+
+	srv.HTTPMux = http.NewServeMux()
+	srv.HTTPMux.Handle("/", http_gateway.NewGateway(rjc))
+
 	// Set, but don't start a Persister for the test.
 	broker.SetSharedPersister(fragment.NewPersister(ks))
 	ks.WatchApplyDelay = 0 // Speed test execution.
 
 	srv.QueueTasks(tasks)
-	svc.QueueTasks(tasks, srv, nil)
+	service.QueueTasks(tasks, srv, nil)
 	tasks.GoRun()
 
 	return &Broker{
@@ -142,7 +150,7 @@ func Journal(spec pb.JournalSpec) *pb.JournalSpec {
 }
 
 // CreateJournals using the Broker Apply API, and wait for them to be allocated.
-func CreateJournals(t assert.TestingT, bk *Broker, specs ...*pb.JournalSpec) {
+func CreateJournals(t require.TestingT, bk *Broker, specs ...*pb.JournalSpec) {
 	var ctx = pb.WithDispatchDefault(context.Background())
 
 	var req = new(pb.ApplyRequest)
@@ -151,11 +159,11 @@ func CreateJournals(t assert.TestingT, bk *Broker, specs ...*pb.JournalSpec) {
 	}
 
 	var resp, err = client.ApplyJournals(ctx, bk.Client(), req)
-	assert.NoError(t, err)
-	assert.Equal(t, pb.Status_OK, resp.Status)
+	require.NoError(t, err)
+	require.Equal(t, pb.Status_OK, resp.Status)
 
 	for _, s := range specs {
-		assert.NoError(t, bk.WaitForConsistency(ctx, s.Name, nil))
+		require.NoError(t, bk.WaitForConsistency(ctx, s.Name, nil))
 	}
 }
 

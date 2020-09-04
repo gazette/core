@@ -1,6 +1,30 @@
 
-master (unreleased)
+v 0.88.0
 --------------------
+
+- Behavior change: journal *registers* are a small set of labels which are used
+  for cooperative, transactional locking. Where before a set of checked registers
+  must always match current journal registers for an append to proceed, now an
+  exception exists in the case where a journal has a fully empty set
+  of registers (as is the case on recovery if journal consistency is lost).
+- ``gazctl journals reset-head`` now issues concurrent resets to enumerated journals,
+  and no longer fails if an attempt to reset a consistent journal loses an append race.
+- Makefiles now build local Docker images gazette/broker:latest and
+  gazette/examples:latest, instead of gazette-broker:latest and gazette-examples:latest.
+- Additional sanity checks to ensure badly-behaved clients or peers cannot
+  block an exiting broker from draining its server.
+- Gazette no longer logs "wrong fragment format" warnings when encountering "directory" objects
+  (those where the object key ends with a '/') in cloud storage. These were just adding noise and
+  were not actually anything to worry about.
+- Fix various test flakes.
+
+v0.87.3
+--------
+
+- BUGFIX: Add a catch-all timeout on server GracefulStop, to ensure poorly
+  behaved clients cannot keep a terminating broker around indefinitely (GH-266_).
+
+.. _GH-266: https://github.com/gazette/core/issues/266
 
 v0.87.2
 --------
