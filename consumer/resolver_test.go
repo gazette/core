@@ -3,10 +3,11 @@ package consumer
 import (
 	"context"
 	"errors"
-	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/stretchr/testify/require"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -91,14 +92,11 @@ func TestResolverCases(t *testing.T) {
 		Spec: makeShard(shardA),
 	}, resolve(ResolveArgs{ShardID: shardA, MayProxy: true}))
 
-<<<<<<< HEAD
 	// Interlude: wait for our assignment to reach STANDBY, so its status update
 	// doesn't race the following allocateShard() etcd transaction.
 	expectStatusCode(t, tf.state, pc.ReplicaStatus_STANDBY)
 	collectAndAssert(t, tf.resolver, map[string]string{"shard-A":"STANDBY"})
 
-=======
->>>>>>> master
 	// Case: Shard is transitioning to primary. Resolution request includes a
 	// ProxyHeader referencing a Revision we don't know about yet, but which will
 	// make us primary. Expect Resolve blocks until the Revision is applied, and
@@ -141,17 +139,10 @@ func TestResolverCases(t *testing.T) {
 		ShardID:     shardA,
 		ReadThrough: pb.Offsets{sourceB.Name: 1},
 	})
-<<<<<<< HEAD
-	assert.Equal(t, pc.Status_OK, r.Status)
-	assert.NotNil(t, r.Shard)
-	assert.Equal(t, &map[string]string{"read": "through"}, r.Store.(*JSONFileStore).State)
-	collectAndAssert(t, tf.resolver, map[string]string{"shard-A":"PRIMARY"})
-
-=======
 	require.Equal(t, pc.Status_OK, r.Status)
 	require.NotNil(t, r.Shard)
 	require.Equal(t, &map[string]string{"read": "through"}, r.Store.(*JSONFileStore).State)
->>>>>>> master
+	collectAndAssert(t, tf.resolver, map[string]string{"shard-A":"PRIMARY"})
 	r.Done()
 
 	// Interlude: Resolver is asked to stop local serving.

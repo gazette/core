@@ -7,12 +7,12 @@ package runconsumer
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/allocator"
 	"go.gazette.dev/core/broker/client"
