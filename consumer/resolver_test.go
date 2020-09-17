@@ -8,7 +8,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
-
 	"github.com/stretchr/testify/require"
 	pb "go.gazette.dev/core/broker/protocol"
 	pbx "go.gazette.dev/core/broker/protocol/ext"
@@ -95,7 +94,6 @@ func TestResolverCases(t *testing.T) {
 	// Interlude: wait for our assignment to reach STANDBY, so its status update
 	// doesn't race the following allocateShard() etcd transaction.
 	expectStatusCode(t, tf.state, pc.ReplicaStatus_STANDBY)
-	collectAndAssert(t, tf.resolver, map[string]string{"shard-A":"STANDBY"})
 
 	// Case: Shard is transitioning to primary. Resolution request includes a
 	// ProxyHeader referencing a Revision we don't know about yet, but which will
@@ -142,7 +140,6 @@ func TestResolverCases(t *testing.T) {
 	require.Equal(t, pc.Status_OK, r.Status)
 	require.NotNil(t, r.Shard)
 	require.Equal(t, &map[string]string{"read": "through"}, r.Store.(*JSONFileStore).State)
-	collectAndAssert(t, tf.resolver, map[string]string{"shard-A":"PRIMARY"})
 	r.Done()
 
 	// Interlude: Resolver is asked to stop local serving.
@@ -247,14 +244,11 @@ func TestResolverShardTransitions(t *testing.T) {
 	tf.allocateShard(makeShard(shardB), remoteID, localID)
 	tf.allocateShard(makeShard(shardC), remoteID, localID)
 
-
 	tf.ks.Mu.RLock()
 	require.Len(t, tf.resolver.shards, 2)
 	var sB = tf.resolver.shards[shardB]
 	var sC = tf.resolver.shards[shardC]
-	collectAndAssert(t, tf.resolver, map[string]string{"shard-B":"BACKFILL", "shard-C":"IDLE"})
 	tf.ks.Mu.RUnlock()
-
 
 	// Expect |sB| & |sC| begin playback and tail the log.
 	<-sB.recovery.player.Tailing()
@@ -266,7 +260,6 @@ func TestResolverShardTransitions(t *testing.T) {
 
 	tf.ks.Mu.RLock()
 	require.Len(t, tf.resolver.shards, 1)
-	collectAndAssert(t, tf.resolver, map[string]string{"shard-B":"IDLE"})
 	tf.ks.Mu.RUnlock()
 
 	<-sB.recovery.player.Done() // Expect |sB| is transitioned to primary.
@@ -275,14 +268,12 @@ func TestResolverShardTransitions(t *testing.T) {
 	<-sC.Context().Done()
 
 	expectStatusCode(t, tf.state, pc.ReplicaStatus_PRIMARY)
-	collectAndAssert(t, tf.resolver, map[string]string{"shard-B":"PRIMARY"})
 
 	// Cancel |sdB|.
 	tf.allocateShard(makeShard(shardB))
 
 	tf.ks.Mu.RLock()
 	require.Len(t, tf.resolver.shards, 0)
-	collectAndAssert(t, tf.resolver, map[string]string{})
 	tf.ks.Mu.RUnlock()
 
 	<-sB.Context().Done() // Expect |sB| is cancelled.
@@ -313,30 +304,22 @@ func TestResolverJournalIndexing(t *testing.T) {
 	require.Equal(t, []*pc.ShardSpec{specB}, tf.resolver.ShardsWithSource(sourceB.Name))
 }
 
-func collectAndAssert(t *testing.T, r *Resolver, shardStatus map[string]string) {
+func TestResolverCollect(t *testing.T) {
+	tf, _, cleanup := newTestFixtureWithIdleShard(t)
+	defer cleanup()
+	require.Implements(t, (*prometheus.Collector)(nil), tf.resolver)
+	expectStatusCode(t, tf.state, pc.ReplicaStatus_IDLE)
 	ch := make(chan prometheus.Metric)
 	go func() {
-		// Save all the metrics we collected in a map
-		metrics := make(map[string]string)
-		for m := range ch {
-			dtom := &dto.Metric{}
-			m.Write(dtom)
-			require.Equal(t, 1.0, *dtom.Gauge.Value)
-			require.Equal(t, "shard", *dtom.Label[0].Name)
-			require.Equal(t, "status", *dtom.Label[1].Name)
-			metrics[*dtom.Label[0].Value] = *dtom.Label[1].Value
-		}
-
-		// Confirm we found the exact same set of label that we expected
-		require.Equal(t, len(shardStatus), len(metrics))
-		for shard, status := range metrics {
-			expectedStatus, ok := shardStatus[shard]
-			require.True(t, ok)
-			require.Equal(t, expectedStatus, status)
-			delete(shardStatus, shard)
-		}
-		require.Empty(t, shardStatus)
+		m := <-ch
+		dtom := &dto.Metric{}
+		m.Write(dtom)
+		require.Equal(t, 1.0, *dtom.Gauge.Value)
+		require.Equal(t, "shard", *dtom.Label[0].Name)
+		require.Equal(t, "shard-A", *dtom.Label[0].Value)
+		require.Equal(t, "status", *dtom.Label[1].Name)
+		require.Equal(t, "IDLE", *dtom.Label[1].Value)
 	}()
-	r.Collect(ch)
+	tf.resolver.Collect(ch)
 	close(ch)
 }
