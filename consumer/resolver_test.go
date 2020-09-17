@@ -296,8 +296,6 @@ func TestResolverJournalIndexing(t *testing.T) {
 
 	// Progress through a sequence of adding shards & confirming they're index.
 	require.Nil(t, tf.resolver.ShardsWithSource(sourceA.Name))
-	ch := make(chan prometheus.Metric)
-	tf.resolver.Collect(ch)
 
 	var specA = makeShard(shardA)
 	tf.allocateShard(specA)
