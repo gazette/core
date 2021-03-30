@@ -43,7 +43,7 @@ func (a *azureBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Frag
 	if err != nil {
 		return false, err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, cfg.rewritePath(cfg.prefix, fragment.ContentPath())))
+	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, fragment.ContentPath())))
 	if err != nil {
 		return false, err
 	}
@@ -51,7 +51,10 @@ func (a *azureBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Frag
 	if _, err = blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{}); err == nil {
 		return true, nil
 	} else {
-		storageErr := err.(azblob.StorageError)
+		storageErr, ok := err.(azblob.StorageError)
+		if !ok {
+			return false, err
+		}
 		errCode := storageErr.ServiceCode()
 		if errCode == azblob.ServiceCodeBlobNotFound {
 			return false, nil
@@ -65,7 +68,7 @@ func (a *azureBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragme
 	if err != nil {
 		return nil, err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, cfg.rewritePath(cfg.prefix, fragment.ContentPath())))
+	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, fragment.ContentPath())))
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +85,7 @@ func (a *azureBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) er
 	if err != nil {
 		return err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, cfg.rewritePath(cfg.prefix, spool.ContentPath())))
+	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, spool.ContentPath())))
 	if err != nil {
 		return err
 	}
@@ -106,7 +109,7 @@ func (a *azureBackend) List(ctx context.Context, store pb.FragmentStore, ep *url
 	if err != nil {
 		return err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket))
+	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/"))
 	if err != nil {
 		return err
 	}
@@ -140,7 +143,7 @@ func (a *azureBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	if err != nil {
 		return err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, cfg.rewritePath(cfg.prefix, fragment.ContentPath())))
+	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, fragment.ContentPath())))
 	if err != nil {
 		return err
 	}
