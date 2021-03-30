@@ -44,8 +44,8 @@ Etcd Revisions
 JournalSpecs retrieved by the ``gazctl`` tool will include their respective
 Etcd modification revisions as field ``revision`` within the rendered YAML.
 
-When applying YAML specs via ``gazctl journals apply`` the only allowed values of
-``revision`` are 0 and -1, and if specified must only exist on the leaf-level journals
+When applying YAML specs via ``gazctl journals apply``
+explicitly specified ``revision`` can only exist on the leaf-level journals
 of the spec. Any specs which omit ``revision`` assume a value of zero
 (implying the journal must not exist).  The revisions of specs are always compared
 to the current Etcd store revision,
