@@ -3,16 +3,17 @@ package fragment
 import (
 	"context"
 	"fmt"
-	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	log "github.com/sirupsen/logrus"
-	pb "go.gazette.dev/core/broker/protocol"
 	"io"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-storage-blob-go/azblob"
+	log "github.com/sirupsen/logrus"
+	pb "go.gazette.dev/core/broker/protocol"
 )
 
 // AzureStoreConfig configures a Fragment store of the "azure://" scheme.
@@ -24,10 +25,12 @@ type AzureStoreConfig struct {
 	RewriterConfig
 }
 
-type azureBackend struct{
-	endpoint string
-	client pipeline.Pipeline
-	clientMu sync.Mutex
+type azureBackend struct {
+	endpoint    string
+	accountName string
+	client      pipeline.Pipeline
+	credentials *azblob.SharedKeyCredential
+	clientMu    sync.Mutex
 }
 
 func (a *azureBackend) Provider() string {
@@ -35,7 +38,23 @@ func (a *azureBackend) Provider() string {
 }
 
 func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
-	panic("implement me")
+	cfg, _, err := a.azureClient(ep)
+	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
+	sasQueryParams, err := azblob.BlobSASSignatureValues{
+		Protocol:      azblob.SASProtocolHTTPS,                     // Users MUST use HTTPS (not HTTP)
+		ExpiryTime:    time.Now().UTC().Add(48 * time.Hour), // 48-hours before expiration
+		ContainerName: cfg.bucket,
+		BlobName:      blobName,
+
+		// To produce a container SAS (as opposed to a blob SAS), assign to Permissions using
+		// ContainerSASPermissions and make sure the BlobName field is "" (the default).
+		Permissions: azblob.BlobSASPermissions{Add: true, Read: true, Write: true}.String(),
+	}.NewSASQueryParameters(a.credentials)
+	if err != nil {
+		return "", err
+	}
+	url := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s?%s", a.accountName, cfg.bucket, blobName, sasQueryParams.Encode())
+	return url, nil
 }
 
 func (a *azureBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (bool, error) {
@@ -152,7 +171,6 @@ func (a *azureBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	return err
 }
 
-
 func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pipeline.Pipeline, err error) {
 	if err = parseStoreArgs(ep, &cfg); err != nil {
 		return
@@ -177,11 +195,12 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 	}
 	client = azblob.NewPipeline(credentials, azblob.PipelineOptions{})
 	a.client = client
+	a.credentials = credentials
+	a.accountName = accountName
 	a.endpoint = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
 
-
 	log.WithFields(log.Fields{
-		"Account Name":      accountName,
+		"Account Name": accountName,
 	}).Info("constructed new Azure Storage client")
 
 	return
