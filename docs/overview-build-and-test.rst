@@ -38,8 +38,8 @@ as ``gazette/broker:latest`` and ``gazette/examples:latest``.
 
 .. code-block:: console
 
-   $ make as-ci target=ci-release-gazette-broker
-   $ make as-ci target=ci-release-gazette-examples
+   $ make as-ci target=ci-release-gazette-broker-targets
+   $ make as-ci target=ci-release-gazette-examples-targets
 
 Deploy Gazette's continuous soak test to a Kubernetes cluster (which can be
 Docker for Desktop or Minikube). Soak tests run with ``latest`` images.
