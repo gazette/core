@@ -43,9 +43,10 @@ func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duratio
 		return "", err
 	}
 	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
+	log.Println(d)
 	sasQueryParams, err := azblob.BlobSASSignatureValues{
 		Protocol:      azblob.SASProtocolHTTPS, // Users MUST use HTTPS (not HTTP)
-		ExpiryTime:    time.Now().Add(d),
+		ExpiryTime:    time.Now().UTC().Add(d), // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
 		ContainerName: cfg.bucket,
 		BlobName:      blobName,
 
