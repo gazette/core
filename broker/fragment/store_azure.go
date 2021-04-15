@@ -39,10 +39,13 @@ func (a *azureBackend) Provider() string {
 
 func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
 	cfg, _, err := a.azureClient(ep)
+	if err != nil {
+		return "", err
+	}
 	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
 	sasQueryParams, err := azblob.BlobSASSignatureValues{
-		Protocol:      azblob.SASProtocolHTTPS,                     // Users MUST use HTTPS (not HTTP)
-		ExpiryTime:    time.Now().UTC().Add(48 * time.Hour), // 48-hours before expiration
+		Protocol:      azblob.SASProtocolHTTPS, // Users MUST use HTTPS (not HTTP)
+		ExpiryTime:    time.Now().Add(d),
 		ContainerName: cfg.bucket,
 		BlobName:      blobName,
 
@@ -53,8 +56,7 @@ func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duratio
 	if err != nil {
 		return "", err
 	}
-	url := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s?%s", a.accountName, cfg.bucket, blobName, sasQueryParams.Encode())
-	return url, nil
+	return fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s?%s", a.accountName, cfg.bucket, blobName, sasQueryParams.Encode()), nil
 }
 
 func (a *azureBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (bool, error) {
@@ -62,24 +64,21 @@ func (a *azureBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Frag
 	if err != nil {
 		return false, err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, fragment.ContentPath())))
+	blobURL, err := a.buildBlobURL(cfg, client, fragment.ContentPath())
 	if err != nil {
 		return false, err
 	}
-	blobURL := azblob.NewBlockBlobURL(*u, client)
 	if _, err = blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{}); err == nil {
 		return true, nil
-	} else {
-		storageErr, ok := err.(azblob.StorageError)
-		if !ok {
-			return false, err
-		}
-		errCode := storageErr.ServiceCode()
-		if errCode == azblob.ServiceCodeBlobNotFound {
-			return false, nil
-		}
-		return false, storageErr
 	}
+	storageErr, ok := err.(azblob.StorageError)
+	if !ok {
+		return false, err
+	}
+	if storageErr.ServiceCode() == azblob.ServiceCodeBlobNotFound {
+		return false, nil
+	}
+	return false, storageErr
 }
 
 func (a *azureBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
@@ -87,16 +86,15 @@ func (a *azureBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragme
 	if err != nil {
 		return nil, err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, fragment.ContentPath())))
+	blobURL, err := a.buildBlobURL(cfg, client, fragment.ContentPath())
 	if err != nil {
 		return nil, err
 	}
-	blobURL := azblob.NewBlockBlobURL(*u, client)
 	download, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return download.Body(azblob.RetryReaderOptions{MaxRetryRequests: 20}), nil
+	return download.Body(azblob.RetryReaderOptions{}), nil
 }
 
 func (a *azureBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) error {
@@ -104,11 +102,10 @@ func (a *azureBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) er
 	if err != nil {
 		return err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, spool.ContentPath())))
+	blobURL, err := a.buildBlobURL(cfg, client, spool.ContentPath())
 	if err != nil {
 		return err
 	}
-	blobURL := azblob.NewBlockBlobURL(*u, client)
 	headers := azblob.BlobHTTPHeaders{}
 	var body io.ReadSeeker
 	if spool.CompressionCodec == pb.CompressionCodec_GZIP_OFFLOAD_DECOMPRESSION {
@@ -162,11 +159,10 @@ func (a *azureBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	if err != nil {
 		return err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, fragment.ContentPath())))
+	blobURL, err := a.buildBlobURL(cfg, client, fragment.ContentPath())
 	if err != nil {
 		return err
 	}
-	blobURL := azblob.NewBlockBlobURL(*u, client)
 	_, err = blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 	return err
 }
@@ -204,4 +200,13 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 	}).Info("constructed new Azure Storage client")
 
 	return
+}
+
+func (a *azureBackend) buildBlobURL(cfg AzureStoreConfig, client pipeline.Pipeline, path string) (*azblob.BlockBlobURL, error) {
+	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, path)))
+	if err != nil {
+		return nil, err
+	}
+	blobURL := azblob.NewBlockBlobURL(*u, client)
+	return &blobURL, nil
 }
