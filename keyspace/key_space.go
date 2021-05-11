@@ -5,6 +5,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"path"
 	"sort"
 	"sync"
@@ -14,7 +15,6 @@ import (
 	"go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/mirror"
 	"go.etcd.io/etcd/etcdserver/api/v3rpc/rpctypes"
-	"go.etcd.io/etcd/etcdserver/etcdserverpb"
 )
 
 // A KeySpace is a local mirror of a decoded portion of the Etcd key/value space,
