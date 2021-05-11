@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/mvcc/mvccpb"
 )
 
