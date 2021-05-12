@@ -6,7 +6,7 @@ import (
 	"time"
 
 	epb "go.etcd.io/etcd/api/v3/etcdserverpb"
-	"go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/client/v3"
 
 	gc "github.com/go-check/check"
 	"go.gazette.dev/core/etcdtest"

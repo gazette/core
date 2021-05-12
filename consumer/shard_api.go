@@ -6,7 +6,6 @@ import (
 
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/clientv3"
 	"go.gazette.dev/core/allocator"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"

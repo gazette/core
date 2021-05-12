@@ -9,7 +9,6 @@ require (
 	github.com/Azure/azure-storage-blob-go v0.13.0
 	github.com/DataDog/zstd v1.4.5
 	github.com/aws/aws-sdk-go v1.30.6
-	github.com/coreos/etcd v3.3.25+incompatible // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/dustinkirkland/golang-petname v0.0.0-20191129215211-8e5a1ed0cff0
 	github.com/facebookgo/ensure v0.0.0-20200202191622-63f1cf65ac4c // indirect
