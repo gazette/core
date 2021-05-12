@@ -2,12 +2,12 @@ package keyspace
 
 import (
 	"context"
+	epb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"testing"
 	"time"
 
 	gc "github.com/go-check/check"
 	"go.etcd.io/etcd/client/v3"
-	epb "go.etcd.io/etcd/etcdserver/etcdserverpb"
 	"go.gazette.dev/core/etcdtest"
 )
 
@@ -72,11 +72,17 @@ func (s *KeySpaceSuite) TestHeaderPatching(c *gc.C) {
 		RaftTerm:  232323,
 	}
 	c.Check(patchHeader(&h, other, true), gc.IsNil)
-	c.Check(h, gc.Equals, other)
+	c.Check(h.ClusterId, gc.Equals, other.ClusterId)
+	c.Check(h.MemberId, gc.Equals, other.MemberId)
+	c.Check(h.Revision, gc.Equals, other.Revision)
+	c.Check(h.RaftTerm, gc.Equals, other.RaftTerm)
 
 	other.MemberId = 222222
 	c.Check(patchHeader(&h, other, true), gc.IsNil)
-	c.Check(h, gc.Equals, other)
+	c.Check(h.ClusterId, gc.Equals, other.ClusterId)
+	c.Check(h.MemberId, gc.Equals, other.MemberId)
+	c.Check(h.Revision, gc.Equals, other.Revision)
+	c.Check(h.RaftTerm, gc.Equals, other.RaftTerm)
 
 	// Revision must be equal.
 	other.Revision = 122
@@ -87,7 +93,10 @@ func (s *KeySpaceSuite) TestHeaderPatching(c *gc.C) {
 	other.MemberId = 333333
 	other.RaftTerm = 3434343
 	c.Check(patchHeader(&h, other, false), gc.IsNil)
-	c.Check(h, gc.Equals, other)
+	c.Check(h.ClusterId, gc.Equals, other.ClusterId)
+	c.Check(h.MemberId, gc.Equals, other.MemberId)
+	c.Check(h.Revision, gc.Equals, other.Revision)
+	c.Check(h.RaftTerm, gc.Equals, other.RaftTerm)
 
 	// Revision must be monotonically increasing.
 	c.Check(patchHeader(&h, other, false), gc.ErrorMatches,

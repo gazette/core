@@ -1,11 +1,11 @@
 package keyspace
 
 import (
+	"go.etcd.io/etcd/api/v3/mvccpb"
 	"strconv"
 
 	gc "github.com/go-check/check"
 	"go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/mvcc/mvccpb"
 )
 
 type KeyValuesSuite struct{}

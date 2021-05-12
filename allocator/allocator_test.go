@@ -2,11 +2,11 @@ package allocator
 
 import (
 	"context"
+	epb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"testing"
 
 	gc "github.com/go-check/check"
 	"go.etcd.io/etcd/client/v3"
-	epb "go.etcd.io/etcd/etcdserver/etcdserverpb"
 	"go.gazette.dev/core/etcdtest"
 )
 
