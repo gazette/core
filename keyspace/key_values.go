@@ -3,10 +3,10 @@ package keyspace
 import (
 	"bytes"
 	"fmt"
-	"go.etcd.io/etcd/api/v3/mvccpb"
 	"sort"
 
-	"go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/api/v3/mvccpb"
+	"go.etcd.io/etcd/clientv3"
 )
 
 // KeyValue composes a "raw" Etcd KeyValue with its user-defined,

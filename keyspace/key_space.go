@@ -5,14 +5,15 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"path"
 	"sort"
 	"sync"
 	"time"
 
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
+	"go.etcd.io/etcd/clientv3"
+
 	log "github.com/sirupsen/logrus"
-	"go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/mirror"
 	"go.etcd.io/etcd/etcdserver/api/v3rpc/rpctypes"
 )

@@ -3,9 +3,10 @@ package allocator
 import (
 	"bytes"
 	"fmt"
-	"go.etcd.io/etcd/api/v3/mvccpb"
 	"strconv"
 	"strings"
+
+	"go.etcd.io/etcd/api/v3/mvccpb"
 
 	"go.gazette.dev/core/keyspace"
 )
