@@ -66,7 +66,7 @@ go-install:   $(ROCKSDIR)/librocksdb.so $(protobuf-targets)
 go-test-fast: ${ROCKSDIR}/librocksdb.so ${protobuf-targets}
 	go test -p ${NPROC} ./...
 go-test-ci:   ${ROCKSDIR}/librocksdb.so ${protobuf-targets}
-	GORACE="halt_on_error=1" go test -p ${NPROC} -race -count=15 ./...
+	GORACE="halt_on_error=1" go test -p ${NPROC} -race -count=15 -run TestGracefulStopTimeout ./brokertest
 
 # The ci-release-% implicit rule builds a Docker image named by the rule
 # stem, using binaries enumerated by a `-target` suffix. For example,
