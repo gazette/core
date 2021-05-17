@@ -156,6 +156,19 @@ func TestShardAppNewStoreError(t *testing.T) {
 	tf.allocateShard(makeShard(shardA)) // Cleanup.
 }
 
+func TestShardAppNilJSONStore(t *testing.T) {
+	var tf, cleanup = newTestFixture(t)
+	defer cleanup()
+
+	tf.app.nilStore = true
+	tf.allocateShard(makeShard(shardA), localID)
+
+	assert.Equal(t, "completeRecovery: app.NewStore: state must not be nil",
+		expectStatusCode(t, tf.state, pc.ReplicaStatus_FAILED).Errors[0])
+
+	tf.allocateShard(makeShard(shardA)) // Cleanup.
+}
+
 func TestShardAppNewMessageFails(t *testing.T) {
 	var tf, cleanup = newTestFixture(t)
 	defer cleanup()
