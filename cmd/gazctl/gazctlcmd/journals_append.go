@@ -1,4 +1,4 @@
-package main
+package gazctlcmd
 
 import (
 	"bufio"
@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jessevdk/go-flags"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
@@ -32,7 +33,11 @@ type cmdJournalAppend struct {
 }
 
 func init() {
-	_ = mustAddCmd(cmdJournals, "append", "Append journal content", `
+	JournalRegisterCommands = append(JournalRegisterCommands, AddCmdJournalAppend)
+}
+
+func AddCmdJournalAppend(cmd *flags.Command) error {
+	_, err := cmd.AddCommand("append", "Append journal content", `
 Append content to one or more journals.
 
 A label --selector is required, and determines the set of journals which are appended.
@@ -84,6 +89,7 @@ mkfifo my-fifo
 cat /dev/stdout > my-fifo &	# Hold my-fifo open so gazctl doesn't read EOF.
 gazctl journals append -l my-label --framing 'lines' --mapping 'rendezvous' --input my-fifo
 	`, &cmdJournalAppend{})
+	return err
 }
 
 func (cmd *cmdJournalAppend) Execute([]string) error {
@@ -105,7 +111,7 @@ func (cmd *cmdJournalAppend) Execute([]string) error {
 
 	// Perform an initial load and thereafter periodically poll for journals
 	// matching the --selector.
-	var rjc = journalsCfg.Broker.MustRoutedJournalClient(ctx)
+	var rjc = JournalsCfg.Broker.MustRoutedJournalClient(ctx)
 	list, err := client.NewPolledList(ctx, rjc, time.Minute, listRequest)
 	mbp.Must(err, "failed to resolve label selector to journals")
 

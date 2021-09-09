@@ -1,9 +1,10 @@
-package main
+package gazctlcmd
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/fragment"
@@ -19,8 +20,11 @@ type cmdShardsPrune struct {
 }
 
 func init() {
-	_ = mustAddCmd(cmdShards, "prune",
-		"Removes fragments of a hinted recovery log which are no longer needed", `
+	ShardRegisterCommands = append(ShardRegisterCommands, AddCmdShardsPrune)
+}
+
+func AddCmdShardsPrune(cmd *flags.Command) error {
+	_, err := cmd.AddCommand("prune", "Removes fragments of a hinted recovery log which are no longer needed", `
 Recovery logs capture every write which has ever occurred in a Shard DB.
 This includes all prior writes of client keys & values, and also RocksDB
 compactions, which can significantly inflate the total volume of writes
@@ -39,6 +43,7 @@ hints from all referencing shards are inspected to determine if a
 fragment is overlapped, and a failure to include a shard which
 references the log may cause data it depends on to be deleted.
 `, &cmdShardsPrune{})
+	return err
 }
 
 func (cmd *cmdShardsPrune) Execute([]string) error {
@@ -99,7 +104,8 @@ func fetchOldestHints(ctx context.Context, id pc.ShardID) *recoverylog.FSMHints 
 		Shard: id,
 	}
 
-	var resp, err = consumer.FetchHints(ctx, shardsCfg.Consumer.MustShardClient(ctx), req)
+	var resp, err = consumer.FetchHints(ctx, ShardsCfg.Consumer.MustShardClient(ctx), req)
+	mbp.Must(err, "failed to fetch hints")
 	if resp.Status != pc.Status_OK {
 		err = fmt.Errorf(resp.Status.String())
 	}
@@ -119,7 +125,7 @@ func fetchFragments(ctx context.Context, journal pb.Journal) []pb.FragmentsRespo
 	var req = pb.FragmentsRequest{
 		Journal: journal,
 	}
-	var brokerClient = journalsCfg.Broker.MustRoutedJournalClient(ctx)
+	var brokerClient = JournalsCfg.Broker.MustRoutedJournalClient(ctx)
 
 	resp, err := client.ListAllFragments(ctx, brokerClient, req)
 	mbp.Must(err, "failed to fetch fragments")

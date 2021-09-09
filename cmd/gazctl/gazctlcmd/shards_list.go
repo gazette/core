@@ -1,4 +1,4 @@
-package main
+package gazctlcmd
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
+	"github.com/jessevdk/go-flags"
 	"github.com/olekukonko/tablewriter"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -25,7 +26,11 @@ type cmdShardsList struct {
 }
 
 func init() {
-	_ = mustAddCmd(cmdShards, "list", "List shards", `
+	ShardRegisterCommands = append(ShardRegisterCommands, AddCmdShardsList)
+}
+
+func AddCmdShardsList(cmd *flags.Command) error {
+	_, err := cmd.AddCommand("list", "List shards", `
 List shard specifications and status.
 
 Use --selector to supply a LabelSelector which constrains the set of returned
@@ -43,6 +48,7 @@ table: Prints as a table (see other flags for column choices)
 It's recommended that --lag be used with a relatively focused --selector,
 as fetching consumption lag for a large number of shards may take a while.
 `, &cmdShardsList{})
+	return err
 }
 
 func (cmd *cmdShardsList) Execute([]string) error {
@@ -85,8 +91,8 @@ func (cmd *cmdShardsList) outputTable(resp *pc.ListResponse) {
 	if cmd.Lag {
 		headers = append(headers, "Lag")
 		var ctx = context.Background()
-		rsc = shardsCfg.Consumer.MustRoutedShardClient(ctx)
-		rjc = shardsCfg.Broker.MustRoutedJournalClient(ctx)
+		rsc = ShardsCfg.Consumer.MustRoutedShardClient(ctx)
+		rjc = ShardsCfg.Broker.MustRoutedJournalClient(ctx)
 	}
 
 	table.SetHeader(headers)
@@ -147,7 +153,7 @@ func listShards(s string) *pc.ListResponse {
 	req.Selector, err = pb.ParseLabelSelector(s)
 	mbp.Must(err, "failed to parse label selector", "selector", s)
 
-	resp, err := consumer.ListShards(ctx, pc.NewShardClient(shardsCfg.Consumer.MustDial(ctx)), req)
+	resp, err := consumer.ListShards(ctx, pc.NewShardClient(ShardsCfg.Consumer.MustDial(ctx)), req)
 	mbp.Must(err, "failed to list shards")
 
 	return resp

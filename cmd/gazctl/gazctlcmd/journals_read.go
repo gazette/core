@@ -1,4 +1,4 @@
-package main
+package gazctlcmd
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -33,7 +34,11 @@ type cmdJournalRead struct {
 }
 
 func init() {
-	_ = mustAddCmd(cmdJournals, "read", "Read journal contents", `
+	JournalRegisterCommands = append(JournalRegisterCommands, AddCmdJournalRead)
+}
+
+func AddCmdJournalRead(cmd *flags.Command) error {
+	_, err := cmd.AddCommand("read", "Read journal contents", `
 Read the contents of one or more journals.
 
 A label --selector is required, and determines the set of journals which are read.
@@ -90,6 +95,7 @@ gazctl journals read -l my-label --block --tail
 echo "{}" > offsets.json # Must already exist.
 gazctl journals read -l my-label -o output --offsets offsets.json --offsets-out offsets.json --broker.cache.size=256 --zone=us-east-1
 `, &cmdJournalRead{})
+	return err
 }
 
 func (cmd *cmdJournalRead) Execute([]string) error {
@@ -150,7 +156,7 @@ func (cmd *cmdJournalRead) Execute([]string) error {
 
 	// Perform an initial load and thereafter periodically poll for journals
 	// matching the --selector.
-	var rjc = journalsCfg.Broker.MustRoutedJournalClient(ctx)
+	var rjc = JournalsCfg.Broker.MustRoutedJournalClient(ctx)
 	list, err := client.NewPolledList(ctx, rjc, time.Minute, listRequest)
 	mbp.Must(err, "failed to resolve label selector to journals")
 

@@ -1,10 +1,11 @@
-package main
+package gazctlcmd
 
 import (
 	"context"
 	"os"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/consumer"
 	pc "go.gazette.dev/core/consumer/protocol"
@@ -17,7 +18,11 @@ type cmdShardsApply struct {
 }
 
 func init() {
-	_ = mustAddCmd(cmdShards, "apply", "Apply shard specifications", `
+	ShardRegisterCommands = append(ShardRegisterCommands, AddCmdShardsApply)
+}
+
+func AddCmdShardsApply(cmd *flags.Command) error {
+	_, err := cmd.AddCommand("apply", "Apply shard specifications", `
 Apply a collection of ShardSpec creations, updates, or deletions.
 
 ShardSpecs should be provided as a YAML list, the same format produced by
@@ -35,6 +40,7 @@ ShardSpecs may be created by setting "revision" to zero or omitting it altogethe
 
 ShardSpecs may be deleted by setting their field "delete" to true.
 `+maxTxnSizeWarning, &cmdShardsApply{})
+	return err
 }
 
 func (cmd *cmdShardsApply) Execute([]string) error {
@@ -47,7 +53,7 @@ func (cmd *cmdShardsApply) Execute([]string) error {
 	var req = newShardSpecApplyRequest(set)
 
 	mbp.Must(req.Validate(), "failed to validate ApplyRequest")
-	mbp.Must(consumer.VerifyReferencedJournals(ctx, shardsCfg.Broker.MustJournalClient(ctx), req),
+	mbp.Must(consumer.VerifyReferencedJournals(ctx, ShardsCfg.Broker.MustJournalClient(ctx), req),
 		"failed to validate journals of the ApplyRequest")
 
 	if cmd.DryRun {
@@ -55,7 +61,7 @@ func (cmd *cmdShardsApply) Execute([]string) error {
 		return nil
 	}
 
-	var resp, err = consumer.ApplyShardsInBatches(ctx, shardsCfg.Consumer.MustShardClient(ctx), req, cmd.MaxTxnSize)
+	var resp, err = consumer.ApplyShardsInBatches(ctx, ShardsCfg.Consumer.MustShardClient(ctx), req, cmd.MaxTxnSize)
 	mbp.Must(err, "failed to apply shards")
 	log.WithField("rev", resp.Header.Etcd.Revision).Info("successfully applied")
 

@@ -1,4 +1,4 @@
-package main
+package gazctlcmd
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
+	"github.com/jessevdk/go-flags"
 	"github.com/olekukonko/tablewriter"
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/journalspace"
@@ -23,7 +24,11 @@ type cmdJournalsList struct {
 }
 
 func init() {
-	_ = mustAddCmd(cmdJournals, "list", "List journals", `
+	JournalRegisterCommands = append(JournalRegisterCommands, AddCmdJournalList)
+}
+
+func AddCmdJournalList(cmd *flags.Command) error {
+	_, err := cmd.AddCommand("list", "List journals", `
 List journal specifications and status.
 
 Use --selector to supply a LabelSelector which constrains the set of returned
@@ -46,6 +51,7 @@ of JournalSpecs into a hierarchy of journals having common prefixes and,
 typically, common configuration. This hierarchy is simply sugar for and is
 exactly equivalent to the original JournalSpecs.
 `, &cmdJournalsList{})
+	return err
 }
 
 func (cmd *cmdJournalsList) Execute([]string) error {
@@ -143,7 +149,7 @@ func listJournals(s string) *pb.ListResponse {
 	req.Selector, err = pb.ParseLabelSelector(s)
 	mbp.Must(err, "failed to parse label selector", "selector", s)
 
-	resp, err := client.ListAllJournals(ctx, journalsCfg.Broker.MustJournalClient(ctx), req)
+	resp, err := client.ListAllJournals(ctx, JournalsCfg.Broker.MustJournalClient(ctx), req)
 	mbp.Must(err, "failed to list journals")
 
 	return resp
