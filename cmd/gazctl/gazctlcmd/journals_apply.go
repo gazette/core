@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/journalspace"
@@ -18,11 +17,7 @@ type cmdJournalsApply struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsApply)
-}
-
-func AddCmdJournalsApply(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("apply", "Apply journal specifications", `
+	CmdRegistry.RegisterCmd("journals", "apply", "Apply journal specifications", `
 Apply a collection of JournalSpec creations, updates, or deletions.
 
 JournalSpecs should be provided as a YAML journal hierarchy, the format
@@ -50,7 +45,6 @@ will cascade only to JournalSpecs *explicitly listed* as children of the prefix
 in the YAML, and not to other JournalSpecs which may exist with the prefix but
 are not enumerated.
 `+maxTxnSizeWarning, &cmdJournalsApply{})
-	return err
 }
 
 func (cmd *cmdJournalsApply) Execute([]string) error {

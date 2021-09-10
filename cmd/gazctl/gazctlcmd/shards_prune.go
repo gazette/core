@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/fragment"
@@ -20,11 +19,7 @@ type cmdShardsPrune struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("shards", AddCmdShardsPrune)
-}
-
-func AddCmdShardsPrune(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("prune", "Removes fragments of a hinted recovery log which are no longer needed", `
+	CmdRegistry.RegisterCmd("shards", "prune", "Removes fragments of a hinted recovery log which are no longer needed", `
 Recovery logs capture every write which has ever occurred in a Shard DB.
 This includes all prior writes of client keys & values, and also RocksDB
 compactions, which can significantly inflate the total volume of writes
@@ -43,7 +38,6 @@ hints from all referencing shards are inspected to determine if a
 fragment is overlapped, and a failure to include a shard which
 references the log may cause data it depends on to be deleted.
 `, &cmdShardsPrune{})
-	return err
 }
 
 func (cmd *cmdShardsPrune) Execute([]string) error {

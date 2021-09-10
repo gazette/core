@@ -9,7 +9,6 @@ import (
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
-	"github.com/jessevdk/go-flags"
 	"github.com/olekukonko/tablewriter"
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/journalspace"
@@ -24,11 +23,7 @@ type cmdJournalsList struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsList)
-}
-
-func AddCmdJournalsList(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("list", "List journals", `
+	CmdRegistry.RegisterCmd("journals", "list", "List journals", `
 List journal specifications and status.
 
 Use --selector to supply a LabelSelector which constrains the set of returned
@@ -51,7 +46,6 @@ of JournalSpecs into a hierarchy of journals having common prefixes and,
 typically, common configuration. This hierarchy is simply sugar for and is
 exactly equivalent to the original JournalSpecs.
 `, &cmdJournalsList{})
-	return err
 }
 
 func (cmd *cmdJournalsList) Execute([]string) error {

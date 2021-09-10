@@ -11,7 +11,6 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/gogo/protobuf/proto"
-	"github.com/jessevdk/go-flags"
 	"github.com/olekukonko/tablewriter"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -27,11 +26,7 @@ type cmdJournalsFragments struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsFragments)
-}
-
-func AddCmdJournalsFragments(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("fragments", "List journal fragments", `
+	CmdRegistry.RegisterCmd("journals", "fragments", "List journal fragments", `
 List fragments of selected journals.
 
 A label --selector is required, and determines the set of journals for which
@@ -81,7 +76,6 @@ gazctl journals fragments -l name=my/journal --url-ttl 1m --from $(date -d "1 ho
 # and 4:05AM today with accompanying signed URL, output as JSON.
 gazctl journals fragments -l my-label --format json --url-ttl 1h --from $(date -d 3AM '+%s') --to $(date -d 4:05AM '+%s') --format json
 `, &cmdJournalsFragments{})
-	return err
 }
 
 func (cmd *cmdJournalsFragments) Execute([]string) error {

@@ -10,7 +10,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jessevdk/go-flags"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
@@ -33,11 +32,7 @@ type cmdJournalAppend struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsAppend)
-}
-
-func AddCmdJournalsAppend(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("append", "Append journal content", `
+	CmdRegistry.RegisterCmd("journals", "append", "Append journal content", `
 Append content to one or more journals.
 
 A label --selector is required, and determines the set of journals which are appended.
@@ -89,7 +84,6 @@ mkfifo my-fifo
 cat /dev/stdout > my-fifo &	# Hold my-fifo open so gazctl doesn't read EOF.
 gazctl journals append -l my-label --framing 'lines' --mapping 'rendezvous' --input my-fifo
 	`, &cmdJournalAppend{})
-	return err
 }
 
 func (cmd *cmdJournalAppend) Execute([]string) error {

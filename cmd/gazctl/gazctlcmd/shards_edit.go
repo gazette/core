@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 
-	"github.com/jessevdk/go-flags"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/cmd/gazctl/gazctlcmd/editor"
@@ -20,12 +19,7 @@ type cmdShardsEdit struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("shards", AddCmdShardsEdit)
-}
-
-func AddCmdShardsEdit(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("edit", "Edit shard specifications", shardsEditLongDesc, &cmdShardsEdit{})
-	return err
+	CmdRegistry.RegisterCmd("shards", "edit", "Edit shard specifications", shardsEditLongDesc, &cmdShardsEdit{})
 }
 
 func (cmd *cmdShardsEdit) Execute([]string) error {

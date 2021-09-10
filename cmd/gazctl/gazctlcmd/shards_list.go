@@ -9,7 +9,6 @@ import (
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
-	"github.com/jessevdk/go-flags"
 	"github.com/olekukonko/tablewriter"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -26,11 +25,7 @@ type cmdShardsList struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("shards", AddCmdShardsList)
-}
-
-func AddCmdShardsList(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("list", "List shards", `
+	CmdRegistry.RegisterCmd("shards", "list", "List shards", `
 List shard specifications and status.
 
 Use --selector to supply a LabelSelector which constrains the set of returned
@@ -48,7 +43,6 @@ table: Prints as a table (see other flags for column choices)
 It's recommended that --lag be used with a relatively focused --selector,
 as fetching consumption lag for a large number of shards may take a while.
 `, &cmdShardsList{})
-	return err
 }
 
 func (cmd *cmdShardsList) Execute([]string) error {

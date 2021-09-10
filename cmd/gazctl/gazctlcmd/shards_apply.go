@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/consumer"
 	pc "go.gazette.dev/core/consumer/protocol"
@@ -18,11 +17,7 @@ type cmdShardsApply struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("shards", AddCmdShardsApply)
-}
-
-func AddCmdShardsApply(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("apply", "Apply shard specifications", `
+	CmdRegistry.RegisterCmd("shards", "apply", "Apply shard specifications", `
 Apply a collection of ShardSpec creations, updates, or deletions.
 
 ShardSpecs should be provided as a YAML list, the same format produced by
@@ -40,7 +35,6 @@ ShardSpecs may be created by setting "revision" to zero or omitting it altogethe
 
 ShardSpecs may be deleted by setting their field "delete" to true.
 `+maxTxnSizeWarning, &cmdShardsApply{})
-	return err
 }
 
 func (cmd *cmdShardsApply) Execute([]string) error {

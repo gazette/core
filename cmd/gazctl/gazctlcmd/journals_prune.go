@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/fragment"
@@ -17,11 +16,7 @@ type cmdJournalsPrune struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsPrune)
-}
-
-func AddCmdJournalsPrune(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("prune", "Deletes fragments older than the configured retention", `
+	CmdRegistry.RegisterCmd("journals", "prune", "Deletes fragments older than the configured retention", `
 Deletes fragments across all configured fragment stores of matching journals that are older than the configured retention.
 
 There is a caveat when pruning journals. For a given journal, there could be multiple fragments covering the same offset. These fragments contain identical data at a given offset, but the brokers are tracking only the largest fragment, i.e. the fragment that covers the largest span of offsets. As a result, the prune command will delete only this tracked fragment, leaving the smaller fragments untouched. As a workaround, operators can wait for the fragment listing to refresh and prune the journals again.
@@ -29,7 +24,6 @@ There is a caveat when pruning journals. For a given journal, there could be mul
 Use --selector to supply a LabelSelector to select journals to prune.
 See "journals list --help" for details and examples.
 `, &cmdJournalsPrune{})
-	return err
 }
 
 func (cmd *cmdJournalsPrune) Execute([]string) error {

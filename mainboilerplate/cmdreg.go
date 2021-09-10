@@ -13,6 +13,14 @@ func NewCmdRegistry() CmdRegistry {
 	return make(CmdRegistry)
 }
 
+// RegisterCmd takes a parentName and then an github.com/jessevdk/go-flags.AddCommand specification and registers the command
+func (cr CmdRegistry) RegisterCmd(parentName string, command string, shortDescription string, longDescription string, data interface{}) {
+	cr.RegisterAddCmdFunc(parentName, func(cmd *flags.Command) error {
+		_, err := cmd.AddCommand(command, shortDescription, longDescription, data)
+		return err
+	})
+}
+
 // RegisterAddCmdFunc registers an AddCmdFunc. parentName should separate mulitple sub-commands with periods.
 // Example command.subcommand1.subcommand2
 func (cr CmdRegistry) RegisterAddCmdFunc(parentName string, f AddCmdFunc) {

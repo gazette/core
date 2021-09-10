@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 
-	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/journalspace"
@@ -19,12 +18,7 @@ type cmdJournalsEdit struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsEdit)
-}
-
-func AddCmdJournalsEdit(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("edit", "Edit journal specifications", journalsEditLongDesc, &cmdJournalsEdit{})
-	return err
+	CmdRegistry.RegisterCmd("journals", "edit", "Edit journal specifications", journalsEditLongDesc, &cmdJournalsEdit{})
 }
 
 func (cmd *cmdJournalsEdit) Execute([]string) error {

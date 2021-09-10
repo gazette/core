@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -34,11 +33,7 @@ type cmdJournalRead struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsRead)
-}
-
-func AddCmdJournalsRead(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("read", "Read journal contents", `
+	CmdRegistry.RegisterCmd("journals", "read", "Read journal contents", `
 Read the contents of one or more journals.
 
 A label --selector is required, and determines the set of journals which are read.
@@ -95,7 +90,6 @@ gazctl journals read -l my-label --block --tail
 echo "{}" > offsets.json # Must already exist.
 gazctl journals read -l my-label -o output --offsets offsets.json --offsets-out offsets.json --broker.cache.size=256 --zone=us-east-1
 `, &cmdJournalRead{})
-	return err
 }
 
 func (cmd *cmdJournalRead) Execute([]string) error {

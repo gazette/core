@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -16,11 +15,7 @@ type cmdJournalResetHead struct {
 }
 
 func init() {
-	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsResetHead)
-}
-
-func AddCmdJournalsResetHead(cmd *flags.Command) error {
-	_, err := cmd.AddCommand("reset-head", "Reset journal append offset (disaster recovery)", `
+	CmdRegistry.RegisterCmd("journals", "reset-head", "Reset journal append offset (disaster recovery)", `
 Reset the append offset of journals.
 
 Gazette appends are transactional: all brokers must agree on the exact offsets
@@ -56,7 +51,6 @@ maximum indexed offset, allowing new append operations to proceed.
 reset-head is safe to run against journals which are already consistent and
 and are being actively appended to.
 `, &cmdJournalResetHead{})
-	return err
 }
 
 func (cmd *cmdJournalResetHead) Execute([]string) error {
