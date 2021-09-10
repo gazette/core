@@ -34,7 +34,7 @@ type cmdJournalRead struct {
 }
 
 func init() {
-	JournalRegisterCommands = append(JournalRegisterCommands, AddCmdJournalRead)
+	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalRead)
 }
 
 func AddCmdJournalRead(cmd *flags.Command) error {

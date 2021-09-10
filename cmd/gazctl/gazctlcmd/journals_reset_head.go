@@ -16,7 +16,7 @@ type cmdJournalResetHead struct {
 }
 
 func init() {
-	JournalRegisterCommands = append(JournalRegisterCommands, AddCmdJournalResetHead)
+	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalResetHead)
 }
 
 func AddCmdJournalResetHead(cmd *flags.Command) error {

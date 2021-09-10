@@ -17,7 +17,7 @@ type cmdJournalsPrune struct {
 }
 
 func init() {
-	JournalRegisterCommands = append(JournalRegisterCommands, AddCmdJournalPrune)
+	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalPrune)
 }
 
 func AddCmdJournalPrune(cmd *flags.Command) error {

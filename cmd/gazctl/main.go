@@ -13,6 +13,8 @@ func main() {
 	parser := flags.NewParser(nil, flags.Default)
 
 	mbp.AddPrintConfigCmd(parser, iniFilename)
+	mbp.Must(gazctlcmd.AddCmdAttachUUIDs(parser.Command), "could not add attach-uuids subcommand")
+
 	parser.LongDescription = `gazctl is a tool for interacting with Gazette brokers and consumer applications.
 
 	See --help pages of each sub-command for documentation and usage examples.
@@ -21,22 +23,19 @@ func main() {
 	the tool's current configuration.
 	`
 
-	// Subcommands that exist solely to contain and organize further nested
-	// subcommands; i.e., they do nothing when executed. They must be
-	// initialized here so they exist prior to any init() functions being
-	// called to add nested subcommands.
+	// journals command - add all self-registered sub-commands in gazctlcmd.JournalsAddCmdFuncs
 	cmdJournals := mustAddCmd(parser.Command, "journals", "Interact with broker journals", "", gazctlcmd.JournalsCfg)
-	for _, addSubCommand := range gazctlcmd.JournalRegisterCommands {
-		mbp.Must(addSubCommand(cmdJournals), "could not add journals subcommand")
+	for _, addCmdFunc := range gazctlcmd.JournalsAddCmdFuncs {
+		mbp.Must(addCmdFunc(cmdJournals), "could not add journals subcommand")
 	}
 
+	// shards command - add all self-registered sub-commands in gazctlcmd.ShardsAddCmdsFuncs
 	cmdShards := mustAddCmd(parser.Command, "shards", "Interact with consumer shards", "", gazctlcmd.ShardsCfg)
-	for _, addSubCommand := range gazctlcmd.ShardRegisterCommands {
-		mbp.Must(addSubCommand(cmdShards), "could not add shards subcommand")
+	for _, addCmdFunc := range gazctlcmd.ShardsAddCmdsFuncs {
+		mbp.Must(addCmdFunc(cmdShards), "could not add shards subcommand")
 	}
 
-	mbp.Must(gazctlcmd.AddCmdAttachUUIDs(parser.Command), "could not add attach-uuids subcommand")
-
+	// Parse config and start app
 	mbp.MustParseConfig(parser, iniFilename)
 }
 

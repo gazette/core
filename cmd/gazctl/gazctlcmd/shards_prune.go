@@ -20,7 +20,7 @@ type cmdShardsPrune struct {
 }
 
 func init() {
-	ShardRegisterCommands = append(ShardRegisterCommands, AddCmdShardsPrune)
+	ShardsAddCmdsFuncs = append(ShardsAddCmdsFuncs, AddCmdShardsPrune)
 }
 
 func AddCmdShardsPrune(cmd *flags.Command) error {

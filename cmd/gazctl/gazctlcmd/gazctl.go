@@ -34,17 +34,18 @@ var (
 		Broker   mbp.ClientConfig `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 	})
 
-	JournalRegisterCommands []RegisterCommandFunc
-	ShardRegisterCommands   []RegisterCommandFunc
+	JournalsAddCmdFuncs []AddCmdFunc
+	ShardsAddCmdsFuncs  []AddCmdFunc
 )
 
+// Functions used to add sub-command with a parent
+type AddCmdFunc func(*flags.Command) error
+
+// BaseConfig for gazctl
 type BaseConfig struct {
 	mbp.ZoneConfig
 	Log mbp.LogConfig `group:"Logging" namespace:"log" env-namespace:"LOG"`
 }
-
-// Functions used to register sub-command with a parent
-type RegisterCommandFunc func(*flags.Command) error
 
 // ListConfig is common configuration of list operations.
 type ListConfig struct {
