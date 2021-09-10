@@ -17,7 +17,7 @@ type cmdJournalsPrune struct {
 }
 
 func init() {
-	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsPrune)
+	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsPrune)
 }
 
 func AddCmdJournalsPrune(cmd *flags.Command) error {

@@ -26,7 +26,7 @@ type cmdShardsList struct {
 }
 
 func init() {
-	AddCmdManager.RegisterAddCmdFunc("shards", AddCmdShardsList)
+	CmdRegistry.RegisterAddCmdFunc("shards", AddCmdShardsList)
 }
 
 func AddCmdShardsList(cmd *flags.Command) error {

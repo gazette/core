@@ -18,7 +18,7 @@ type cmdJournalsApply struct {
 }
 
 func init() {
-	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsApply)
+	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsApply)
 }
 
 func AddCmdJournalsApply(cmd *flags.Command) error {

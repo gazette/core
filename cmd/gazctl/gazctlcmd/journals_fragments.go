@@ -27,7 +27,7 @@ type cmdJournalsFragments struct {
 }
 
 func init() {
-	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsFragments)
+	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsFragments)
 }
 
 func AddCmdJournalsFragments(cmd *flags.Command) error {

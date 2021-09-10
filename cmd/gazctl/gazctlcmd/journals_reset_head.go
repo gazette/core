@@ -16,7 +16,7 @@ type cmdJournalResetHead struct {
 }
 
 func init() {
-	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsResetHead)
+	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsResetHead)
 }
 
 func AddCmdJournalsResetHead(cmd *flags.Command) error {

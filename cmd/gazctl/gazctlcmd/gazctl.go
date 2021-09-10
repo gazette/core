@@ -34,9 +34,9 @@ var (
 		Broker   mbp.ClientConfig `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 	})
 
-	// AddCmdManager is used to allow sub-commands to register their AddCmdFuncs under sub-commands adjacent to their source-code
+	// CmdRegistry is used to allow sub-commands to register their AddCmdFuncs under sub-commands adjacent to their source-code
 	// rather than having to keep track of a list of sub-commands.
-	AddCmdManager = mbp.NewAddCmdFuncManager()
+	CmdRegistry = mbp.NewCmdRegistry()
 )
 
 // Functions used to add sub-command with a parent

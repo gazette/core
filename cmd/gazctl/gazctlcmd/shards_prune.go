@@ -20,7 +20,7 @@ type cmdShardsPrune struct {
 }
 
 func init() {
-	AddCmdManager.RegisterAddCmdFunc("shards", AddCmdShardsPrune)
+	CmdRegistry.RegisterAddCmdFunc("shards", AddCmdShardsPrune)
 }
 
 func AddCmdShardsPrune(cmd *flags.Command) error {

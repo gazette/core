@@ -19,7 +19,7 @@ type cmdJournalsEdit struct {
 }
 
 func init() {
-	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsEdit)
+	CmdRegistry.RegisterAddCmdFunc("journals", AddCmdJournalsEdit)
 }
 
 func AddCmdJournalsEdit(cmd *flags.Command) error {
