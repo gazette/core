@@ -34,10 +34,10 @@ type cmdJournalRead struct {
 }
 
 func init() {
-	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalRead)
+	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsRead)
 }
 
-func AddCmdJournalRead(cmd *flags.Command) error {
+func AddCmdJournalsRead(cmd *flags.Command) error {
 	_, err := cmd.AddCommand("read", "Read journal contents", `
 Read the contents of one or more journals.
 

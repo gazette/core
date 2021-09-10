@@ -17,10 +17,10 @@ type cmdJournalsPrune struct {
 }
 
 func init() {
-	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalPrune)
+	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsPrune)
 }
 
-func AddCmdJournalPrune(cmd *flags.Command) error {
+func AddCmdJournalsPrune(cmd *flags.Command) error {
 	_, err := cmd.AddCommand("prune", "Deletes fragments older than the configured retention", `
 Deletes fragments across all configured fragment stores of matching journals that are older than the configured retention.
 

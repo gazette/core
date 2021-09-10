@@ -19,10 +19,10 @@ type cmdJournalsEdit struct {
 }
 
 func init() {
-	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalEdit)
+	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsEdit)
 }
 
-func AddCmdJournalEdit(cmd *flags.Command) error {
+func AddCmdJournalsEdit(cmd *flags.Command) error {
 	_, err := cmd.AddCommand("edit", "Edit journal specifications", journalsEditLongDesc, &cmdJournalsEdit{})
 	return err
 }

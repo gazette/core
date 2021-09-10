@@ -16,10 +16,10 @@ type cmdJournalResetHead struct {
 }
 
 func init() {
-	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalResetHead)
+	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsResetHead)
 }
 
-func AddCmdJournalResetHead(cmd *flags.Command) error {
+func AddCmdJournalsResetHead(cmd *flags.Command) error {
 	_, err := cmd.AddCommand("reset-head", "Reset journal append offset (disaster recovery)", `
 Reset the append offset of journals.
 

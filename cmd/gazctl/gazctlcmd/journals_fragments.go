@@ -27,10 +27,10 @@ type cmdJournalsFragments struct {
 }
 
 func init() {
-	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalFragments)
+	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsFragments)
 }
 
-func AddCmdJournalFragments(cmd *flags.Command) error {
+func AddCmdJournalsFragments(cmd *flags.Command) error {
 	_, err := cmd.AddCommand("fragments", "List journal fragments", `
 List fragments of selected journals.
 

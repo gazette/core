@@ -24,10 +24,10 @@ type cmdJournalsList struct {
 }
 
 func init() {
-	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalList)
+	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsList)
 }
 
-func AddCmdJournalList(cmd *flags.Command) error {
+func AddCmdJournalsList(cmd *flags.Command) error {
 	_, err := cmd.AddCommand("list", "List journals", `
 List journal specifications and status.
 

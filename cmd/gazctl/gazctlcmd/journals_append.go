@@ -33,10 +33,10 @@ type cmdJournalAppend struct {
 }
 
 func init() {
-	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalAppend)
+	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsAppend)
 }
 
-func AddCmdJournalAppend(cmd *flags.Command) error {
+func AddCmdJournalsAppend(cmd *flags.Command) error {
 	_, err := cmd.AddCommand("append", "Append journal content", `
 Append content to one or more journals.
 

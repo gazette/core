@@ -34,8 +34,9 @@ var (
 		Broker   mbp.ClientConfig `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 	})
 
-	JournalsAddCmdFuncs []AddCmdFunc
-	ShardsAddCmdsFuncs  []AddCmdFunc
+	// AddCmdManager is used to allow sub-commands to register their AddCmdFuncs under sub-commands adjacent to their source-code
+	// rather than having to keep track of a list of sub-commands.
+	AddCmdManager = mbp.NewAddCmdFuncManager()
 )
 
 // Functions used to add sub-command with a parent
@@ -97,5 +98,9 @@ func (cfg ApplyConfig) decode(into interface{}) error {
 func startup(baseConfig BaseConfig) {
 	mbp.InitLog(baseConfig.Log)
 	protocol.RegisterGRPCDispatcher(baseConfig.Zone)
+
+}
+
+func RegisterAddCmdFunc(name string, f AddCmdFunc) {
 
 }

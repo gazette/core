@@ -18,10 +18,10 @@ type cmdJournalsApply struct {
 }
 
 func init() {
-	JournalsAddCmdFuncs = append(JournalsAddCmdFuncs, AddCmdJournalApply)
+	AddCmdManager.RegisterAddCmdFunc("journals", AddCmdJournalsApply)
 }
 
-func AddCmdJournalApply(cmd *flags.Command) error {
+func AddCmdJournalsApply(cmd *flags.Command) error {
 	_, err := cmd.AddCommand("apply", "Apply journal specifications", `
 Apply a collection of JournalSpec creations, updates, or deletions.
 

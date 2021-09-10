@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/jessevdk/go-flags"
+	log "github.com/sirupsen/logrus"
 
 	"go.gazette.dev/core/cmd/gazctl/gazctlcmd"
 	mbp "go.gazette.dev/core/mainboilerplate"
@@ -23,17 +24,13 @@ func main() {
 	the tool's current configuration.
 	`
 
-	// journals command - add all self-registered sub-commands in gazctlcmd.JournalsAddCmdFuncs
-	cmdJournals := mustAddCmd(parser.Command, "journals", "Interact with broker journals", "", gazctlcmd.JournalsCfg)
-	for _, addCmdFunc := range gazctlcmd.JournalsAddCmdFuncs {
-		mbp.Must(addCmdFunc(cmdJournals), "could not add journals subcommand")
-	}
+	log.Warn(parser.Name)
 
-	// shards command - add all self-registered sub-commands in gazctlcmd.ShardsAddCmdsFuncs
-	cmdShards := mustAddCmd(parser.Command, "shards", "Interact with consumer shards", "", gazctlcmd.ShardsCfg)
-	for _, addCmdFunc := range gazctlcmd.ShardsAddCmdsFuncs {
-		mbp.Must(addCmdFunc(cmdShards), "could not add shards subcommand")
-	}
+	// Create these journals and shards commands to contain sub-commands
+	_ = mustAddCmd(parser.Command, "journals", "Interact with broker journals", "", gazctlcmd.JournalsCfg)
+	_ = mustAddCmd(parser.Command, "shards", "Interact with consumer shards", "", gazctlcmd.ShardsCfg)
+
+	mbp.Must(gazctlcmd.AddCmdManager.RegisterCmds("", parser.Command), "could not add subcommand")
 
 	// Parse config and start app
 	mbp.MustParseConfig(parser, iniFilename)
