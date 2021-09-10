@@ -21,22 +21,27 @@ func (cr CmdRegistry) RegisterAddCmdFunc(parentName string, f AddCmdFunc) {
 
 // AddCmds recursively walks through the tree of registered sub-commands under parent-name and adds them to the root comamnd.
 func (cr CmdRegistry) AddCmds(rootName string, rootCmd *flags.Command) error {
-	baseName := rootName
-	if baseName != "" {
-		baseName += "."
+
+	// Register any command
+	for _, addCmdFunc := range cr[rootName] {
+		if err := addCmdFunc(rootCmd); err != nil {
+			return err
+		}
 	}
+
+	// See if there are any sub-commands that now need registered under this one
 	for _, cmd := range rootCmd.Commands() {
-		cmdName := baseName + cmd.Name
-		// Register every sub-command
-		for _, addCmdFunc := range cr[cmdName] {
-			if err := addCmdFunc(cmd); err != nil {
-				return err
-			}
+		// Register every sub-command. Sub-Commands are separated with a .
+		cmdName := cmd.Name
+		if rootName != "" {
+			cmdName = rootName + "." + cmdName
 		}
 		// Recursively register any sub-commands under this command
 		if err := cr.AddCmds(cmdName, cmd); err != nil {
 			return err
 		}
 	}
+
 	return nil
+
 }

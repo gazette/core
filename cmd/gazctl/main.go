@@ -30,6 +30,7 @@ func main() {
 	_ = mustAddCmd(parser.Command, "journals", "Interact with broker journals", "", gazctlcmd.JournalsCfg)
 	_ = mustAddCmd(parser.Command, "shards", "Interact with consumer shards", "", gazctlcmd.ShardsCfg)
 
+	// Add all registered commands
 	mbp.Must(gazctlcmd.CmdRegistry.AddCmds("", parser.Command), "could not add subcommand")
 
 	// Parse config and start app
