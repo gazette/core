@@ -17,7 +17,7 @@ type cmdJournalsApply struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("journals", "apply", "Apply journal specifications", `
+	CommandRegistry.AddCommand("journals", "apply", "Apply journal specifications", `
 Apply a collection of JournalSpec creations, updates, or deletions.
 
 JournalSpecs should be provided as a YAML journal hierarchy, the format

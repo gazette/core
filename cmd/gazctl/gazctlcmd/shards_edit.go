@@ -19,7 +19,7 @@ type cmdShardsEdit struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("shards", "edit", "Edit shard specifications", shardsEditLongDesc, &cmdShardsEdit{})
+	CommandRegistry.AddCommand("shards", "edit", "Edit shard specifications", shardsEditLongDesc, &cmdShardsEdit{})
 }
 
 func (cmd *cmdShardsEdit) Execute([]string) error {

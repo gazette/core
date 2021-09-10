@@ -19,7 +19,7 @@ type cmdShardsPrune struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("shards", "prune", "Removes fragments of a hinted recovery log which are no longer needed", `
+	CommandRegistry.AddCommand("shards", "prune", "Removes fragments of a hinted recovery log which are no longer needed", `
 Recovery logs capture every write which has ever occurred in a Shard DB.
 This includes all prior writes of client keys & values, and also RocksDB
 compactions, which can significantly inflate the total volume of writes

@@ -18,7 +18,7 @@ type cmdJournalsEdit struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("journals", "edit", "Edit journal specifications", journalsEditLongDesc, &cmdJournalsEdit{})
+	CommandRegistry.AddCommand("journals", "edit", "Edit journal specifications", journalsEditLongDesc, &cmdJournalsEdit{})
 }
 
 func (cmd *cmdJournalsEdit) Execute([]string) error {

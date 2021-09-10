@@ -26,7 +26,7 @@ type cmdJournalsFragments struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("journals", "fragments", "List journal fragments", `
+	CommandRegistry.AddCommand("journals", "fragments", "List journal fragments", `
 List fragments of selected journals.
 
 A label --selector is required, and determines the set of journals for which

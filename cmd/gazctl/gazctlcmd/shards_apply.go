@@ -17,7 +17,7 @@ type cmdShardsApply struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("shards", "apply", "Apply shard specifications", `
+	CommandRegistry.AddCommand("shards", "apply", "Apply shard specifications", `
 Apply a collection of ShardSpec creations, updates, or deletions.
 
 ShardSpecs should be provided as a YAML list, the same format produced by

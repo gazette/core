@@ -25,7 +25,7 @@ type cmdShardsList struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("shards", "list", "List shards", `
+	CommandRegistry.AddCommand("shards", "list", "List shards", `
 List shard specifications and status.
 
 Use --selector to supply a LabelSelector which constrains the set of returned

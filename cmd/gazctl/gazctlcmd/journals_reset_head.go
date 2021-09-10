@@ -15,7 +15,7 @@ type cmdJournalResetHead struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("journals", "reset-head", "Reset journal append offset (disaster recovery)", `
+	CommandRegistry.AddCommand("journals", "reset-head", "Reset journal append offset (disaster recovery)", `
 Reset the append offset of journals.
 
 Gazette appends are transactional: all brokers must agree on the exact offsets

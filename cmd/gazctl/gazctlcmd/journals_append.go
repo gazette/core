@@ -32,7 +32,7 @@ type cmdJournalAppend struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("journals", "append", "Append journal content", `
+	CommandRegistry.AddCommand("journals", "append", "Append journal content", `
 Append content to one or more journals.
 
 A label --selector is required, and determines the set of journals which are appended.

@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/jessevdk/go-flags"
 	"go.gazette.dev/core/broker/protocol"
 	mbp "go.gazette.dev/core/mainboilerplate"
 	"gopkg.in/yaml.v2"
@@ -34,13 +33,9 @@ var (
 		Broker   mbp.ClientConfig `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 	})
 
-	// CmdRegistry is used to allow sub-commands to register their AddCmdFuncs under sub-commands adjacent to their source-code
-	// rather than having to keep track of a list of sub-commands.
-	CmdRegistry = mbp.NewCmdRegistry()
+	// CommandRegistry is used to build a runtime command tree
+	CommandRegistry = mbp.NewCommandRegistry()
 )
-
-// Functions used to add sub-command with a parent
-type AddCmdFunc func(*flags.Command) error
 
 // BaseConfig for gazctl
 type BaseConfig struct {
@@ -98,9 +93,5 @@ func (cfg ApplyConfig) decode(into interface{}) error {
 func startup(baseConfig BaseConfig) {
 	mbp.InitLog(baseConfig.Log)
 	protocol.RegisterGRPCDispatcher(baseConfig.Zone)
-
-}
-
-func RegisterAddCmdFunc(name string, f AddCmdFunc) {
 
 }

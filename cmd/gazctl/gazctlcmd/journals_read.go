@@ -33,7 +33,7 @@ type cmdJournalRead struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("journals", "read", "Read journal contents", `
+	CommandRegistry.AddCommand("journals", "read", "Read journal contents", `
 Read the contents of one or more journals.
 
 A label --selector is required, and determines the set of journals which are read.

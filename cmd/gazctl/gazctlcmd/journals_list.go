@@ -23,7 +23,7 @@ type cmdJournalsList struct {
 }
 
 func init() {
-	CmdRegistry.RegisterCmd("journals", "list", "List journals", `
+	CommandRegistry.AddCommand("journals", "list", "List journals", `
 List journal specifications and status.
 
 Use --selector to supply a LabelSelector which constrains the set of returned
