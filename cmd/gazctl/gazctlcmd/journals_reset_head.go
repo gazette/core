@@ -60,7 +60,7 @@ and are being actively appended to.
 }
 
 func (cmd *cmdJournalResetHead) Execute([]string) error {
-	startup()
+	startup(JournalsCfg.BaseConfig)
 
 	var err error
 	var ctx = context.Background()

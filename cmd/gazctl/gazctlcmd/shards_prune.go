@@ -47,7 +47,7 @@ references the log may cause data it depends on to be deleted.
 }
 
 func (cmd *cmdShardsPrune) Execute([]string) error {
-	startup()
+	startup(ShardsCfg.BaseConfig)
 
 	var ctx = context.Background()
 	var m = shardsPruneMetrics{}

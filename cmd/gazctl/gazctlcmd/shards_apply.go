@@ -44,7 +44,7 @@ ShardSpecs may be deleted by setting their field "delete" to true.
 }
 
 func (cmd *cmdShardsApply) Execute([]string) error {
-	startup()
+	startup(ShardsCfg.BaseConfig)
 
 	var set shardspace.Set
 	mbp.Must(cmd.decode(&set), "failed to decode shardspace from YAML")

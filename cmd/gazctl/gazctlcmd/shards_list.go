@@ -52,7 +52,7 @@ as fetching consumption lag for a large number of shards may take a while.
 }
 
 func (cmd *cmdShardsList) Execute([]string) error {
-	startup()
+	startup(ShardsCfg.BaseConfig)
 
 	var resp = listShards(cmd.Selector)
 

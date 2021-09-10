@@ -29,7 +29,7 @@ func AddCmdShardsEdit(cmd *flags.Command) error {
 }
 
 func (cmd *cmdShardsEdit) Execute([]string) error {
-	startup()
+	startup(ShardsCfg.BaseConfig)
 	return editor.EditRetryLoop(editor.RetryLoopArgs{
 		FilePrefix:       "gazctl-shards-edit-",
 		SelectFn:         cmd.selectSpecs,

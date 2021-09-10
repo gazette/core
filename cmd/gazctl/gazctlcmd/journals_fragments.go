@@ -85,7 +85,7 @@ gazctl journals fragments -l my-label --format json --url-ttl 1h --from $(date -
 }
 
 func (cmd *cmdJournalsFragments) Execute([]string) error {
-	startup()
+	startup(JournalsCfg.BaseConfig)
 
 	// Evaluate journal selector and map to a journal list.
 	var err error

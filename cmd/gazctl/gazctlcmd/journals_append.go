@@ -93,7 +93,7 @@ gazctl journals append -l my-label --framing 'lines' --mapping 'rendezvous' --in
 }
 
 func (cmd *cmdJournalAppend) Execute([]string) error {
-	startup()
+	startup(JournalsCfg.BaseConfig)
 
 	// Validate argument combinations.
 	if cmd.Framing == "none" && cmd.Mapping != "random" {

@@ -33,7 +33,7 @@ See "journals list --help" for details and examples.
 }
 
 func (cmd *cmdJournalsPrune) Execute([]string) error {
-	startup()
+	startup(JournalsCfg.BaseConfig)
 
 	var resp = listJournals(cmd.Selector)
 	if len(resp.Journals) == 0 {

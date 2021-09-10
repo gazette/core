@@ -55,7 +55,7 @@ exactly equivalent to the original JournalSpecs.
 }
 
 func (cmd *cmdJournalsList) Execute([]string) error {
-	startup()
+	startup(JournalsCfg.BaseConfig)
 
 	var resp = listJournals(cmd.Selector)
 

@@ -54,7 +54,7 @@ are not enumerated.
 }
 
 func (cmd *cmdJournalsApply) Execute([]string) error {
-	startup()
+	startup(JournalsCfg.BaseConfig)
 
 	// Decode journal specification tree from YAML.
 	var tree journalspace.Node

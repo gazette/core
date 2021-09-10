@@ -99,7 +99,7 @@ gazctl journals read -l my-label -o output --offsets offsets.json --offsets-out 
 }
 
 func (cmd *cmdJournalRead) Execute([]string) error {
-	startup()
+	startup(JournalsCfg.BaseConfig)
 
 	if cmd.FileRoot != "" {
 		client.InstallFileTransport(cmd.FileRoot)

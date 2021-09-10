@@ -28,7 +28,7 @@ func AddCmdJournalEdit(cmd *flags.Command) error {
 }
 
 func (cmd *cmdJournalsEdit) Execute([]string) error {
-	startup()
+	startup(JournalsCfg.BaseConfig)
 	return editor.EditRetryLoop(editor.RetryLoopArgs{
 		FilePrefix:       "gazctl-journals-edit-",
 		SelectFn:         cmd.selectSpecs,

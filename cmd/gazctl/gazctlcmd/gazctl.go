@@ -26,14 +26,12 @@ If possible, prefer to use label selectors to limit the number of changes.`
 )
 
 var (
-	baseCfg = new(struct {
-		mbp.ZoneConfig
-		Log mbp.LogConfig `group:"Logging" namespace:"log" env-namespace:"LOG"`
-	})
 	JournalsCfg = new(struct {
+		BaseConfig
 		Broker mbp.ClientConfig `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 	})
 	ShardsCfg = new(struct {
+		BaseConfig
 		Consumer mbp.ClientConfig `group:"Consumer" namespace:"consumer" env-namespace:"CONSUMER"`
 		Broker   mbp.ClientConfig `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 	})
@@ -41,6 +39,11 @@ var (
 	JournalRegisterCommands []RegisterCommandFunc
 	ShardRegisterCommands   []RegisterCommandFunc
 )
+
+type BaseConfig struct {
+	mbp.ZoneConfig
+	Log mbp.LogConfig `group:"Logging" namespace:"log" env-namespace:"LOG"`
+}
 
 // Functions used to register sub-command with a parent
 type RegisterCommandFunc func(*flags.Command) error
@@ -92,9 +95,10 @@ func (cfg ApplyConfig) decode(into interface{}) error {
 	return nil
 }
 
-func startup() {
-	mbp.InitLog(baseCfg.Log)
-	protocol.RegisterGRPCDispatcher(baseCfg.Zone)
+func startup(baseConfig BaseConfig) {
+	mbp.InitLog(baseConfig.Log)
+	protocol.RegisterGRPCDispatcher(baseConfig.Zone)
+
 }
 
 func mustAddCmd(cmd *flags.Command, name, short, long string, cfg interface{}) *flags.Command {
@@ -105,7 +109,7 @@ func mustAddCmd(cmd *flags.Command, name, short, long string, cfg interface{}) *
 
 func Execute() {
 
-	parser := flags.NewParser(baseCfg, flags.Default)
+	parser := flags.NewParser(nil, flags.Default)
 
 	mbp.AddPrintConfigCmd(parser, iniFilename)
 	parser.LongDescription = `gazctl is a tool for interacting with Gazette brokers and consumer applications.
