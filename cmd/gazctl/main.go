@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/jessevdk/go-flags"
-	log "github.com/sirupsen/logrus"
 
 	"go.gazette.dev/core/cmd/gazctl/gazctlcmd"
 	mbp "go.gazette.dev/core/mainboilerplate"
@@ -23,8 +22,6 @@ func main() {
 	or with '~/.config/gazette/` + iniFilename + `'. Use the 'print-config' sub-command to inspect
 	the tool's current configuration.
 	`
-
-	log.Warn(parser.Name)
 
 	// Create these journals and shards commands to contain sub-commands
 	_ = mustAddCmd(parser.Command, "journals", "Interact with broker journals", "", gazctlcmd.JournalsCfg)
