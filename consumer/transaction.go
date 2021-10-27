@@ -214,7 +214,6 @@ func txnRead(s *shard, txn, prev *transaction, env EnvelopeOrError, ok bool) err
 
 	// DEPRECATED metrics to be removed:
 	bytesConsumedTotal.Add(float64(env.End - env.Begin))
-	readHeadGauge.WithLabelValues(env.Journal.Name.String()).Set(float64(env.End))
 	// End DEPRECATED metrics.
 
 	// |env| is read-uncommitted. Queue and act on its sequencing outcome.

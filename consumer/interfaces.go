@@ -358,8 +358,4 @@ var (
 		Name: "gazette_consumer_consumed_bytes_total",
 		Help: "Cumulative number of bytes consumed.",
 	})
-	readHeadGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "gazette_consumer_read_head",
-		Help: "Consumer read head",
-	}, []string{"journal"})
 )
