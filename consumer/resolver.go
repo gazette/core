@@ -401,6 +401,15 @@ func (r *Resolver) Collect(ch chan<- prometheus.Metric) {
 			1,
 			shardID.String(),
 			status.Code.String())
+
+		for j,o := range shard.progress.readThrough {
+			ch <- prometheus.MustNewConstMetric(
+				shardReadHeadDesc,
+				prometheus.GaugeValue,
+				float64(o),
+				shardID.String(),
+				j.String())
+		}
 	}
 }
 

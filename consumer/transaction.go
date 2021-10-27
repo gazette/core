@@ -501,11 +501,6 @@ func recordMetrics(s *shard, txn *transaction) {
 	shardTxnTotal.WithLabelValues(s.FQN()).Inc()
 	shardReadMsgsTotal.WithLabelValues(s.FQN()).Add(float64(txn.consumedCount))
 	shardReadBytesTotal.WithLabelValues(s.FQN()).Add(float64(txn.consumedBytes))
-	for journal, source := range txn.checkpoint.Sources {
-		shardReadHeadGauge.
-			WithLabelValues(s.FQN(), journal.String()).
-			Set(float64(source.ReadThrough))
-	}
 
 	var (
 		durNotRunning    = txn.beganAt.Sub(txn.prevPrepareDoneAt)

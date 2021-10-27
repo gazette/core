@@ -300,6 +300,11 @@ var (
 		"gazette_shard_up",
 		"Indicates the processing status of a shard by this consumer.",
 		[]string{"shard", "status"}, nil)
+
+	shardReadHeadDesc = prometheus.NewDesc(
+			"gazette_shard_read_head",
+			"Current read head of the consumer (i.e., next journal byte offset to be read).",
+			[]string{"shard", "journal"}, nil)
 )
 
 var (
@@ -315,10 +320,6 @@ var (
 		Name: "gazette_shard_read_bytes_total",
 		Help: "Total byte-length of messages processed by completed consumer transactions.",
 	}, []string{"shard"})
-	shardReadHeadGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "gazette_shard_read_head",
-		Help: "Current read head of the consumer (i.e., next journal byte offset to be read).",
-	}, []string{"shard", "journal"})
 	shardTxnPhaseSecondsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "gazette_shard_phase_seconds_total",
 		Help: "Cumulative number of seconds processing transactions.",
