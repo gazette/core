@@ -302,9 +302,9 @@ var (
 		[]string{"shard", "status"}, nil)
 
 	shardReadHeadDesc = prometheus.NewDesc(
-			"gazette_shard_read_head",
-			"Current read head of the consumer (i.e., next journal byte offset to be read).",
-			[]string{"shard", "journal"}, nil)
+		"gazette_shard_read_head",
+		"Current read head of the consumer (i.e., next journal byte offset to be read).",
+		[]string{"shard", "journal"}, nil)
 )
 
 var (
