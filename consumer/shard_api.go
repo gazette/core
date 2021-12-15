@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -11,6 +12,7 @@ import (
 	pb "go.gazette.dev/core/broker/protocol"
 	pbx "go.gazette.dev/core/broker/protocol/ext"
 	pc "go.gazette.dev/core/consumer/protocol"
+	"go.gazette.dev/core/keyspace"
 	"go.gazette.dev/core/labels"
 	"go.gazette.dev/core/message"
 	"google.golang.org/grpc"
@@ -182,6 +184,37 @@ func ShardGetHints(ctx context.Context, srv *Service, req *pc.GetHintsRequest) (
 	return resp, nil
 }
 
+func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (*pc.UnassignResponse, error) {
+	var state = srv.Resolver.state
+	var resp = &pc.UnassignResponse{
+		Status: pc.Status_OK,
+		Header: pbx.NewUnroutedHeader(srv.State),
+	}
+
+	if err := req.Validate(); err != nil {
+		return resp, err
+	}
+
+	assignments := state.Assignments.Prefixed(allocator.ItemAssignmentsPrefix(state.KS, req.Shard.String()))
+	primaryAssignment, err := findAssignmentAtSlot(assignments, 0)
+	if err != nil {
+		return resp, err
+	}
+
+	etcdResp, err := srv.Etcd.KV.Delete(ctx, allocator.AssignmentKey(state.KS, primaryAssignment))
+	if err != nil {
+		return resp, fmt.Errorf("executing etcd transaction: %w", err)
+	} else if etcdResp.Deleted > 0 {
+		// If we made changes, delay responding until we have read our own Etcd write.
+		state.KS.Mu.RLock()
+		err = state.KS.WaitForRevision(ctx, etcdResp.Header.Revision)
+		state.KS.Mu.RUnlock()
+	}
+	resp.Header.Etcd.Revision = etcdResp.Header.Revision
+
+	return resp, err
+}
+
 // ListShards is a convenience for invoking the List RPC, which maps a validation or !OK status to an error.
 func ListShards(ctx context.Context, sc pc.ShardClient, req *pc.ListRequest) (*pc.ListResponse, error) {
 	if r, err := sc.List(pb.WithDispatchDefault(ctx), req, grpc.WaitForReady(true)); err != nil {
@@ -308,4 +341,14 @@ func FetchHints(ctx context.Context, sc pc.ShardClient, req *pc.GetHintsRequest)
 	} else {
 		return r, nil
 	}
+}
+
+func findAssignmentAtSlot(assignments keyspace.KeyValues, targetSlot int) (allocator.Assignment, error) {
+	for _, assignment := range assignments {
+		if a, ok := assignment.Decoded.(allocator.Assignment); ok && a.Slot == targetSlot {
+			return a, nil
+		}
+	}
+
+	return allocator.Assignment{}, fmt.Errorf("no assignment found")
 }

@@ -423,3 +423,37 @@ func TestVerifyReferencedJournalsCases(t *testing.T) {
 	require.EqualError(t, VerifyReferencedJournals(ctx, jc, req),
 		"Shard[shard-B]: named journal does not exist (does/not/exist)")
 }
+
+func TestAPIUnassignCases(t *testing.T) {
+	var tf, cleanup = newTestFixture(t)
+	defer cleanup()
+
+	var specA = makeShard(shardA)
+	specA.Labels = append(specA.Labels, pb.Label{Name: "foo", Value: "bar"})
+	var specB = makeShard(shardB)
+	specB.Labels = append(specB.Labels, pb.Label{Name: "bar", Value: "baz"})
+	var specC = makeShard(shardC)
+
+	tf.allocateShard(specA)
+	tf.allocateShard(specB, remoteID)
+	tf.allocateShard(specC, localID, remoteID)
+	expectStatusCode(t, tf.state, pc.ReplicaStatus_PRIMARY)
+
+	// No prior assignments
+	resp, err := tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shard: specA.Id})
+	require.Equal(t, pc.Status_OK, resp.Status)
+	require.EqualError(t, err, "no assignment found")
+
+	// Single assignment
+	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shard: specB.Id})
+	require.Equal(t, pc.Status_OK, resp.Status)
+	require.NoError(t, err)
+
+	// Multiple assignments
+	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shard: specC.Id})
+	require.Equal(t, pc.Status_OK, resp.Status)
+	require.NoError(t, err)
+
+	tf.allocateShard(specB) // Cleanup.
+	tf.allocateShard(specC)
+}
