@@ -443,6 +443,20 @@ message GetHintsResponse {
   bytes extension = 100;
 }
 
+message UnassignRequest {
+  // Header may be attached by a proxying consumer peer.
+  protocol.Header header = 1;
+  // Shard to unassign.
+  string shard = 2 [ (gogoproto.casttype) = "ShardID" ];
+}
+
+message UnassignResponse {
+  // Status of the Unassign RPC.
+  Status status = 1;
+  // Header of the response.
+  protocol.Header header = 2 [ (gogoproto.nullable) = false ];
+}
+
 // Shard is the Consumer service API for interacting with Shards. Applications
 // are able to wrap or alter the behavior of Shard API implementations via the
 // Service.ShardAPI structure. They're also able to implement additional gRPC
@@ -456,4 +470,6 @@ service Shard {
   rpc Apply(ApplyRequest) returns (ApplyResponse);
   // GetHints fetches hints for a shard.
   rpc GetHints(GetHintsRequest) returns (GetHintsResponse);
+  // Unassign a Shard.
+  rpc Unassign(UnassignRequest) returns (UnassignResponse);
 }
