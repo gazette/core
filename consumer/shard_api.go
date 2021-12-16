@@ -186,10 +186,7 @@ func ShardGetHints(ctx context.Context, srv *Service, req *pc.GetHintsRequest) (
 
 func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (*pc.UnassignResponse, error) {
 	var state = srv.Resolver.state
-	var resp = &pc.UnassignResponse{
-		Status: pc.Status_OK,
-		Header: pbx.NewUnroutedHeader(srv.State),
-	}
+	var resp = &pc.UnassignResponse{Status: pc.Status_OK}
 
 	if err := req.Validate(); err != nil {
 		return resp, err
@@ -219,7 +216,6 @@ func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (
 		// If we made changes, delay responding until we have read our own Etcd write.
 		err = state.KS.WaitForRevision(ctx, etcdResp.Header.Revision)
 	}
-	resp.Header.Etcd.Revision = etcdResp.Header.Revision
 
 	return resp, err
 }

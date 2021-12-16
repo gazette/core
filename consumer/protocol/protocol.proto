@@ -444,17 +444,13 @@ message GetHintsResponse {
 }
 
 message UnassignRequest {
-  // Header may be attached by a proxying consumer peer.
-  protocol.Header header = 1;
   // Shard to unassign.
-  string shard = 2 [ (gogoproto.casttype) = "ShardID" ];
+  string shard = 1 [ (gogoproto.casttype) = "ShardID" ];
 }
 
 message UnassignResponse {
   // Status of the Unassign RPC.
   Status status = 1;
-  // Header of the response.
-  protocol.Header header = 2 [ (gogoproto.nullable) = false ];
 }
 
 // Shard is the Consumer service API for interacting with Shards. Applications
