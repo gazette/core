@@ -306,14 +306,23 @@ func (f *testFixture) allocateShard(spec *pc.ShardSpec, assignments ...pb.Proces
 		if id == (pb.ProcessSpec_ID{}) {
 			continue
 		}
+
+		var status = pc.ReplicaStatus{}
+		if slot == 0 {
+			status.Code = pc.ReplicaStatus_PRIMARY
+		} else {
+			status.Code = pc.ReplicaStatus_STANDBY
+		}
+
 		var asn = allocator.Assignment{
-			ItemID:       spec.Id.String(),
-			MemberZone:   id.Zone,
-			MemberSuffix: id.Suffix,
-			Slot:         slot,
+			ItemID:          spec.Id.String(),
+			MemberZone:      id.Zone,
+			MemberSuffix:    id.Suffix,
+			Slot:            slot,
+			AssignmentValue: status,
 		}
 		var key = allocator.AssignmentKey(f.ks, asn)
-		ops = append(ops, clientv3.OpPut(key, ""))
+		ops = append(ops, clientv3.OpPut(key, status.MarshalString()))
 
 		delete(toRemove, key)
 	}

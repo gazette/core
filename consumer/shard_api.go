@@ -195,10 +195,21 @@ func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (
 		return resp, err
 	}
 
+	defer state.KS.Mu.RUnlock()
+	state.KS.Mu.RLock()
+
 	assignments := state.Assignments.Prefixed(allocator.ItemAssignmentsPrefix(state.KS, req.Shard.String()))
-	primaryAssignment, err := findAssignmentAtSlot(assignments, 0)
+	primaryAssignment, primaryKv, err := findAssignmentAtSlot(assignments, 0)
 	if err != nil {
 		return resp, err
+	}
+
+	if item, found := allocator.LookupItem(state.KS, req.Shard.String()); !found {
+		return resp, fmt.Errorf("verifying shard consistency: could not find shard item")
+	} else if !state.IsConsistent(item, primaryKv, assignments) {
+		return resp, fmt.Errorf("verifying shard consistency: shard is not in a consistent state")
+	} else if len(assignments) < item.ItemValue.DesiredReplication() {
+		return resp, fmt.Errorf("verifying shard consistency: shard is already missing replicas")
 	}
 
 	etcdResp, err := srv.Etcd.KV.Delete(ctx, allocator.AssignmentKey(state.KS, primaryAssignment))
@@ -206,9 +217,7 @@ func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (
 		return resp, fmt.Errorf("executing etcd transaction: %w", err)
 	} else if etcdResp.Deleted > 0 {
 		// If we made changes, delay responding until we have read our own Etcd write.
-		state.KS.Mu.RLock()
 		err = state.KS.WaitForRevision(ctx, etcdResp.Header.Revision)
-		state.KS.Mu.RUnlock()
 	}
 	resp.Header.Etcd.Revision = etcdResp.Header.Revision
 
@@ -343,12 +352,12 @@ func FetchHints(ctx context.Context, sc pc.ShardClient, req *pc.GetHintsRequest)
 	}
 }
 
-func findAssignmentAtSlot(assignments keyspace.KeyValues, targetSlot int) (allocator.Assignment, error) {
+func findAssignmentAtSlot(assignments keyspace.KeyValues, targetSlot int) (allocator.Assignment, keyspace.KeyValue, error) {
 	for _, assignment := range assignments {
 		if a, ok := assignment.Decoded.(allocator.Assignment); ok && a.Slot == targetSlot {
-			return a, nil
+			return a, assignment, nil
 		}
 	}
 
-	return allocator.Assignment{}, fmt.Errorf("no assignment found")
+	return allocator.Assignment{}, keyspace.KeyValue{}, fmt.Errorf("no assignment found")
 }
