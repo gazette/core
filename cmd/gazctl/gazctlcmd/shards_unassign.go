@@ -10,7 +10,8 @@ import (
 )
 
 type cmdShardsUnassign struct {
-	unassignConfig
+	DryRun   bool   `long:"dry-run" description:"Perform a dry-run, printing matching shards"`
+	Selector string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on"`
 }
 
 func init() {

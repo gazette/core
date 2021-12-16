@@ -71,11 +71,6 @@ type pruneConfig struct {
 	DryRun   bool   `long:"dry-run" description:"Perform a dry-run of the apply"`
 }
 
-type unassignConfig struct {
-	DryRun   bool   `long:"dry-run" description:"Perform a dry-run, printing matching shards"`
-	Selector string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on"`
-}
-
 func (cfg ApplyConfig) decode(into interface{}) error {
 	var buffer []byte
 	var err error
