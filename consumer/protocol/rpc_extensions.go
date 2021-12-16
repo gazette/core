@@ -163,9 +163,9 @@ func (m *UnassignRequest) Validate() error {
 // Validate returns an error if the UnassignResponse is not well-formed.
 func (m *UnassignResponse) Validate() error {
 	if err := m.Status.Validate(); err != nil {
-		return pb.ExtendContext(err, "Invalid Status")
+		return pb.ExtendContext(err, "Status")
 	} else if m.Status != Status_OK {
-		return fmt.Errorf("bad Status: %v", m.Status.String())
+		return fmt.Errorf("bad status: %v", m.Status.String())
 	}
 	return nil
 }
