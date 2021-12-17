@@ -199,6 +199,8 @@ func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (
 	primaryAssignment, primaryKv, err := findAssignmentAtSlot(assignments, 0)
 	if err != nil {
 		return resp, err
+	} else if req.OnlyFailed && primaryAssignment.AssignmentValue.(*pc.ReplicaStatus).Code != pc.ReplicaStatus_FAILED {
+		return resp, nil
 	}
 
 	if item, found := allocator.LookupItem(state.KS, req.Shard.String()); !found {

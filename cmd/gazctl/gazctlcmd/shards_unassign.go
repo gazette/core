@@ -11,6 +11,7 @@ import (
 )
 
 type cmdShardsUnassign struct {
+	Failed   bool   `long:"failed" description:"Only remove assignments from failed shards"`
 	DryRun   bool   `long:"dry-run" description:"Perform a dry-run, printing matching shards"`
 	Selector string `long:"selector" short:"l" required:"true" description:"Label Selector query to filter on"`
 }
@@ -41,7 +42,7 @@ func (cmd *cmdShardsUnassign) Execute([]string) (err error) {
 		var client = pc.NewShardClient(ShardsCfg.Consumer.MustDial(ctx))
 
 		for _, shard := range shards {
-			resp, err := client.Unassign(pb.WithDispatchDefault(ctx), &pc.UnassignRequest{Shard: shard.Spec.Id})
+			resp, err := client.Unassign(pb.WithDispatchDefault(ctx), &pc.UnassignRequest{Shard: shard.Spec.Id, OnlyFailed: cmd.Failed})
 			if err != nil {
 				return fmt.Errorf("unassigning shard: %w", err)
 			} else if err := resp.Validate(); err != nil {

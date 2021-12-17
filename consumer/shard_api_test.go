@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.gazette.dev/core/allocator"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/brokertest"
 	pc "go.gazette.dev/core/consumer/protocol"
@@ -429,9 +430,7 @@ func TestAPIUnassignCases(t *testing.T) {
 	defer cleanup()
 
 	var specA = makeShard(shardA)
-	specA.Labels = append(specA.Labels, pb.Label{Name: "foo", Value: "bar"})
 	var specB = makeShard(shardB)
-	specB.Labels = append(specB.Labels, pb.Label{Name: "bar", Value: "baz"})
 	var specC = makeShard(shardC)
 
 	tf.allocateShard(specA)
@@ -439,21 +438,67 @@ func TestAPIUnassignCases(t *testing.T) {
 	tf.allocateShard(specC, localID, remoteID)
 	expectStatusCode(t, tf.state, pc.ReplicaStatus_PRIMARY)
 
+	// Asserts that we have modified the assignment as we expected.
+	var check = func(resp *pc.UnassignResponse, expectedSpec *pc.ShardSpec, expectedStatuses []pc.ReplicaStatus) {
+		require.Equal(t, pc.Status_OK, resp.Status)
+		listResp, err := tf.service.List(context.Background(), &pc.ListRequest{
+			Selector: pb.LabelSelector{Include: pb.MustLabelSet("id", expectedSpec.Id.String())},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(listResp.Shards))
+		if expectedStatuses != nil {
+			require.Equal(t, 1, len(listResp.Shards[0].Status))
+			require.Equal(t, expectedStatuses, []pc.ReplicaStatus{listResp.Shards[0].Status[0]})
+		}
+	}
+
 	// No prior assignments
 	resp, err := tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shard: specA.Id})
-	require.Equal(t, pc.Status_OK, resp.Status)
 	require.EqualError(t, err, "no assignment found")
+	check(resp, specA, []pc.ReplicaStatus{})
 
 	// Single assignment
 	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shard: specB.Id})
-	require.Equal(t, pc.Status_OK, resp.Status)
 	require.NoError(t, err)
+	check(resp, specB, []pc.ReplicaStatus{})
 
 	// Multiple assignments
 	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shard: specC.Id})
+	require.NoError(t, err)
+	check(resp, specC, []pc.ReplicaStatus{{Code: pc.ReplicaStatus_STANDBY}})
+
+	// Assign shardA, but only unassign failed shards
+	tf.allocateShard(specA, localID)
+	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shard: specA.Id, OnlyFailed: true})
+	require.NoError(t, err)
+	check(resp, specA, []pc.ReplicaStatus{{Code: pc.ReplicaStatus_PRIMARY}})
+
+	// Mark shardA as failed
+	failShardPrimary(tf, specA.Id, &localID)
+	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shard: specA.Id, OnlyFailed: true})
 	require.Equal(t, pc.Status_OK, resp.Status)
 	require.NoError(t, err)
+	check(resp, specA, []pc.ReplicaStatus{})
 
-	tf.allocateShard(specB) // Cleanup.
+	// Cleanup.
+	tf.allocateShard(specA)
+	tf.allocateShard(specB)
 	tf.allocateShard(specC)
+}
+
+func failShardPrimary(tf *testFixture, shard pc.ShardID, assignment *pb.ProcessSpec_ID) {
+	var asn = allocator.Assignment{
+		ItemID:       shard.String(),
+		MemberZone:   assignment.Zone,
+		MemberSuffix: assignment.Suffix,
+		Slot:         0,
+	}
+	var key = allocator.AssignmentKey(tf.ks, asn)
+	var status = pc.ReplicaStatus{Code: pc.ReplicaStatus_FAILED}
+	etcdResp, err := tf.etcd.Put(context.Background(), key, status.MarshalString())
+	require.NoError(tf.t, err)
+	tf.ks.Mu.RLock()
+	require.NoError(tf.t, tf.ks.WaitForRevision(context.Background(), etcdResp.Header.Revision))
+	tf.ks.Mu.RUnlock()
+
 }
