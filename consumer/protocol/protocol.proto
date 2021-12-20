@@ -444,8 +444,8 @@ message GetHintsResponse {
 }
 
 message UnassignRequest {
-  // Shard to unassign.
-  string shard = 1 [ (gogoproto.casttype) = "ShardID" ];
+  // Shards to unassign.
+  repeated string shards = 1 [ (gogoproto.casttype) = "ShardID" ];
   // Only unassign shards which have a primary in FAILED status.
   bool only_failed = 2;
 }
