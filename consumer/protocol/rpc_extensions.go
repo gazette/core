@@ -154,8 +154,10 @@ func (m GetHintsResponse_ResponseHints) Validate() error {
 
 // Validate returns an error if the UnassignRequest is not well-formed.
 func (m *UnassignRequest) Validate() error {
-	if err := m.Shard.Validate(); err != nil {
-		return pb.ExtendContext(err, "Shard")
+	for i, shard := range m.Shards {
+		if err := shard.Validate(); err != nil {
+			return pb.ExtendContext(err, "Shards[%d]", i)
+		}
 	}
 	return nil
 }

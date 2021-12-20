@@ -149,11 +149,11 @@ func (s *RPCSuite) TestApplyResponseValidationCases(c *gc.C) {
 
 func (s *RPCSuite) TestUnassignRequestValidationCases(c *gc.C) {
 	var req = UnassignRequest{
-		Shard: "",
+		Shards: []ShardID{"/good/shard/id", ""},
 	}
-	c.Check(req.Validate(), gc.ErrorMatches, `Shard: invalid length.*`)
+	c.Check(req.Validate(), gc.ErrorMatches, `Shards\[1\]: invalid length .*`)
 
-	req.Shard = `/some/shard/id`
+	req.Shards[1] = "/another/valid/shard/id"
 	c.Check(req.Validate(), gc.IsNil)
 }
 

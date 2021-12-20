@@ -185,36 +185,45 @@ func ShardGetHints(ctx context.Context, srv *Service, req *pc.GetHintsRequest) (
 }
 
 func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (*pc.UnassignResponse, error) {
-	var state = srv.Resolver.state
 	var resp = &pc.UnassignResponse{Status: pc.Status_OK}
 
 	if err := req.Validate(); err != nil {
 		return resp, err
 	}
 
+	var state = srv.Resolver.state
 	defer state.KS.Mu.RUnlock()
 	state.KS.Mu.RLock()
 
-	assignments := state.Assignments.Prefixed(allocator.ItemAssignmentsPrefix(state.KS, req.Shard.String()))
-	primaryAssignment, primaryKv, err := findAssignmentAtSlot(assignments, 0)
-	if err != nil {
-		return resp, err
-	} else if req.OnlyFailed && primaryAssignment.AssignmentValue.(*pc.ReplicaStatus).Code != pc.ReplicaStatus_FAILED {
-		return resp, nil
+	var cmp []clientv3.Cmp
+	var ops []clientv3.Op
+
+	for _, shard := range req.Shards {
+		assignments := state.Assignments.Prefixed(allocator.ItemAssignmentsPrefix(state.KS, shard.String()))
+		primaryAssignment, primaryKv, err := findAssignmentAtSlot(assignments, 0)
+		if err != nil {
+			return resp, err
+		} else if req.OnlyFailed && primaryAssignment.AssignmentValue.(*pc.ReplicaStatus).Code != pc.ReplicaStatus_FAILED {
+			return resp, nil
+		}
+
+		if item, found := allocator.LookupItem(state.KS, shard.String()); !found {
+			return resp, fmt.Errorf("verifying shard consistency: could not find shard item")
+		} else if !state.IsConsistent(item, primaryKv, assignments) {
+			return resp, fmt.Errorf("verifying shard consistency: shard is not in a consistent state")
+		} else if len(assignments) < item.ItemValue.DesiredReplication() {
+			return resp, fmt.Errorf("verifying shard consistency: shard is already missing replicas")
+		}
+
+		var key = allocator.AssignmentKey(state.KS, primaryAssignment)
+		cmp = append(cmp, clientv3.Compare(clientv3.ModRevision(key), "=", primaryKv.Raw.ModRevision))
+		ops = append(ops, clientv3.OpDelete(key))
 	}
 
-	if item, found := allocator.LookupItem(state.KS, req.Shard.String()); !found {
-		return resp, fmt.Errorf("verifying shard consistency: could not find shard item")
-	} else if !state.IsConsistent(item, primaryKv, assignments) {
-		return resp, fmt.Errorf("verifying shard consistency: shard is not in a consistent state")
-	} else if len(assignments) < item.ItemValue.DesiredReplication() {
-		return resp, fmt.Errorf("verifying shard consistency: shard is already missing replicas")
-	}
-
-	etcdResp, err := srv.Etcd.KV.Delete(ctx, allocator.AssignmentKey(state.KS, primaryAssignment))
+	etcdResp, err := srv.Etcd.Txn(ctx).If(cmp...).Then(ops...).Commit()
 	if err != nil {
 		return resp, fmt.Errorf("executing etcd transaction: %w", err)
-	} else if etcdResp.Deleted > 0 {
+	} else if etcdResp.Succeeded {
 		// If we made changes, delay responding until we have read our own Etcd write.
 		err = state.KS.WaitForRevision(ctx, etcdResp.Header.Revision)
 	}

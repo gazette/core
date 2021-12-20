@@ -41,14 +41,14 @@ func (cmd *cmdShardsUnassign) Execute([]string) (err error) {
 		var ctx = context.Background()
 		var client = pc.NewShardClient(ShardsCfg.Consumer.MustDial(ctx))
 
-		for _, shard := range shards {
-			resp, err := client.Unassign(pb.WithDispatchDefault(ctx), &pc.UnassignRequest{Shard: shard.Spec.Id, OnlyFailed: cmd.Failed})
-			if err != nil {
-				return fmt.Errorf("unassigning shard: %w", err)
-			} else if err := resp.Validate(); err != nil {
-				return fmt.Errorf("invalid response: %w", err)
-			}
-
+		resp, err := client.Unassign(pb.WithDispatchDefault(ctx), &pc.UnassignRequest{
+			Shards:     shardIds(shards),
+			OnlyFailed: cmd.Failed,
+		})
+		if err != nil {
+			return fmt.Errorf("unassigning shard: %w", err)
+		} else if err := resp.Validate(); err != nil {
+			return fmt.Errorf("invalid response: %w", err)
 		}
 	}
 
@@ -69,4 +69,14 @@ func (cmd *cmdShardsUnassign) Execute([]string) (err error) {
 	}
 
 	return nil
+}
+
+func shardIds(shards []pc.ListResponse_Shard) []pc.ShardID {
+	var ids []pc.ShardID
+
+	for _, shard := range shards {
+		ids = append(ids, shard.Spec.Id)
+	}
+
+	return ids
 }
