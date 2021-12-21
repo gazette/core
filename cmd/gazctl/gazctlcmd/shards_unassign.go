@@ -3,7 +3,6 @@ package gazctlcmd
 import (
 	"context"
 	"fmt"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -53,18 +52,14 @@ func (cmd *cmdShardsUnassign) Execute([]string) (err error) {
 	}
 
 	if len(shards) == 0 {
-		log.Warn("No shards assignments were modified. Use `--dry-run` to test your selector.")
+		log.Warn("No shards assignments were modified. Use `shards list -l SELECTOR` to test your selector.")
 	} else {
-		// Give the allocator time to reassign the primary before doing another shard listing.
-		time.Sleep(time.Second * 2)
-
-		var listResp = listShards(cmd.Selector)
 		if listResp.Status != pc.Status_OK {
 			return fmt.Errorf("unexpected listShard status: %v", listResp.Status.String())
 		}
 
 		for _, shard := range listResp.Shards {
-			log.Infof("Successfully unassigned shard: id=%v. New status=%v, route_members=%v", shard.Spec.Id.String(), shard.Status, shard.Route.Members)
+			log.Infof("Successfully unassigned shard: id=%v. Previous status=%v, previous route members=%v", shard.Spec.Id.String(), shard.Status, shard.Route.Members)
 		}
 	}
 
