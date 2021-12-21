@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.gazette.dev/core/allocator"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/brokertest"
 	pc "go.gazette.dev/core/consumer/protocol"
@@ -435,7 +434,10 @@ func TestAPIUnassignCases(t *testing.T) {
 
 	tf.allocateShard(specA)
 	tf.allocateShard(specB, remoteID)
+	tf.setReplicaStatus(specB, remoteID, 0, pc.ReplicaStatus_PRIMARY)
 	tf.allocateShard(specC, localID, remoteID)
+	tf.setReplicaStatus(specC, localID, 0, pc.ReplicaStatus_PRIMARY)
+	tf.setReplicaStatus(specC, remoteID, 1, pc.ReplicaStatus_STANDBY)
 	expectStatusCode(t, tf.state, pc.ReplicaStatus_PRIMARY)
 
 	// Asserts that we have modified the assignment as we expected.
@@ -470,10 +472,12 @@ func TestAPIUnassignCases(t *testing.T) {
 
 	// Case: Only unassign failed shards
 	tf.allocateShard(specA, localID)
+	tf.setReplicaStatus(specA, localID, 0, pc.ReplicaStatus_PRIMARY)
 	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specA.Id}, OnlyFailed: true})
 	require.NoError(t, err)
 	check(resp, specA, []pc.ReplicaStatus{{Code: pc.ReplicaStatus_PRIMARY}})
-	failShardPrimary(tf, specA.Id, &localID)
+
+	tf.setReplicaStatus(specA, localID, 0, pc.ReplicaStatus_FAILED)
 	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specA.Id}, OnlyFailed: true})
 	require.Equal(t, pc.Status_OK, resp.Status)
 	require.NoError(t, err)
@@ -481,31 +485,19 @@ func TestAPIUnassignCases(t *testing.T) {
 
 	// Case: Remove multiple unrelated shard assignments at once
 	tf.allocateShard(specA, localID)
+	tf.setReplicaStatus(specA, localID, 0, pc.ReplicaStatus_FAILED)
 	tf.allocateShard(specB, localID)
-	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specA.Id, specB.Id}})
+	tf.setReplicaStatus(specB, localID, 0, pc.ReplicaStatus_FAILED)
+	tf.allocateShard(specC, localID)
+	tf.setReplicaStatus(specC, localID, 0, pc.ReplicaStatus_PRIMARY)
+	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specA.Id, specB.Id}, OnlyFailed: true})
 	require.NoError(t, err)
 	check(resp, specA, []pc.ReplicaStatus{})
 	check(resp, specB, []pc.ReplicaStatus{})
+	check(resp, specC, []pc.ReplicaStatus{{Code: pc.ReplicaStatus_PRIMARY}})
 
 	// Cleanup.
 	tf.allocateShard(specA)
 	tf.allocateShard(specB)
 	tf.allocateShard(specC)
-}
-
-func failShardPrimary(tf *testFixture, shard pc.ShardID, assignment *pb.ProcessSpec_ID) {
-	var asn = allocator.Assignment{
-		ItemID:       shard.String(),
-		MemberZone:   assignment.Zone,
-		MemberSuffix: assignment.Suffix,
-		Slot:         0,
-	}
-	var key = allocator.AssignmentKey(tf.ks, asn)
-	var status = pc.ReplicaStatus{Code: pc.ReplicaStatus_FAILED}
-	etcdResp, err := tf.etcd.Put(context.Background(), key, status.MarshalString())
-	require.NoError(tf.t, err)
-	tf.ks.Mu.RLock()
-	require.NoError(tf.t, tf.ks.WaitForRevision(context.Background(), etcdResp.Header.Revision))
-	tf.ks.Mu.RUnlock()
-
 }
