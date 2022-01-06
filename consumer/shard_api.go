@@ -202,8 +202,10 @@ func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (
 		assignments := state.Assignments.Prefixed(allocator.ItemAssignmentsPrefix(state.KS, shard.String()))
 		primaryAssignment, primaryKv, err := findAssignmentAtSlot(assignments, 0)
 		if err != nil {
-			return resp, err
+			// There's currently no assignment for this shard, so there's nothing to unassign.
+			continue
 		} else if req.OnlyFailed && primaryAssignment.AssignmentValue.(*pc.ReplicaStatus).Code != pc.ReplicaStatus_FAILED {
+			// We're only removing failed shards, and this one does not qualify.
 			continue
 		}
 
