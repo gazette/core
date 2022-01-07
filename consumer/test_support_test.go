@@ -262,18 +262,13 @@ func newTestFixture(t require.TestingT) (*testFixture, func()) {
 
 func newTestFixtureWithIdleShard(t require.TestingT) (*testFixture, *shard, func()) {
 	var tf, cleanup = newTestFixture(t)
+	var restoreShardTransitions = disableShardTransitions()
 
-	var realTransition = transition
-	transition = func(s *shard, item, assignment keyspace.KeyValue) {
-		s.resolved.spec = item.Decoded.(allocator.Item).ItemValue.(*pc.ShardSpec)
-		s.resolved.assignment = assignment
-	}
 	tf.allocateShard(makeShard(shardA), localID)
 
 	return tf, tf.resolver.shards[shardA], func() {
 		tf.allocateShard(makeShard(shardA)) // Remove assignment.
-
-		transition = realTransition
+		restoreShardTransitions()
 		cleanup()
 	}
 }

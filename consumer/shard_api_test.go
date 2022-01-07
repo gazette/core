@@ -427,6 +427,8 @@ func TestVerifyReferencedJournalsCases(t *testing.T) {
 func TestAPIUnassignCases(t *testing.T) {
 	var tf, cleanup = newTestFixture(t)
 	defer cleanup()
+	var restoreTransitions = disableShardTransitions()
+	defer restoreTransitions()
 
 	var specA = makeShard(shardA)
 	var specB = makeShard(shardB)
