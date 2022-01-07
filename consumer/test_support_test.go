@@ -329,7 +329,12 @@ func (f *testFixture) allocateShard(spec *pc.ShardSpec, assignments ...pb.Proces
 }
 
 func (f *testFixture) setReplicaStatus(spec *pc.ShardSpec, assignment pb.ProcessSpec_ID, slot int, code pc.ReplicaStatus_Code) {
-	var status = pc.ReplicaStatus{Code: code}
+	var errors []string
+	if code == pc.ReplicaStatus_FAILED {
+		// ReplicaStatus will validate that Errors is set for FAILED replicas.
+		errors = []string{"Replica explicitly FAILED by setReplicaStatus"}
+	}
+	var status = pc.ReplicaStatus{Code: code, Errors: errors}
 
 	var asn = allocator.Assignment{
 		ItemID:          spec.Id.String(),
