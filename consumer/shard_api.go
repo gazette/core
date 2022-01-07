@@ -204,12 +204,12 @@ func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (
 	for _, shard := range req.Shards {
 		assignments := state.Assignments.Prefixed(allocator.ItemAssignmentsPrefix(state.KS, shard.String()))
 		primaryAssignment, primaryKv, err := findAssignmentAtSlot(assignments, 0)
-		if err != nil {
-			// There's currently no assignment for this shard, so there's nothing to unassign.
-			continue
-		} else if req.OnlyFailed && primaryAssignment.AssignmentValue.(*pc.ReplicaStatus).Code != pc.ReplicaStatus_FAILED {
+		if req.OnlyFailed && (err == errNoAssignmentFound || primaryAssignment.AssignmentValue.(*pc.ReplicaStatus).Code != pc.ReplicaStatus_FAILED) {
 			// We're only removing failed shards, and this one does not qualify.
 			continue
+		} else if err != nil {
+			// There's currently no assignment for this shard, which is unexpected. Bail out and let the user sort it out.
+			return resp, err
 		}
 
 		if item, found := allocator.LookupItem(state.KS, shard.String()); !found {
@@ -377,5 +377,7 @@ func findAssignmentAtSlot(assignments keyspace.KeyValues, targetSlot int) (alloc
 		}
 	}
 
-	return allocator.Assignment{}, keyspace.KeyValue{}, fmt.Errorf("no assignment found")
+	return allocator.Assignment{}, keyspace.KeyValue{}, errNoAssignmentFound
 }
+
+var errNoAssignmentFound = fmt.Errorf("no assignment found")
