@@ -460,7 +460,7 @@ func TestAPIUnassignCases(t *testing.T) {
 
 	// Case: A shard with no prior assignments
 	resp, err := tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specA.Id}})
-	require.NoError(t, err)
+	require.Error(t, err, errNoAssignmentFound)
 	check(resp, specA, []pc.ShardID{}, []pc.ReplicaStatus{})
 
 	// Case: A shard with a single assignment
