@@ -185,7 +185,10 @@ func ShardGetHints(ctx context.Context, srv *Service, req *pc.GetHintsRequest) (
 }
 
 func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (*pc.UnassignResponse, error) {
-	var resp = &pc.UnassignResponse{Status: pc.Status_OK}
+	var resp = &pc.UnassignResponse{
+		Status: pc.Status_OK,
+		Shards: make([]pc.ShardID, 0),
+	}
 
 	if err := req.Validate(); err != nil {
 		return resp, err
@@ -220,6 +223,12 @@ func ShardUnassign(ctx context.Context, srv *Service, req *pc.UnassignRequest) (
 		var key = allocator.AssignmentKey(state.KS, primaryAssignment)
 		cmp = append(cmp, clientv3.Compare(clientv3.ModRevision(key), "=", primaryKv.Raw.ModRevision))
 		ops = append(ops, clientv3.OpDelete(key))
+
+		resp.Shards = append(resp.Shards, shard)
+	}
+
+	if req.DryRun {
+		return resp, nil
 	}
 
 	etcdResp, err := srv.Etcd.Txn(ctx).If(cmp...).Then(ops...).Commit()
