@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"time"
 
@@ -292,7 +293,7 @@ func servePrimary(s *shard) (err error) {
 func waitAndTearDown(s *shard, done func()) {
 	s.wg.Wait()
 
-	if s.store != nil {
+	if s.store != nil && !reflect.ValueOf(s.store).IsNil() {
 		s.store.Destroy()
 	}
 	done()

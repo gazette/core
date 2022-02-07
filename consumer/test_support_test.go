@@ -83,6 +83,7 @@ type testApplication struct {
 	finalizeErr          error         // Error returned by Application.FinalizeTxn().
 	startCommitErr       error         // Error returned by Store.StartCommit().
 	restoreCheckpointErr error         // Error returned by Store.RestoreCheckpoint().
+	nilStore             bool          // Whether the application initializes its store in Application.NewStore().
 	finishedCh           chan OpFuture // Signaled on FinishedTxn().
 	db                   *sql.DB       // "Remote" sqlite database.
 }
@@ -114,6 +115,8 @@ func (a *testApplication) NewStore(shard Shard, rec *recoverylog.Recorder) (Stor
 		return &errStore{app: a}, nil
 	} else if rec == nil {
 		return NewSQLStore(a.db), nil
+	} else if a.nilStore {
+		return NewJSONFileStore(rec, nil)
 	} else {
 		var state = make(map[string]string)
 		return NewJSONFileStore(rec, &state)
