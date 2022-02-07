@@ -273,6 +273,18 @@ func newTestFixtureWithIdleShard(t require.TestingT) (*testFixture, *shard, func
 	}
 }
 
+func disableShardTransitions() (reset func()) {
+	var realTransition = transition
+
+	transition = func(s *shard, item, assignment keyspace.KeyValue) {
+		// No-op
+	}
+
+	return func() {
+		transition = realTransition
+	}
+}
+
 func (f *testFixture) allocateShard(spec *pc.ShardSpec, assignments ...pb.ProcessSpec_ID) {
 	var revision = f.allocateShardNoWait(spec, assignments...)
 
