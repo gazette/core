@@ -20,7 +20,7 @@ var newAppendBuffer = func() (*appendBuffer, error) {
 		return nil, err
 	} else {
 		runtime.SetFinalizer(f, removeFileFinalizer)
-		var fb = &appendBuffer{file: f}
+		var fb = &appendBuffer{file: &file{f}}
 		fb.buf = bufio.NewWriterSize(fb, appendBufferSize)
 		return fb, nil
 	}

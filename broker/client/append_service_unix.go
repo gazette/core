@@ -20,8 +20,9 @@ var newAppendBuffer = func() (*appendBuffer, error) {
 	} else if err = os.Remove(f.Name()); err != nil {
 		return nil, err
 	} else {
-		var fb = &appendBuffer{file: f}
+		var fb = &appendBuffer{file: &file{f}}
 		fb.buf = bufio.NewWriterSize(fb, appendBufferSize)
 		return fb, nil
 	}
 }
+
