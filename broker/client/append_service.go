@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -559,7 +560,7 @@ type appendServiceCollector struct {
 	}
 }
 
-func (asc *appendServiceCollector) Register(file interface{Size() int64}) {
+func (asc *appendServiceCollector) Register(file interface{ Size() int64 }) {
 	asc.files = append(asc.files, file)
 }
 
