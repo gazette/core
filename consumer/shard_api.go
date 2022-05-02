@@ -128,6 +128,11 @@ func ShardApply(ctx context.Context, srv *Service, req *pc.ApplyRequest) (*pc.Ap
 		}
 	}
 
+	if len(ops) == 0 {
+		// No work to do.
+		return resp, nil
+	}
+
 	var txnResp, err = srv.Etcd.Do(ctx, clientv3.OpTxn(cmp, ops, nil))
 	if err != nil {
 		// Pass.
