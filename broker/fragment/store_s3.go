@@ -220,7 +220,6 @@ func (s *s3Backend) s3Client(ep *url.URL) (cfg S3StoreConfig, client *s3.S3, err
 	}
 
 	awsSession, err := session.NewSessionWithOptions(session.Options{
-		Config:  *awsConfig,
 		Profile: cfg.Profile,
 	})
 	if err != nil {
@@ -250,7 +249,7 @@ func (s *s3Backend) s3Client(ep *url.URL) (cfg S3StoreConfig, client *s3.S3, err
 		"providerName": creds.ProviderName,
 	}).Info("constructed new aws.Session")
 
-	client = s3.New(awsSession)
+	client = s3.New(awsSession, awsConfig)
 	s.clients[key] = client
 
 	return
