@@ -44,15 +44,14 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.7.0 // indirect
 	go.uber.org/zap v1.19.0 // indirect
-	golang.org/x/net v0.0.0-20210825183410-e898025ed96a
+	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210831042530-f4d43177bf5e // indirect
-	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
+	golang.org/x/text v0.3.8 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	google.golang.org/api v0.56.0
 	google.golang.org/grpc v1.40.0
-	google.golang.org/protobuf v1.27.1 // indirect
+	google.golang.org/protobuf v1.27.1
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.0.0-20190620073856-dcce3486da33
