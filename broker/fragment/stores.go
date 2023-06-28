@@ -47,7 +47,7 @@ func getBackend(scheme string) backend {
 		return sharedStores.s3
 	case "gs":
 		return sharedStores.gcs
-	case "azure":
+	case "azure", "azure-ad":
 		return sharedStores.azure
 	case "file":
 		return sharedStores.fs

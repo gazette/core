@@ -11,12 +11,18 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
 )
 
-// AzureStoreConfig configures a Fragment store of the "azure://" scheme.
+// AzureStoreConfig configures a Fragment store of the "azure://" or "azure-ad://" scheme.
 // It is initialized from parsed URL parametrs of the pb.FragmentStore
 type AzureStoreConfig struct {
 	bucket string // in Azure buckets are called "containers"
@@ -29,7 +35,7 @@ type azureBackend struct {
 	endpoint    string
 	accountName string
 	client      pipeline.Pipeline
-	credentials *azblob.SharedKeyCredential
+	svcClient   service.Client
 	clientMu    sync.Mutex
 }
 
@@ -37,22 +43,40 @@ func (a *azureBackend) Provider() string {
 	return "azure"
 }
 
+// https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/storage/azblob/service/examples_test.go#L285
 func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
 	cfg, _, err := a.azureClient(ep)
 	if err != nil {
 		return "", err
 	}
 	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
-	sasQueryParams, err := azblob.BlobSASSignatureValues{
-		Protocol:      azblob.SASProtocolHTTPS, // Users MUST use HTTPS (not HTTP)
-		ExpiryTime:    time.Now().UTC().Add(d), // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
+
+	// Set current and past time and create key
+	currentTime := time.Now().UTC().Add(-10 * time.Second)
+	expTime := currentTime.Add(d)
+	info := service.KeyInfo{
+		Start:  to.Ptr(currentTime.UTC().Format(sas.TimeFormat)),
+		Expiry: to.Ptr(expTime.UTC().Format(sas.TimeFormat)),
+	}
+
+	udc, err := a.svcClient.GetUserDelegationCredential(context.Background(), info, nil)
+
+	if err != nil {
+		return "", err
+	}
+
+	sasQueryParams, err := sas.BlobSignatureValues{
+		Protocol:      sas.ProtocolHTTPS, // Users MUST use HTTPS (not HTTP)
+		StartTime:     currentTime,
+		ExpiryTime:    expTime, // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
 		ContainerName: cfg.bucket,
 		BlobName:      blobName,
 
 		// To produce a container SAS (as opposed to a blob SAS), assign to Permissions using
 		// ContainerSASPermissions and make sure the BlobName field is "" (the default).
-		Permissions: azblob.BlobSASPermissions{Add: true, Read: true, Write: true}.String(),
-	}.NewSASQueryParameters(a.credentials)
+		Permissions: to.Ptr(sas.ContainerPermissions{Read: true, Add: true, Write: true}).String(),
+	}.SignWithUserDelegation(udc)
+
 	if err != nil {
 		return "", err
 	}
@@ -167,6 +191,24 @@ func (a *azureBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	return err
 }
 
+// https://gist.github.com/ItalyPaleAle/ec6498bfa81a96f9ca27a2da6f60a770
+func GetAzureStorageCredential(coreCredential azcore.TokenCredential) (azblob.TokenCredential, error) {
+	var tokenRefresher azblob.TokenRefresher
+	tokenRefresher = func(credential azblob.TokenCredential) time.Duration {
+		accessToken, err := coreCredential.GetToken(context.Background(), policy.TokenRequestOptions{Scopes: []string{"https://storage.azure.com/.default"}})
+		if err != nil {
+			panic(err)
+		}
+		credential.SetToken(accessToken.Token)
+
+		exp := accessToken.ExpiresOn.Sub(time.Now().Add(2 * time.Minute))
+		return exp
+	}
+
+	credential := azblob.NewTokenCredential("", tokenRefresher)
+	return credential, nil
+}
+
 func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pipeline.Pipeline, err error) {
 	if err = parseStoreArgs(ep, &cfg); err != nil {
 		return
@@ -183,17 +225,48 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 		return
 	}
 
+	var credentials azblob.Credential
+
 	accountName := os.Getenv("AZURE_ACCOUNT_NAME")
-	accountKey := os.Getenv("AZURE_ACCOUNT_KEY")
-	credentials, err := azblob.NewSharedKeyCredential(accountName, accountKey)
-	if err != nil {
-		return
+	a.endpoint = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
+
+	if ep.Scheme == "azure" {
+		accountKey := os.Getenv("AZURE_ACCOUNT_KEY")
+		sharedKeyCred, cred_err := service.NewSharedKeyCredential(accountName, accountKey)
+		if cred_err != nil {
+			return cfg, nil, cred_err
+		}
+		serviceClient, cred_err := service.NewClientWithSharedKeyCredential(a.endpoint, sharedKeyCred, &service.ClientOptions{})
+		if cred_err != nil {
+			return cfg, nil, cred_err
+		}
+		a.svcClient = *serviceClient
+		// azblob SharedKeyCredential is apparently different from service SharedKeyCredential
+		credentials, cred_err = azblob.NewSharedKeyCredential(accountName, accountKey)
+		if cred_err != nil {
+			return cfg, nil, cred_err
+		}
+	} else if ep.Scheme == "azure-ad" {
+		// https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication-service-principal?tabs=azure-cli#-option-1-authenticate-with-a-secret
+		tenantId := os.Getenv("AZURE_TENANT_ID")
+		clientId := os.Getenv("AZURE_CLIENT_ID")
+		clientSecret := os.Getenv("AZURE_CLIENT_SECRET")
+
+		identityCreds, cred_err := azidentity.NewClientSecretCredential(tenantId, clientId, clientSecret, &azidentity.ClientSecretCredentialOptions{AdditionallyAllowedTenants: []string{"*"}})
+		if cred_err != nil {
+			return cfg, nil, cred_err
+		}
+
+		serviceClient, cred_err := service.NewClient(a.endpoint, identityCreds, &service.ClientOptions{})
+		if cred_err != nil {
+			return cfg, nil, cred_err
+		}
+		a.svcClient = *serviceClient
 	}
+
 	client = azblob.NewPipeline(credentials, azblob.PipelineOptions{})
 	a.client = client
-	a.credentials = credentials
 	a.accountName = accountName
-	a.endpoint = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
 
 	log.WithFields(log.Fields{
 		"Account Name": accountName,

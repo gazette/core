@@ -47,7 +47,7 @@ func (fs FragmentStore) parse() (*url.URL, error) {
 	}
 
 	switch url.Scheme {
-	case "s3", "gs", "azure":
+	case "s3", "gs", "azure", "azure-ad":
 		if url.Host == "" {
 			return nil, NewValidationError("missing bucket (%s)", fs)
 		}
