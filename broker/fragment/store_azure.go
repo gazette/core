@@ -37,10 +37,34 @@ type azureBackend struct {
 	client      pipeline.Pipeline
 	svcClient   service.Client
 	clientMu    sync.Mutex
+	udc         *service.UserDelegationCredential
+	udc_exp     *time.Time
 }
 
 func (a *azureBackend) Provider() string {
 	return "azure"
+}
+
+// Cache UserDelegationCredentials and refresh them when needed
+func (a *azureBackend) GetUserDelegationCredential() (*service.UserDelegationCredential, error) {
+	if a.udc == nil || (a.udc_exp != nil && a.udc_exp.After(time.Now().Add(time.Minute*10))) {
+		expTime := time.Now().Add(time.Hour * 24)
+		info := service.KeyInfo{
+			Start:  to.Ptr(time.Now().Add(time.Second * -10).UTC().Format(sas.TimeFormat)),
+			Expiry: to.Ptr(expTime.UTC().Format(sas.TimeFormat)),
+		}
+
+		udc, err := a.svcClient.GetUserDelegationCredential(context.Background(), info, nil)
+
+		if err != nil {
+			return nil, err
+		}
+
+		a.udc = udc
+		a.udc_exp = &expTime
+	}
+
+	return a.udc, nil
 }
 
 // https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/storage/azblob/service/examples_test.go#L285
@@ -51,24 +75,15 @@ func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duratio
 	}
 	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
 
-	// Set current and past time and create key
-	currentTime := time.Now().UTC().Add(-10 * time.Second)
-	expTime := currentTime.Add(d)
-	info := service.KeyInfo{
-		Start:  to.Ptr(currentTime.UTC().Format(sas.TimeFormat)),
-		Expiry: to.Ptr(expTime.UTC().Format(sas.TimeFormat)),
-	}
-
-	udc, err := a.svcClient.GetUserDelegationCredential(context.Background(), info, nil)
+	udc, err := a.GetUserDelegationCredential()
 
 	if err != nil {
 		return "", err
 	}
 
 	sasQueryParams, err := sas.BlobSignatureValues{
-		Protocol:      sas.ProtocolHTTPS, // Users MUST use HTTPS (not HTTP)
-		StartTime:     currentTime,
-		ExpiryTime:    expTime, // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
+		Protocol:      sas.ProtocolHTTPS,       // Users MUST use HTTPS (not HTTP)
+		ExpiryTime:    time.Now().UTC().Add(d), // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
 		ContainerName: cfg.bucket,
 		BlobName:      blobName,
 
@@ -191,10 +206,8 @@ func (a *azureBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	return err
 }
 
-// https://gist.github.com/ItalyPaleAle/ec6498bfa81a96f9ca27a2da6f60a770
 func GetAzureStorageCredential(coreCredential azcore.TokenCredential) (azblob.TokenCredential, error) {
-	var tokenRefresher azblob.TokenRefresher
-	tokenRefresher = func(credential azblob.TokenCredential) time.Duration {
+	var tokenRefresher = func(credential azblob.TokenCredential) time.Duration {
 		accessToken, err := coreCredential.GetToken(context.Background(), policy.TokenRequestOptions{Scopes: []string{"https://storage.azure.com/.default"}})
 		if err != nil {
 			panic(err)
@@ -231,20 +244,20 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 	a.endpoint = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
 
 	if ep.Scheme == "azure" {
-		accountKey := os.Getenv("AZURE_ACCOUNT_KEY")
-		sharedKeyCred, cred_err := service.NewSharedKeyCredential(accountName, accountKey)
-		if cred_err != nil {
-			return cfg, nil, cred_err
+		var accountKey = os.Getenv("AZURE_ACCOUNT_KEY")
+		sharedKeyCred, err := service.NewSharedKeyCredential(accountName, accountKey)
+		if err != nil {
+			return cfg, nil, err
 		}
-		serviceClient, cred_err := service.NewClientWithSharedKeyCredential(a.endpoint, sharedKeyCred, &service.ClientOptions{})
-		if cred_err != nil {
-			return cfg, nil, cred_err
+		serviceClient, err := service.NewClientWithSharedKeyCredential(a.endpoint, sharedKeyCred, &service.ClientOptions{})
+		if err != nil {
+			return cfg, nil, err
 		}
 		a.svcClient = *serviceClient
 		// azblob SharedKeyCredential is apparently different from service SharedKeyCredential
-		credentials, cred_err = azblob.NewSharedKeyCredential(accountName, accountKey)
-		if cred_err != nil {
-			return cfg, nil, cred_err
+		credentials, err = azblob.NewSharedKeyCredential(accountName, accountKey)
+		if err != nil {
+			return cfg, nil, err
 		}
 	} else if ep.Scheme == "azure-ad" {
 		// https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication-service-principal?tabs=azure-cli#-option-1-authenticate-with-a-secret
@@ -252,14 +265,14 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 		clientId := os.Getenv("AZURE_CLIENT_ID")
 		clientSecret := os.Getenv("AZURE_CLIENT_SECRET")
 
-		identityCreds, cred_err := azidentity.NewClientSecretCredential(tenantId, clientId, clientSecret, &azidentity.ClientSecretCredentialOptions{AdditionallyAllowedTenants: []string{"*"}})
-		if cred_err != nil {
-			return cfg, nil, cred_err
+		identityCreds, err := azidentity.NewClientSecretCredential(tenantId, clientId, clientSecret, &azidentity.ClientSecretCredentialOptions{AdditionallyAllowedTenants: []string{"*"}})
+		if err != nil {
+			return cfg, nil, err
 		}
 
-		serviceClient, cred_err := service.NewClient(a.endpoint, identityCreds, &service.ClientOptions{})
-		if cred_err != nil {
-			return cfg, nil, cred_err
+		serviceClient, err := service.NewClient(a.endpoint, identityCreds, &service.ClientOptions{})
+		if err != nil {
+			return cfg, nil, err
 		}
 		a.svcClient = *serviceClient
 	}
