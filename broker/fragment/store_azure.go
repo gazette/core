@@ -260,6 +260,12 @@ func (a *azureBackend) buildBlobURL(cfg AzureStoreConfig, client pipeline.Pipeli
 
 // Cache UserDelegationCredentials and refresh them when needed
 func (a *azureBackend) getUserDelegationCredential() (*service.UserDelegationCredential, error) {
+	// According to the Azure docs here:
+	// https://learn.microsoft.com/en-us/azure/active-directory/develop/configurable-token-lifetimes#access-tokens
+	// > The default lifetime of an access token is variable. When issued, an access token's default lifetime
+	// > is assigned a random value ranging between 60-90 minutes (75 minutes on average)
+	// We want to make sure we create a new credential well before the existing one expires
+	// So this gives us a 10 minute buffer before the credential expires to make a new one.
 	if a.udc == nil || (a.udcExp != nil && a.udcExp.After(time.Now().Add(time.Minute*10))) {
 		var expTime = time.Now().Add(time.Hour * 24)
 		var info = service.KeyInfo{
