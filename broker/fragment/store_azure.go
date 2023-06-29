@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
@@ -38,35 +36,14 @@ type azureBackend struct {
 	svcClient   service.Client
 	clientMu    sync.Mutex
 	udc         *service.UserDelegationCredential
-	udc_exp     *time.Time
+	udcExp      *time.Time
 }
 
 func (a *azureBackend) Provider() string {
 	return "azure"
 }
 
-// Cache UserDelegationCredentials and refresh them when needed
-func (a *azureBackend) GetUserDelegationCredential() (*service.UserDelegationCredential, error) {
-	if a.udc == nil || (a.udc_exp != nil && a.udc_exp.After(time.Now().Add(time.Minute*10))) {
-		expTime := time.Now().Add(time.Hour * 24)
-		info := service.KeyInfo{
-			Start:  to.Ptr(time.Now().Add(time.Second * -10).UTC().Format(sas.TimeFormat)),
-			Expiry: to.Ptr(expTime.UTC().Format(sas.TimeFormat)),
-		}
-
-		udc, err := a.svcClient.GetUserDelegationCredential(context.Background(), info, nil)
-
-		if err != nil {
-			return nil, err
-		}
-
-		a.udc = udc
-		a.udc_exp = &expTime
-	}
-
-	return a.udc, nil
-}
-
+// See here for an example of how to use the Azure client libraries to create signatures:
 // https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/storage/azblob/service/examples_test.go#L285
 func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
 	cfg, _, err := a.azureClient(ep)
@@ -75,8 +52,7 @@ func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duratio
 	}
 	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
 
-	udc, err := a.GetUserDelegationCredential()
-
+	udc, err := a.getUserDelegationCredential()
 	if err != nil {
 		return "", err
 	}
@@ -206,22 +182,6 @@ func (a *azureBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	return err
 }
 
-func GetAzureStorageCredential(coreCredential azcore.TokenCredential) (azblob.TokenCredential, error) {
-	var tokenRefresher = func(credential azblob.TokenCredential) time.Duration {
-		accessToken, err := coreCredential.GetToken(context.Background(), policy.TokenRequestOptions{Scopes: []string{"https://storage.azure.com/.default"}})
-		if err != nil {
-			panic(err)
-		}
-		credential.SetToken(accessToken.Token)
-
-		exp := accessToken.ExpiresOn.Sub(time.Now().Add(2 * time.Minute))
-		return exp
-	}
-
-	credential := azblob.NewTokenCredential("", tokenRefresher)
-	return credential, nil
-}
-
 func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pipeline.Pipeline, err error) {
 	if err = parseStoreArgs(ep, &cfg); err != nil {
 		return
@@ -260,6 +220,7 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 			return cfg, nil, err
 		}
 	} else if ep.Scheme == "azure-ad" {
+		// Link to the Azure docs describing what fields are required for active directory auth
 		// https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication-service-principal?tabs=azure-cli#-option-1-authenticate-with-a-secret
 		tenantId := os.Getenv("AZURE_TENANT_ID")
 		clientId := os.Getenv("AZURE_CLIENT_ID")
@@ -295,4 +256,25 @@ func (a *azureBackend) buildBlobURL(cfg AzureStoreConfig, client pipeline.Pipeli
 	}
 	blobURL := azblob.NewBlockBlobURL(*u, client)
 	return &blobURL, nil
+}
+
+// Cache UserDelegationCredentials and refresh them when needed
+func (a *azureBackend) getUserDelegationCredential() (*service.UserDelegationCredential, error) {
+	if a.udc == nil || (a.udcExp != nil && a.udcExp.After(time.Now().Add(time.Minute*10))) {
+		var expTime = time.Now().Add(time.Hour * 24)
+		var info = service.KeyInfo{
+			Start:  to.Ptr(time.Now().Add(time.Second * -10).UTC().Format(sas.TimeFormat)),
+			Expiry: to.Ptr(expTime.UTC().Format(sas.TimeFormat)),
+		}
+
+		udc, err := a.svcClient.GetUserDelegationCredential(context.Background(), info, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		a.udc = udc
+		a.udcExp = &expTime
+	}
+
+	return a.udc, nil
 }
