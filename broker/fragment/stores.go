@@ -189,14 +189,13 @@ func evalPathPostfix(spool Spool, spec *pb.JournalSpec) (string, error) {
 // in the implementation of new journal naming taxonomies which don't disrupt
 // journal fragments that are already written.
 //
-//      var cfg = RewriterConfig{
-//          Replace: "/old-path/page-views/
-//          Find:    "/bar/v1/page-views/",
-//      }
-//      // Remaps journal name => fragment store URL:
-//      //  "/foo/bar/v1/page-views/part-000" => "s3://my-bucket/foo/old-path/page-views/part-000" // Matched.
-//      //  "/foo/bar/v2/page-views/part-000" => "s3://my-bucket/foo/bar/v2/page-views/part-000"   // Not matched.
-//
+//	var cfg = RewriterConfig{
+//	    Replace: "/old-path/page-views/
+//	    Find:    "/bar/v1/page-views/",
+//	}
+//	// Remaps journal name => fragment store URL:
+//	//  "/foo/bar/v1/page-views/part-000" => "s3://my-bucket/foo/old-path/page-views/part-000" // Matched.
+//	//  "/foo/bar/v2/page-views/part-000" => "s3://my-bucket/foo/bar/v2/page-views/part-000"   // Not matched.
 type RewriterConfig struct {
 	// Find is the string to replace in the unmodified journal name.
 	Find string
