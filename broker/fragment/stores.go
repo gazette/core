@@ -159,8 +159,15 @@ func parseStoreArgs(ep *url.URL, args interface{}) error {
 }
 
 func instrumentStoreOp(provider, op string, err error) {
+	// It appears that `errors.Cause` can sometimes return nil
+	// even when the provided `err` value is non-nil
+	var cause = errors.Cause(err)
 	if err != nil {
-		storeRequestTotal.WithLabelValues(provider, op, errors.Cause(err).Error()).Inc()
+		if cause != nil {
+			storeRequestTotal.WithLabelValues(provider, op, cause.Error()).Inc()
+		} else {
+			storeRequestTotal.WithLabelValues(provider, op, err.Error()).Inc()
+		}
 	} else {
 		storeRequestTotal.WithLabelValues(provider, op, "ok").Inc()
 	}

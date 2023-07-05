@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
@@ -23,20 +25,29 @@ import (
 // AzureStoreConfig configures a Fragment store of the "azure://" or "azure-ad://" scheme.
 // It is initialized from parsed URL parametrs of the pb.FragmentStore
 type AzureStoreConfig struct {
-	bucket string // in Azure buckets are called "containers"
-	prefix string
+	accountTenantID string // The tenant ID that owns the storage account that we're writing into
+	// NOTE: This is not the tenant ID that owns the servie principal
+	storageAccountName string // Storage accounts in Azure are the equivalent to a "bucket" in S3
+	containerName      string // In azure, blobs are stored inside of containers, which live inside accounts
+	prefix             string // This is the path prefix for the blobs inside the container
 
 	RewriterConfig
 }
 
+func (cfg *AzureStoreConfig) serviceUrl() string {
+	return fmt.Sprintf("https://%s.blob.core.windows.net", cfg.storageAccountName)
+}
+
+func (cfg *AzureStoreConfig) containerURL() string {
+	return fmt.Sprintf("%s/%s", cfg.serviceUrl(), cfg.containerName)
+}
+
 type azureBackend struct {
-	endpoint    string
-	accountName string
-	client      pipeline.Pipeline
-	svcClient   service.Client
-	clientMu    sync.Mutex
-	udc         *service.UserDelegationCredential
-	udcExp      *time.Time
+	client    pipeline.Pipeline
+	svcClient service.Client
+	clientMu  sync.Mutex
+	udc       *service.UserDelegationCredential
+	udcExp    *time.Time
 }
 
 func (a *azureBackend) Provider() string {
@@ -60,7 +71,7 @@ func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duratio
 	sasQueryParams, err := sas.BlobSignatureValues{
 		Protocol:      sas.ProtocolHTTPS,       // Users MUST use HTTPS (not HTTP)
 		ExpiryTime:    time.Now().UTC().Add(d), // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
-		ContainerName: cfg.bucket,
+		ContainerName: cfg.containerName,
 		BlobName:      blobName,
 
 		// To produce a container SAS (as opposed to a blob SAS), assign to Permissions using
@@ -71,7 +82,7 @@ func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duratio
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s?%s", a.accountName, cfg.bucket, blobName, sasQueryParams.Encode()), nil
+	return fmt.Sprintf("%s/%s/%s?%s", cfg.containerURL(), cfg.prefix, blobName, sasQueryParams.Encode()), nil
 }
 
 func (a *azureBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (bool, error) {
@@ -140,7 +151,7 @@ func (a *azureBackend) List(ctx context.Context, store pb.FragmentStore, ep *url
 	if err != nil {
 		return err
 	}
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/"))
+	u, err := url.Parse(cfg.containerURL())
 	if err != nil {
 		return err
 	}
@@ -155,9 +166,16 @@ func (a *azureBackend) List(ctx context.Context, store pb.FragmentStore, ep *url
 			if strings.HasSuffix(blob.Name, "/") {
 				//Ignore directory-like objects, usually created by mounting buckets with a FUSE driver.
 			} else if frag, err := pb.ParseFragmentFromRelativePath(journal, blob.Name[len(*segmentList.Prefix):]); err != nil {
-				log.WithFields(log.Fields{"bucket": cfg.bucket, "name": blob.Name, "err": err}).Warning("parsing fragment")
+				log.WithFields(log.Fields{
+					"storageAccountName": cfg.storageAccountName,
+					"name":               blob.Name,
+					"err":                err,
+				}).Warning("parsing fragment")
 			} else if *(blob.Properties.ContentLength) == 0 && frag.ContentLength() > 0 {
-				log.WithFields(log.Fields{"bucket": cfg.bucket, "name": blob.Name}).Warning("zero-length fragment")
+				log.WithFields(log.Fields{
+					"storageAccountName": cfg.storageAccountName,
+					"name":               blob.Name,
+				}).Warning("zero-length fragment")
 			} else {
 				frag.ModTime = blob.Properties.LastModified.Unix()
 				frag.BackingStore = store
@@ -182,13 +200,37 @@ func (a *azureBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	return err
 }
 
+// Turns an `azcore.TokenCredential` into an auto-refreshing `azblob.TokenCredential`
+// This is useful for turning credentials coming from e.g `azidentity` into
+// credentials that can be used with `azblob` Pipelines.
+func getAzureStorageCredential(coreCredential azcore.TokenCredential, tenant string) (azblob.TokenCredential, error) {
+	var tokenRefresher = func(credential azblob.TokenCredential) time.Duration {
+		accessToken, err := coreCredential.GetToken(context.Background(), policy.TokenRequestOptions{TenantID: tenant, Scopes: []string{"https://storage.azure.com/.default"}})
+		if err != nil {
+			panic(err)
+		}
+		credential.SetToken(accessToken.Token)
+
+		// Give 60s of padding in order to make sure we always have a non-expired token.
+		// If we didn't do this, we would *begin* the refresh process as the token expires,
+		// potentially leaving any consumer with an expired token while we fetch a new one.
+		exp := accessToken.ExpiresOn.Sub(time.Now().Add(time.Minute))
+		return exp
+	}
+
+	credential := azblob.NewTokenCredential("", tokenRefresher)
+	return credential, nil
+}
+
 func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pipeline.Pipeline, err error) {
 	if err = parseStoreArgs(ep, &cfg); err != nil {
 		return
 	}
 	// Omit leading slash from bucket prefix. Note that FragmentStore already
 	// enforces that URL Paths end in '/'.
-	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
+	var splitPath = strings.Split(ep.Path[1:], "/")
+
+	cfg.accountTenantID, cfg.storageAccountName, cfg.containerName, cfg.prefix = ep.Host, splitPath[0], splitPath[1], strings.Join(splitPath[2:], "/")
 
 	a.clientMu.Lock()
 	defer a.clientMu.Unlock()
@@ -200,21 +242,19 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 
 	var credentials azblob.Credential
 
-	accountName := os.Getenv("AZURE_ACCOUNT_NAME")
-	a.endpoint = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
-
 	if ep.Scheme == "azure" {
+		var accountName = os.Getenv("AZURE_ACCOUNT_NAME")
 		var accountKey = os.Getenv("AZURE_ACCOUNT_KEY")
 		sharedKeyCred, err := service.NewSharedKeyCredential(accountName, accountKey)
 		if err != nil {
 			return cfg, nil, err
 		}
-		serviceClient, err := service.NewClientWithSharedKeyCredential(a.endpoint, sharedKeyCred, &service.ClientOptions{})
+		serviceClient, err := service.NewClientWithSharedKeyCredential(cfg.serviceUrl(), sharedKeyCred, &service.ClientOptions{})
 		if err != nil {
 			return cfg, nil, err
 		}
 		a.svcClient = *serviceClient
-		// azblob SharedKeyCredential is apparently different from service SharedKeyCredential
+		// Create an azblob credential that we can pass to `NewPipeline`
 		credentials, err = azblob.NewSharedKeyCredential(accountName, accountKey)
 		if err != nil {
 			return cfg, nil, err
@@ -226,31 +266,45 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 		clientId := os.Getenv("AZURE_CLIENT_ID")
 		clientSecret := os.Getenv("AZURE_CLIENT_SECRET")
 
-		identityCreds, err := azidentity.NewClientSecretCredential(tenantId, clientId, clientSecret, &azidentity.ClientSecretCredentialOptions{AdditionallyAllowedTenants: []string{"*"}})
+		identityCreds, err := azidentity.NewClientSecretCredential(
+			tenantId,
+			clientId,
+			clientSecret,
+			&azidentity.ClientSecretCredentialOptions{
+				AdditionallyAllowedTenants: []string{"*"},
+				DisableInstanceDiscovery:   true,
+			},
+		)
 		if err != nil {
 			return cfg, nil, err
 		}
 
-		serviceClient, err := service.NewClient(a.endpoint, identityCreds, &service.ClientOptions{})
+		serviceClient, err := service.NewClient(cfg.serviceUrl(), identityCreds, &service.ClientOptions{})
 		if err != nil {
 			return cfg, nil, err
 		}
 		a.svcClient = *serviceClient
+
+		credentials, err = getAzureStorageCredential(identityCreds, cfg.accountTenantID)
+		if err != nil {
+			return cfg, nil, err
+		}
 	}
 
 	client = azblob.NewPipeline(credentials, azblob.PipelineOptions{})
 	a.client = client
-	a.accountName = accountName
 
 	log.WithFields(log.Fields{
-		"Account Name": accountName,
+		"Storage Account Name":   cfg.storageAccountName,
+		"Storage Container Name": cfg.containerName,
+		"Path Prefix":            cfg.prefix,
 	}).Info("constructed new Azure Storage client")
 
-	return
+	return cfg, client, nil
 }
 
 func (a *azureBackend) buildBlobURL(cfg AzureStoreConfig, client pipeline.Pipeline, path string) (*azblob.BlockBlobURL, error) {
-	u, err := url.Parse(fmt.Sprint(a.endpoint, cfg.bucket, "/", cfg.rewritePath(cfg.prefix, path)))
+	u, err := url.Parse(fmt.Sprint(cfg.containerURL(), "/", cfg.rewritePath(cfg.prefix, path)))
 	if err != nil {
 		return nil, err
 	}
