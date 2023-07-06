@@ -262,16 +262,15 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 	} else if ep.Scheme == "azure-ad" {
 		// Link to the Azure docs describing what fields are required for active directory auth
 		// https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication-service-principal?tabs=azure-cli#-option-1-authenticate-with-a-secret
-		tenantId := os.Getenv("AZURE_TENANT_ID")
 		clientId := os.Getenv("AZURE_CLIENT_ID")
 		clientSecret := os.Getenv("AZURE_CLIENT_SECRET")
 
 		identityCreds, err := azidentity.NewClientSecretCredential(
-			tenantId,
+			cfg.accountTenantID,
 			clientId,
 			clientSecret,
 			&azidentity.ClientSecretCredentialOptions{
-				AdditionallyAllowedTenants: []string{"*"},
+				AdditionallyAllowedTenants: []string{cfg.accountTenantID},
 				DisableInstanceDiscovery:   true,
 			},
 		)
