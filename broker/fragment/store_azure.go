@@ -43,7 +43,7 @@ func (cfg *AzureStoreConfig) containerURL() string {
 }
 
 type azureBackend struct {
-	client    pipeline.Pipeline
+	clients   map[string]pipeline.Pipeline
 	svcClient service.Client
 	clientMu  sync.Mutex
 	udc       *service.UserDelegationCredential
@@ -235,8 +235,8 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 	a.clientMu.Lock()
 	defer a.clientMu.Unlock()
 
-	if a.client != nil {
-		client = a.client
+	if a.clients[cfg.accountTenantID] != nil {
+		client = a.clients[cfg.accountTenantID]
 		return
 	}
 
@@ -262,8 +262,8 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 	} else if ep.Scheme == "azure-ad" {
 		// Link to the Azure docs describing what fields are required for active directory auth
 		// https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication-service-principal?tabs=azure-cli#-option-1-authenticate-with-a-secret
-		clientId := os.Getenv("AZURE_CLIENT_ID")
-		clientSecret := os.Getenv("AZURE_CLIENT_SECRET")
+		var clientId = os.Getenv("AZURE_CLIENT_ID")
+		var clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
 
 		identityCreds, err := azidentity.NewClientSecretCredential(
 			cfg.accountTenantID,
@@ -291,12 +291,12 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 	}
 
 	client = azblob.NewPipeline(credentials, azblob.PipelineOptions{})
-	a.client = client
+	a.clients[cfg.accountTenantID] = client
 
 	log.WithFields(log.Fields{
-		"Storage Account Name":   cfg.storageAccountName,
-		"Storage Container Name": cfg.containerName,
-		"Path Prefix":            cfg.prefix,
+		"storageAccountName":   cfg.storageAccountName,
+		"storageContainerName": cfg.containerName,
+		"pathPrefix":           cfg.prefix,
 	}).Info("constructed new Azure Storage client")
 
 	return cfg, client, nil
