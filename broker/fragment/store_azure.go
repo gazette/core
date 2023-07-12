@@ -230,7 +230,16 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 	// enforces that URL Paths end in '/'.
 	var splitPath = strings.Split(ep.Path[1:], "/")
 
-	cfg.accountTenantID, cfg.storageAccountName, cfg.containerName, cfg.prefix = ep.Host, splitPath[0], splitPath[1], strings.Join(splitPath[2:], "/")
+	if ep.Scheme == "azure" {
+		// Since only one non-ad "Shared Key" credential can be injected via
+		// environment variables, we should only keep around one client for
+		// all `azure://` requests.
+		cfg.accountTenantID = "AZURE_SHARED_KEY"
+		cfg.storageAccountName = os.Getenv("AZURE_ACCOUNT_NAME")
+		cfg.containerName, cfg.prefix = ep.Host, ep.Path[1:]
+	} else if ep.Scheme == "azure-ad" {
+		cfg.accountTenantID, cfg.storageAccountName, cfg.containerName, cfg.prefix = ep.Host, splitPath[0], splitPath[1], strings.Join(splitPath[2:], "/")
+	}
 
 	a.clientMu.Lock()
 	defer a.clientMu.Unlock()
@@ -291,6 +300,9 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 	}
 
 	client = azblob.NewPipeline(credentials, azblob.PipelineOptions{})
+	if a.clients == nil {
+		a.clients = make(map[string]pipeline.Pipeline)
+	}
 	a.clients[cfg.accountTenantID] = client
 
 	log.WithFields(log.Fields{
