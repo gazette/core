@@ -327,7 +327,11 @@ func (a *azureBackend) buildBlobURL(cfg AzureStoreConfig, client pipeline.Pipeli
 func (a *azureBackend) getUserDelegationCredential() (*service.UserDelegationCredential, error) {
 	// We want to make sure we create a new credential well before the existing one expires
 	// So this gives us a 60 second buffer before the credential expires to make a new one.
-	if a.udc == nil || (a.udcExp != nil && a.udcExp.After(time.Now().Add(time.Minute))) {
+
+	// ----| NOW |------|NOW+1Min|-----| udcExp |---- No need to refresh
+	// ----| NOW  |-----| udcExp |-----|NOW+1Min|---- Need to refresh
+	// ----|udcExp|-----|  NOW   | ------------------ Need to refresh
+	if a.udc == nil || (a.udcExp != nil && a.udcExp.Before(time.Now().Add(time.Minute))) {
 		var expTime = time.Now().Add(time.Hour * 24)
 		var info = service.KeyInfo{
 			Start:  to.Ptr(time.Now().Add(time.Second * -10).UTC().Format(sas.TimeFormat)),
