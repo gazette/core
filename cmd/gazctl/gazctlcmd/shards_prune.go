@@ -44,32 +44,52 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 	startup(ShardsCfg.BaseConfig)
 
 	var ctx = context.Background()
-	var m = shardsPruneMetrics{}
-	var logSegmentSets = make(map[pb.Journal]recoverylog.SegmentSet)
+	var rsc = ShardsCfg.Consumer.MustRoutedShardClient(ctx)
+	var rjc = ShardsCfg.Broker.MustRoutedJournalClient(ctx)
 
-	for _, shard := range listShards(cmd.Selector).Shards {
-		m.shardsTotal++
-		var lastHints = fetchOldestHints(ctx, shard.Spec.Id)
+	var metrics = shardsPruneMetrics{}
+	var logSegmentSets = make(map[pb.Journal]recoverylog.SegmentSet)
+	var skipRecoveryLogs = make(map[pb.Journal]bool)
+
+	for _, shard := range listShards(rsc, cmd.Selector).Shards {
+		metrics.shardsTotal++
+		var lastHints = fetchOldestHints(ctx, rsc, shard.Spec.Id)
+		var recoveryLog = shard.Spec.RecoveryLog()
 
 		// We require that we see hints for _all_ shards before we may make _any_ deletions.
 		// This is because shards could technically include segments from any log,
 		// and without comprehensive hints which are proof-positive that _no_ shard
 		// references a given journal fragment, we cannot be sure it's safe to remove.
-		if lastHints == nil {
-			log.Fatalf("shard %s has not written backup hints required for pruning; cannot continue", shard.Spec.Id)
-		} else if len(lastHints.LiveNodes) == 0 {
-			log.Fatalf("shard %s hints have no live files; cannot continue", shard.Spec.Id)
+		// For this reason, we must track the journals to be skipped, so we can be sure
+		// we don't prune journals that are used by a shard that hasn't persisted hints.
+		if lastHints != nil && len(lastHints.LiveNodes) > 0 {
+			foldHintsIntoSegments(*lastHints, logSegmentSets)
+		} else {
+			skipRecoveryLogs[recoveryLog] = true
+			metrics.skippedJournals++
+			var reason = "has not written backup hints required for pruning"
+			if lastHints != nil {
+				reason = "hints have no live files"
+			}
+			log.WithFields(log.Fields{
+				"shard":   shard.Spec.Id,
+				"reason":  reason,
+				"journal": recoveryLog,
+			}).Warn("will skip pruning recovery log journal")
 		}
-
-		foldHintsIntoSegments(*lastHints, logSegmentSets)
 	}
 
 	for journal, segments := range logSegmentSets {
-		for _, f := range fetchFragments(ctx, journal) {
+		if skipRecoveryLogs[journal] {
+			log.WithField("journal", journal).Warn("skipping journal because another shard is missing hints that cover it")
+			continue
+		}
+		log.WithField("journal", journal).Debug("checking fragments of journal")
+		for _, f := range fetchFragments(ctx, rjc, journal) {
 			var spec = f.Spec
 
-			m.fragmentsTotal++
-			m.bytesTotal += spec.ContentLength()
+			metrics.fragmentsTotal++
+			metrics.bytesTotal += spec.ContentLength()
 
 			if len(segments.Intersect(journal, spec.Begin, spec.End)) == 0 {
 				log.WithFields(log.Fields{
@@ -79,26 +99,26 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 					"mod":  spec.ModTime,
 				}).Info("pruning fragment")
 
-				m.fragmentsPruned++
-				m.bytesPruned += spec.ContentLength()
+				metrics.fragmentsPruned++
+				metrics.bytesPruned += spec.ContentLength()
 
 				if !cmd.DryRun {
 					mbp.Must(fragment.Remove(ctx, spec), "error removing fragment", "path", spec.ContentPath())
 				}
 			}
 		}
-		logShardsPruneMetrics(m, journal.String(), "finished pruning log")
+		logShardsPruneMetrics(metrics, journal.String(), "finished pruning log")
 	}
-	logShardsPruneMetrics(m, "", "finished pruning logs for all shards")
+	logShardsPruneMetrics(metrics, "", "finished pruning logs for all shards")
 	return nil
 }
 
-func fetchOldestHints(ctx context.Context, id pc.ShardID) *recoverylog.FSMHints {
+func fetchOldestHints(ctx context.Context, shardClient pc.ShardClient, id pc.ShardID) *recoverylog.FSMHints {
 	var req = &pc.GetHintsRequest{
 		Shard: id,
 	}
 
-	var resp, err = consumer.FetchHints(ctx, ShardsCfg.Consumer.MustShardClient(ctx), req)
+	var resp, err = consumer.FetchHints(ctx, shardClient, req)
 	mbp.Must(err, "failed to fetch hints")
 	if resp.Status != pc.Status_OK {
 		err = fmt.Errorf(resp.Status.String())
@@ -114,14 +134,13 @@ func fetchOldestHints(ctx context.Context, id pc.ShardID) *recoverylog.FSMHints 
 	return nil
 }
 
-func fetchFragments(ctx context.Context, journal pb.Journal) []pb.FragmentsResponse__Fragment {
+func fetchFragments(ctx context.Context, journalClient pb.RoutedJournalClient, journal pb.Journal) []pb.FragmentsResponse__Fragment {
 	var err error
 	var req = pb.FragmentsRequest{
 		Journal: journal,
 	}
-	var brokerClient = JournalsCfg.Broker.MustRoutedJournalClient(ctx)
 
-	resp, err := client.ListAllFragments(ctx, brokerClient, req)
+	resp, err := client.ListAllFragments(ctx, journalClient, req)
 	mbp.Must(err, "failed to fetch fragments")
 
 	return resp.Fragments
@@ -171,6 +190,7 @@ type shardsPruneMetrics struct {
 	fragmentsPruned int64
 	bytesTotal      int64
 	bytesPruned     int64
+	skippedJournals int64
 }
 
 func logShardsPruneMetrics(m shardsPruneMetrics, journal, message string) {
@@ -182,6 +202,7 @@ func logShardsPruneMetrics(m shardsPruneMetrics, journal, message string) {
 		"bytesTotal":      m.bytesTotal,
 		"bytesPruned":     m.bytesPruned,
 		"bytesKept":       m.bytesTotal - m.bytesPruned,
+		"skippedJournals": m.skippedJournals,
 	}
 	if journal != "" {
 		fields["journal"] = journal

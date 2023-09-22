@@ -62,8 +62,11 @@ func (s *KeySpaceSuite) TestLoadAndWatch(c *gc.C) {
 		map[string]int{"/two": 2, "/three": 4, "/foo": 5, "/raced": 999})
 }
 
-func (s *KeySpaceSuite) TestHeaderPatching(c *gc.C) {
-	var h epb.ResponseHeader
+func (s *KeySpaceSuite) TestHeaderChecking(c *gc.C) {
+	var h = epb.ResponseHeader{
+		ClusterId: 8675309,
+		Revision:  100,
+	}
 
 	var other = epb.ResponseHeader{
 		ClusterId: 8675309,
@@ -71,47 +74,27 @@ func (s *KeySpaceSuite) TestHeaderPatching(c *gc.C) {
 		Revision:  123,
 		RaftTerm:  232323,
 	}
-	c.Check(patchHeader(&h, other, true), gc.IsNil)
-	c.Check(h.ClusterId, gc.Equals, other.ClusterId)
-	c.Check(h.MemberId, gc.Equals, other.MemberId)
-	c.Check(h.Revision, gc.Equals, other.Revision)
-	c.Check(h.RaftTerm, gc.Equals, other.RaftTerm)
+	c.Check(checkHeader(&h, other), gc.IsNil)
 
 	other.MemberId = 222222
-	c.Check(patchHeader(&h, other, true), gc.IsNil)
-	c.Check(h.ClusterId, gc.Equals, other.ClusterId)
-	c.Check(h.MemberId, gc.Equals, other.MemberId)
-	c.Check(h.Revision, gc.Equals, other.Revision)
-	c.Check(h.RaftTerm, gc.Equals, other.RaftTerm)
-
-	// Revision must be equal.
-	other.Revision = 122
-	c.Check(patchHeader(&h, other, true), gc.ErrorMatches,
-		`etcd Revision mismatch \(expected >= 123, got 122\)`)
+	c.Check(checkHeader(&h, other), gc.IsNil)
 
 	other.Revision = 124
 	other.MemberId = 333333
 	other.RaftTerm = 3434343
-	c.Check(patchHeader(&h, other, false), gc.IsNil)
-	c.Check(h.ClusterId, gc.Equals, other.ClusterId)
-	c.Check(h.MemberId, gc.Equals, other.MemberId)
-	c.Check(h.Revision, gc.Equals, other.Revision)
-	c.Check(h.RaftTerm, gc.Equals, other.RaftTerm)
-
-	// Revision must be monotonically increasing.
-	c.Check(patchHeader(&h, other, false), gc.ErrorMatches,
-		`etcd Revision mismatch \(expected > 124, got 124\)`)
+	c.Check(checkHeader(&h, other), gc.IsNil)
 
 	// ClusterId cannot change.
 	other.Revision = 125
 	other.ClusterId = 1337
-	c.Check(patchHeader(&h, other, false), gc.ErrorMatches,
+	c.Check(checkHeader(&h, other), gc.ErrorMatches,
 		`etcd ClusterID mismatch \(expected 8675309, got 1337\)`)
 }
 
 func (s *KeySpaceSuite) TestWatchResponseApply(c *gc.C) {
 	var ks = NewKeySpace("/", testDecoder)
-
+	// Normally the Header is populated during `Load`, so we simulate that setup here
+	ks.Header = epb.ResponseHeader{ClusterId: 9999, Revision: 9}
 	var resp = []clientv3.WatchResponse{{
 		Header: epb.ResponseHeader{ClusterId: 9999, Revision: 10},
 		Events: []*clientv3.Event{
@@ -145,6 +128,34 @@ func (s *KeySpaceSuite) TestWatchResponseApply(c *gc.C) {
 	}}
 	c.Check(ks.Apply(resp...), gc.ErrorMatches, `etcd ClusterID mismatch .*`)
 
+	// A response without any events results in a panic
+	resp = []clientv3.WatchResponse{{
+		Header: epb.ResponseHeader{ClusterId: 9999, Revision: 12},
+		Events: nil, // []*clientv3.Event{},
+	}}
+	c.Check(func() { ks.Apply(resp...) }, gc.PanicMatches, `runtime error: index out of range \[0\] with length 0`)
+
+	// Events with out-of-sequence mod revisions will result in an error, even if the header revision seems valid
+	resp = []clientv3.WatchResponse{{
+		Header: epb.ResponseHeader{ClusterId: 9999, Revision: 13},
+		Events: []*clientv3.Event{
+			putEvent("/some/key", "bad", 11, 11, 1),
+		},
+	}}
+	c.Check(ks.Apply(resp...), gc.ErrorMatches,
+		`received watch response with first ModRevision 11, which is <= last Revision 11`)
+
+	// WatchResponse with out-of-order inner events.
+	resp = []clientv3.WatchResponse{{
+		Header: epb.ResponseHeader{ClusterId: 9999, Revision: 13},
+		Events: []*clientv3.Event{
+			putEvent("/one/fish", "1", 13, 13, 1),
+			putEvent("/two/fish", "2", 12, 12, 1),
+		},
+	}}
+	c.Check(ks.Apply(resp...), gc.ErrorMatches,
+		`received watch response with last ModRevision 12 less than first ModRevision 13`)
+
 	// Multiple WatchResponses may be applied at once. Keys may be in any order,
 	// and mutated multiple times within the batch apply.
 	resp = []clientv3.WatchResponse{
@@ -167,10 +178,6 @@ func (s *KeySpaceSuite) TestWatchResponseApply(c *gc.C) {
 			},
 		},
 		{
-			Header: epb.ResponseHeader{ClusterId: 9999, Revision: 15},
-			Events: []*clientv3.Event{},
-		},
-		{
 			Header: epb.ResponseHeader{ClusterId: 9999, Revision: 16},
 			Events: []*clientv3.Event{
 				putEvent("/bbbb", "6666", 12, 16, 3),
@@ -179,40 +186,6 @@ func (s *KeySpaceSuite) TestWatchResponseApply(c *gc.C) {
 		},
 	}
 	c.Check(ks.Apply(resp...), gc.IsNil)
-
-	// A ProgressNotify WatchResponse does not move the Revision forward.
-	c.Check(ks.Apply(clientv3.WatchResponse{
-		Header: epb.ResponseHeader{ClusterId: 9999, Revision: 20},
-		Events: []*clientv3.Event{},
-	}), gc.IsNil)
-	c.Check(ks.Header.Revision, gc.Equals, int64(16))
-
-	// However, as a special case and unlike any other WatchResponse,
-	// a ProgressNotify is not *required* to increase the revision.
-	c.Check(ks.Apply(clientv3.WatchResponse{
-		Header: epb.ResponseHeader{ClusterId: 9999, Revision: 20},
-		Events: []*clientv3.Event{},
-	}), gc.IsNil)
-
-	// It's possible such a WatchResponse is queued & processed with
-	// a mutation which follows.Also ensure that a progress notify
-	// event batched with actual updates works as expected.
-	c.Check(ks.Apply(
-		clientv3.WatchResponse{
-			Header: epb.ResponseHeader{ClusterId: 9999, Revision: 20},
-			Events: []*clientv3.Event{},
-		},
-		clientv3.WatchResponse{
-			Events: []*clientv3.Event{},
-			Header: epb.ResponseHeader{ClusterId: 9999, Revision: 21},
-		},
-		clientv3.WatchResponse{
-			Header: epb.ResponseHeader{ClusterId: 9999, Revision: 22},
-			Events: []*clientv3.Event{
-				putEvent("/ffff", "8888", 21, 21, 1),
-			},
-		},
-	), gc.IsNil)
 
 	verifyDecodedKeyValues(c, ks.KeyValues,
 		map[string]int{
@@ -223,7 +196,6 @@ func (s *KeySpaceSuite) TestWatchResponseApply(c *gc.C) {
 			"/bbbb": 6666,
 			"/cccc": 4444,
 			"/eeee": 7777,
-			"/ffff": 8888,
 		})
 }
 

@@ -271,7 +271,7 @@ func TestAPIHintsCases(t *testing.T) {
 		BackupHints:  []pc.GetHintsResponse_ResponseHints{{}, {}},
 	}, resp)
 	// Picking hints passes through the supplied shard recovery log.
-	require.Equal(t, recoverylog.FSMHints{Log: "a/log"}, pickFirstHints(resp, "a/log"))
+	require.Equal(t, recoverylog.FSMHints{Log: "a/log"}, PickFirstHints(resp, "a/log"))
 
 	// Now allocate the shard, and then install hint fixtures.
 	tf.allocateShard(spec, localID)
@@ -310,7 +310,7 @@ func TestAPIHintsCases(t *testing.T) {
 		PrimaryHints: expected[0],
 		BackupHints:  expected[1:],
 	}, resp)
-	require.Equal(t, *expected[0].Hints, pickFirstHints(resp, "a/log"))
+	require.Equal(t, *expected[0].Hints, PickFirstHints(resp, "a/log"))
 
 	// Case: No primary hints
 	_, _ = tf.etcd.Delete(shard.ctx, spec.HintPrimaryKey())
@@ -322,7 +322,7 @@ func TestAPIHintsCases(t *testing.T) {
 		PrimaryHints: pc.GetHintsResponse_ResponseHints{},
 		BackupHints:  expected[1:],
 	}, resp)
-	require.Equal(t, *expected[1].Hints, pickFirstHints(resp, "a/log"))
+	require.Equal(t, *expected[1].Hints, PickFirstHints(resp, "a/log"))
 
 	// Case: Hint key has not yet been written to
 	require.NoError(t, storeRecordedHints(shard, mkHints(111)))
@@ -439,7 +439,8 @@ func TestAPIUnassignCases(t *testing.T) {
 	tf.setReplicaStatus(specB, remoteID, 0, pc.ReplicaStatus_PRIMARY)
 	tf.allocateShard(specC, localID, remoteID)
 	tf.setReplicaStatus(specC, localID, 0, pc.ReplicaStatus_PRIMARY)
-	tf.setReplicaStatus(specC, remoteID, 1, pc.ReplicaStatus_STANDBY)
+	tf.setReplicaStatus(specC, remoteID, 1, pc.ReplicaStatus_FAILED)
+	tf.setReplicaStatus(specC, remoteID, 2, pc.ReplicaStatus_STANDBY)
 	expectStatusCode(t, tf.state, pc.ReplicaStatus_PRIMARY)
 
 	// Asserts that we have modified the assignment as we expected.
@@ -458,17 +459,17 @@ func TestAPIUnassignCases(t *testing.T) {
 		}
 	}
 
-	// Case: A shard with no prior assignments
+	// Case: A shard with no assignments
 	resp, err := tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specA.Id}})
-	require.Error(t, err, errNoAssignmentFound)
+	require.NoError(t, err)
 	check(resp, specA, []pc.ShardID{}, []pc.ReplicaStatus{})
 
-	// Case: A shard with a single assignment
+	// Case: A shard with a single PRIMARY assignment
 	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specB.Id}})
 	require.NoError(t, err)
 	check(resp, specB, []pc.ShardID{specB.Id}, []pc.ReplicaStatus{})
 
-	// Case: A shard with multiple assignments
+	// Case: A shard with multiple assignments. PRIMARY is removed, FAILED is removed, STANDBY remains.
 	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specC.Id}})
 	require.NoError(t, err)
 	check(resp, specC, []pc.ShardID{specC.Id}, []pc.ReplicaStatus{{Code: pc.ReplicaStatus_STANDBY}})
@@ -492,7 +493,7 @@ func TestAPIUnassignCases(t *testing.T) {
 	tf.setReplicaStatus(specB, localID, 0, pc.ReplicaStatus_FAILED)
 	tf.allocateShard(specC, localID)
 	tf.setReplicaStatus(specC, localID, 0, pc.ReplicaStatus_PRIMARY)
-	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specA.Id, specB.Id}, OnlyFailed: true})
+	resp, err = tf.service.Unassign(context.Background(), &pc.UnassignRequest{Shards: []pc.ShardID{specA.Id, specB.Id, specC.Id}, OnlyFailed: true})
 	require.NoError(t, err)
 	check(resp, specA, []pc.ShardID{specA.Id, specB.Id}, []pc.ReplicaStatus{})
 	check(resp, specB, []pc.ShardID{specA.Id, specB.Id}, []pc.ReplicaStatus{})
