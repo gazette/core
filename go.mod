@@ -14,7 +14,6 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/dustinkirkland/golang-petname v0.0.0-20191129215211-8e5a1ed0cff0
 	github.com/gogo/protobuf v1.3.2
-	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/schema v1.2.0

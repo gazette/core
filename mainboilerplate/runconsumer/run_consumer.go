@@ -157,7 +157,7 @@ func (sc Cmd) Execute(args []string) error {
 	ks.WatchApplyDelay = bc.Consumer.WatchDelay
 
 	// Register Resolver as a prometheus.Collector for tracking shard status
-	prometheus.MustRegister(service.Resolver)
+	prometheus.MustRegister(service.Resolver, client.AppendServiceCollector)
 
 	log.WithFields(log.Fields{
 		"zone":     spec.Id.Zone,

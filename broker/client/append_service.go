@@ -5,8 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -422,10 +425,13 @@ var serveAppends = func(s *AppendService, aa *AsyncAppend, err error) {
 // appendBuffer composes a backing File with a bufio.Writer, and additionally
 // tracks the offset through which the file is written.
 type appendBuffer struct {
+	// appendBuffer's file presents a limited file interface to not assume more than necessary
+	// about what it can be used for
 	file interface {
 		io.ReaderAt
 		io.Seeker
 		io.Writer
+		Size() int64
 	}
 	offset int64
 	buf    *bufio.Writer
@@ -517,6 +523,7 @@ func newAppendBufferPool() *sync.Pool {
 		}, "", "failed to create appendBuffer")
 
 		fb.pool = pool
+		AppendServiceCollector.Register(fb.file)
 		return fb
 	}
 
@@ -544,3 +551,55 @@ var (
 	appendBufferSize         = 8 * 1024 // 8KB.
 	appendBufferCutoff int64 = 1 << 26  // 64MB.
 )
+
+// appendServiceCollector implements prometheus.Collector - registers the files associated with
+// each appendBuffer created and emits the total disk usage when asked by prometheus
+type appendServiceCollector struct {
+	files []interface {
+		Size() int64
+	}
+}
+
+func (asc *appendServiceCollector) Register(file interface{ Size() int64 }) {
+	asc.files = append(asc.files, file)
+}
+
+// Describe implements prometheus.Collector
+func (asc *appendServiceCollector) Describe(ch chan<- *prometheus.Desc) {
+	prometheus.DescribeByCollect(asc, ch)
+}
+
+// Collect implements prometheus.Collector
+func (asc *appendServiceCollector) Collect(ch chan<- prometheus.Metric) {
+	var size int64
+	for _, f := range asc.files {
+		size += f.Size()
+	}
+	ch <- prometheus.MustNewConstMetric(
+		appendServiceDiskBufferDesc,
+		prometheus.GaugeValue,
+		float64(size))
+}
+
+var (
+	AppendServiceCollector = &appendServiceCollector{}
+
+	appendServiceDiskBufferDesc = prometheus.NewDesc(
+		"gazette_append_service_disk_buffer_bytes",
+		"The total size in bytes on disk used by file-backed appendBuffers.",
+		[]string{}, nil)
+)
+
+// file provides an implementation of appendBuffer.file interface with necessary Size() method for collecting
+// metrics
+type file struct {
+	*os.File
+}
+
+func (f *file) Size() int64 {
+	if stat, err := f.Stat(); err != nil {
+		return 0
+	} else {
+		return stat.Size()
+	}
+}
