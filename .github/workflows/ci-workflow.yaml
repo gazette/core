@@ -3,11 +3,14 @@ name: Gazette Continuous Integration
 # We build on any push to a branch, or when a release is created.
 on:
   pull_request:
+    branches:
+      - "arize"
     paths-ignore:
       - "docs/**"
   push:
     branches:
-      - "master"
+      - "arize"
+      - "arize-dev/*"
     # Ignore pushes to tags, since those ought to be handled by the release created event.
     tags-ignore:
       - "*"
@@ -17,12 +20,17 @@ on:
     # Without this additional restriction, GH actions will trigger multiple runs for a single
     # release, because it fires off separate events creating vs publishing the release.
     types: [created]
+  workflow_dispatch:
 
 env:
   # This is only used as the cache key to prevent rebuilding rocksdb every time. Eventually
   # we'll need to figure out a solution that doesn't duplicate this version everywhere.
   # For now, ensure that it's changed both here and in mk/common-config.mk.
   ROCKSDB_VERSION: "6.22.1"
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   build:
@@ -56,24 +64,33 @@ jobs:
             fi
           else
             # This is not a release, so we'll use 'dev-<sha>' for the version number
-            # and just 'latest-dev' for the docker tag.
+            # and just 'latest' for the docker tag.
             sha=${{ github.sha }}
             version="dev-${sha:0:7}"
             # If this is a master build, then we'll treat this as a release and just use the
             # hard-coded tag as the docker image tag.
             if [[ '${{ github.ref }}' == 'refs/heads/master' ]]; then
                 # We don't want to put the git sha in the docker tag because otherwise they'll
-                # accumulate forever and just clutter up the page on docker hub. So 'latest-dev'
+                # accumulate forever and just clutter up the page on docker hub. So 'latest'
                 # just always gets you the most recent master build, and if you want a specific master
                 # build, then you can use the '@sha256:...' syntax.
-                docker_tag="latest-dev"
+                docker_tag="${{ secrets.REGISTRY_PATH }}/gazette/broker:latest"
+                push_images='true'
+            elif [[ '${{ github.ref }}' == 'refs/heads/arize' ]]; then
+                version="0.89.1-arize-${sha:0:7}"
+                docker_tag="${{ secrets.REGISTRY_PATH }}/gazette/broker:arize-${sha:0:7}"
+                push_images='true'
+            elif [[ '${{ github.ref }}' == *'arize'* ]]; then
+                version="0.89.1-dev-${sha:0:7}"
+                docker_tag="${{ secrets.REGISTRY_PATH }}/gazette/broker:dev-${sha:0:7}"
                 push_images='true'
             else
+                docker_tag="latest"
                 push_images='false'
             fi
           fi
           echo ::set-output name=VERSION::${version}
-          echo ::set-output name=DOCKER_TAG::${docker_tag:-$version}
+          echo ::set-output name=DOCKER_TAG::${docker_tag}
           echo ::set-output name=PUSH_IMAGES::${push_images}
           echo ::set-output name=IS_RELEASE::${is_release}
 
@@ -105,6 +122,20 @@ jobs:
           # because go will use its own finer-grained cache invalidation logic.
           restore-keys: "go-mod-c4-"
 
+
+      - uses: 'google-github-actions/auth@v1'
+        with:
+          token_format: "access_token"          
+          project_id: ${{ secrets.PROJECT_ID }}
+          workload_identity_provider: projects/${{ secrets.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v1'
+
+      - name: 'Use gcloud CLI'
+        run: gcloud info
+
       - name: "Build Binaries"
         run: "make as-ci target=release-linux-binaries VERSION=${{ steps.release_info.outputs.VERSION }}"
 
@@ -130,10 +161,11 @@ jobs:
           upload_url: "${{ github.event.release.upload_url }}"
           asset_content_type: application/zip
 
+
       - name: "Build and Push Docker Images"
         if: steps.release_info.outputs.PUSH_IMAGES == 'true'
         run: |
-          docker login -u '${{ secrets.DOCKER_USERNAME }}' -p '${{ secrets.DOCKER_PASSWORD }}' ${{ secrets.DOCKER_REGISTRY }}
-          make as-ci target=ci-release-gazette-examples VERSION=${{ steps.release_info.outputs.VERSION }}
           make as-ci target=ci-release-gazette-broker VERSION=${{ steps.release_info.outputs.VERSION }}
-          make push-to-registry REGISTRY=${{ secrets.DOCKER_REGISTRY }} RELEASE_TAG=${{ steps.release_info.outputs.DOCKER_TAG }}
+          docker tag gazette/broker:latest ${{ steps.release_info.outputs.DOCKER_TAG }}
+          gcloud auth configure-docker ${{ secrets.REGISTRY }}
+          docker push ${{ steps.release_info.outputs.DOCKER_TAG }}
