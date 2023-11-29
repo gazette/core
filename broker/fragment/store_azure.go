@@ -48,6 +48,8 @@ type azureBackend struct {
 	clientMu  sync.Mutex
 	udc       *service.UserDelegationCredential
 	udcExp    *time.Time
+
+	sharedKeyCredentials *sas.SharedKeyCredential
 }
 
 func (a *azureBackend) Provider() string {
@@ -57,31 +59,56 @@ func (a *azureBackend) Provider() string {
 // See here for an example of how to use the Azure client libraries to create signatures:
 // https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/storage/azblob/service/examples_test.go#L285
 func (a *azureBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
+	var (
+		sasQueryParams sas.QueryParameters
+		err            error
+	)
+
 	cfg, _, err := a.azureClient(ep)
 	if err != nil {
 		return "", err
 	}
 	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
 
-	udc, err := a.getUserDelegationCredential()
-	if err != nil {
-		return "", err
+	if ep.Scheme == "azure" {
+		// Note: for arize we assume azure scheme is for blob SAS (as opposed to container SAS in azure-ad case)
+		perms := sas.BlobPermissions{Add: true, Read: true, Write: true}
+
+		sasQueryParams, err = sas.BlobSignatureValues{
+			Protocol:      sas.ProtocolHTTPS, // Users MUST use HTTPS (not HTTP)
+			ExpiryTime:    time.Now().UTC().Add(d),
+			ContainerName: cfg.containerName,
+			BlobName:      blobName,
+			Permissions:   perms.String(),
+		}.SignWithSharedKey(a.sharedKeyCredentials)
+
+		if err != nil {
+			return "", err
+		}
+	} else if ep.Scheme == "azure-ad" {
+		udc, err := a.getUserDelegationCredential()
+		if err != nil {
+			return "", err
+		}
+
+		sasQueryParams, err = sas.BlobSignatureValues{
+			Protocol:      sas.ProtocolHTTPS,       // Users MUST use HTTPS (not HTTP)
+			ExpiryTime:    time.Now().UTC().Add(d), // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
+			ContainerName: cfg.containerName,
+			BlobName:      blobName,
+
+			// To produce a container SAS (as opposed to a blob SAS), assign to Permissions using
+			// ContainerSASPermissions and make sure the BlobName field is "" (the default).
+			Permissions: to.Ptr(sas.ContainerPermissions{Read: true, Add: true, Write: true}).String(),
+		}.SignWithUserDelegation(udc)
+
+		if err != nil {
+			return "", err
+		}
+	} else {
+		return "", fmt.Errorf("unknown scheme: %s", ep.Scheme)
 	}
 
-	sasQueryParams, err := sas.BlobSignatureValues{
-		Protocol:      sas.ProtocolHTTPS,       // Users MUST use HTTPS (not HTTP)
-		ExpiryTime:    time.Now().UTC().Add(d), // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
-		ContainerName: cfg.containerName,
-		BlobName:      blobName,
-
-		// To produce a container SAS (as opposed to a blob SAS), assign to Permissions using
-		// ContainerSASPermissions and make sure the BlobName field is "" (the default).
-		Permissions: to.Ptr(sas.ContainerPermissions{Read: true, Add: true, Write: true}).String(),
-	}.SignWithUserDelegation(udc)
-
-	if err != nil {
-		return "", err
-	}
 	return fmt.Sprintf("%s/%s?%s", cfg.containerURL(), blobName, sasQueryParams.Encode()), nil
 }
 
@@ -258,6 +285,7 @@ func (a *azureBackend) azureClient(ep *url.URL) (cfg AzureStoreConfig, client pi
 		if err != nil {
 			return cfg, nil, err
 		}
+		a.sharedKeyCredentials = sharedKeyCred // Arize addition
 		serviceClient, err := service.NewClientWithSharedKeyCredential(cfg.serviceUrl(), sharedKeyCred, &service.ClientOptions{})
 		if err != nil {
 			return cfg, nil, err
