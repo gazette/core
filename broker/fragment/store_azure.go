@@ -23,9 +23,9 @@ import (
 	pb "go.gazette.dev/core/broker/protocol"
 )
 
-// AzureStoreConfig configures a Fragment store of the "azure://" or "azure-ad://" scheme.
+// azureStoreConfig configures a Fragment store of the "azure://" or "azure-ad://" scheme.
 // It is initialized from parsed URL parametrs of the pb.FragmentStore
-type AzureStoreConfig struct {
+type azureStoreConfig struct {
 	accountTenantID string // The tenant ID that owns the storage account that we're writing into
 	// NOTE: This is not the tenant ID that owns the servie principal
 	storageAccountName string // Storage accounts in Azure are the equivalent to a "bucket" in S3
@@ -35,15 +35,15 @@ type AzureStoreConfig struct {
 	RewriterConfig
 }
 
-func (cfg *AzureStoreConfig) serviceUrl() string {
+func (cfg *azureStoreConfig) serviceUrl() string {
 	return fmt.Sprintf("https://%s.blob.core.windows.net", cfg.storageAccountName)
 }
 
-func (cfg *AzureStoreConfig) containerURL() string {
+func (cfg *azureStoreConfig) containerURL() string {
 	return fmt.Sprintf("%s/%s", cfg.serviceUrl(), cfg.containerName)
 }
 
-type UdcAndExp struct {
+type udcAndExp struct {
 	udc *service.UserDelegationCredential
 	exp *time.Time
 }
@@ -53,9 +53,9 @@ type azureBackend struct {
 	clients map[string]pipeline.Pipeline
 	// This is a cache of Azure storage clients for each tenant. These do not expire
 	svcClients map[string]service.Client
-	clientMu   sync.Mutex
+	mu         sync.Mutex
 	// This is a cache of URL-signing credentials for each tenant. These DO expire
-	udcs map[string]UdcAndExp
+	udcs map[string]udcAndExp
 }
 
 func (a *azureBackend) Provider() string {
@@ -64,14 +64,14 @@ func (a *azureBackend) Provider() string {
 
 // See here for an example of how to use the Azure client libraries to create signatures:
 // https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/storage/azblob/service/examples_test.go#L285
-func (a *azureBackend) SignGet(storageMapping *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
-	cfg, err := parseAzureStorageMapping(storageMapping)
+func (a *azureBackend) SignGet(endpoint *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
+	cfg, err := parseAzureEndpoint(endpoint)
 	if err != nil {
 		return "", err
 	}
 	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
 
-	udc, err := a.getUserDelegationCredential(storageMapping)
+	udc, err := a.getUserDelegationCredential(endpoint)
 	if err != nil {
 		return "", err
 	}
@@ -237,45 +237,51 @@ func getAzureStorageCredential(coreCredential azcore.TokenCredential, tenant str
 	return credential, nil
 }
 
-func parseAzureStorageMapping(storageMapping *url.URL) (cfg AzureStoreConfig, err error) {
-	if err = parseStoreArgs(storageMapping, &cfg); err != nil {
+func parseAzureEndpoint(endpoint *url.URL) (cfg azureStoreConfig, err error) {
+	if err = parseStoreArgs(endpoint, &cfg); err != nil {
 		return
 	}
 
 	// Omit leading slash from URI. Note that FragmentStore already
 	// enforces that URL Paths end in '/'.
-	var splitPath = strings.Split(storageMapping.Path[1:], "/")
+	var splitPath = strings.Split(endpoint.Path[1:], "/")
 
-	if storageMapping.Scheme == "azure" {
+	if endpoint.Scheme == "azure" {
 		// Since only one non-ad "Shared Key" credential can be injected via
 		// environment variables, we should only keep around one client for
 		// all `azure://` requests.
 		cfg.accountTenantID = "AZURE_SHARED_KEY"
 		cfg.storageAccountName = os.Getenv("AZURE_ACCOUNT_NAME")
-		cfg.containerName, cfg.prefix = storageMapping.Host, storageMapping.Path[1:]
-	} else if storageMapping.Scheme == "azure-ad" {
-		cfg.accountTenantID, cfg.storageAccountName, cfg.containerName, cfg.prefix = storageMapping.Host, splitPath[0], splitPath[1], strings.Join(splitPath[2:], "/")
+		cfg.containerName, cfg.prefix = endpoint.Host, endpoint.Path[1:]
+	} else if endpoint.Scheme == "azure-ad" {
+		cfg.accountTenantID, cfg.storageAccountName, cfg.containerName, cfg.prefix = endpoint.Host, splitPath[0], splitPath[1], strings.Join(splitPath[2:], "/")
 	}
 
 	return cfg, nil
 }
 
-func (a *azureBackend) getAzureServiceClient(storageMapping *url.URL) (client *service.Client, err error) {
-	var cfg AzureStoreConfig
+func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service.Client, err error) {
+	var cfg azureStoreConfig
 
-	if cfg, err = parseAzureStorageMapping(storageMapping); err != nil {
+	if cfg, err = parseAzureEndpoint(endpoint); err != nil {
 		return nil, err
 	}
 
+	a.mu.Lock()
 	if a.svcClients == nil {
 		a.svcClients = make(map[string]service.Client)
 	}
+	a.mu.Unlock()
 
-	if storageMapping.Scheme == "azure" {
+	if endpoint.Scheme == "azure" {
 		var accountName = os.Getenv("AZURE_ACCOUNT_NAME")
 		var accountKey = os.Getenv("AZURE_ACCOUNT_KEY")
 
-		if client, ok := a.svcClients[accountName]; ok {
+		a.mu.Lock()
+		client, ok := a.svcClients[accountName]
+		a.mu.Unlock()
+
+		if ok {
 			log.WithFields(log.Fields{
 				"storageAccountName": accountName,
 			}).Info("Re-using cached azure:// service client")
@@ -290,15 +296,22 @@ func (a *azureBackend) getAzureServiceClient(storageMapping *url.URL) (client *s
 		if err != nil {
 			return nil, err
 		}
+
+		a.mu.Lock()
 		a.svcClients[accountName] = *serviceClient
+		a.mu.Lock()
 		return serviceClient, nil
-	} else if storageMapping.Scheme == "azure-ad" {
+	} else if endpoint.Scheme == "azure-ad" {
 		// Link to the Azure docs describing what fields are required for active directory auth
 		// https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication-service-principal?tabs=azure-cli#-option-1-authenticate-with-a-secret
 		var clientId = os.Getenv("AZURE_CLIENT_ID")
 		var clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
 
-		if client, ok := a.svcClients[cfg.accountTenantID]; ok {
+		a.mu.Lock()
+		client, ok := a.svcClients[cfg.accountTenantID]
+		a.mu.Unlock()
+
+		if ok {
 			log.WithFields(log.Fields{
 				"accountTenantId": cfg.accountTenantID,
 			}).Info("Re-using cached azure-ad:// service client")
@@ -322,22 +335,26 @@ func (a *azureBackend) getAzureServiceClient(storageMapping *url.URL) (client *s
 		if err != nil {
 			return nil, err
 		}
+
+		a.mu.Lock()
 		a.svcClients[cfg.accountTenantID] = *serviceClient
+		a.mu.Unlock()
+
 		return serviceClient, nil
 	}
 	return nil, errors.New("unrecognized URI scheme")
 }
 
-func (a *azureBackend) getAzurePipeline(ep *url.URL) (cfg AzureStoreConfig, client pipeline.Pipeline, err error) {
-	if cfg, err = parseAzureStorageMapping(ep); err != nil {
+func (a *azureBackend) getAzurePipeline(ep *url.URL) (cfg azureStoreConfig, client pipeline.Pipeline, err error) {
+	if cfg, err = parseAzureEndpoint(ep); err != nil {
 		return
 	}
 
-	a.clientMu.Lock()
-	defer a.clientMu.Unlock()
+	a.mu.Lock()
+	client = a.clients[cfg.accountTenantID]
+	a.mu.Unlock()
 
-	if a.clients[cfg.accountTenantID] != nil {
-		client = a.clients[cfg.accountTenantID]
+	if client != nil {
 		return
 	}
 
@@ -378,10 +395,12 @@ func (a *azureBackend) getAzurePipeline(ep *url.URL) (cfg AzureStoreConfig, clie
 	}
 
 	client = azblob.NewPipeline(credentials, azblob.PipelineOptions{})
+	a.mu.Lock()
 	if a.clients == nil {
 		a.clients = make(map[string]pipeline.Pipeline)
 	}
 	a.clients[cfg.accountTenantID] = client
+	a.mu.Unlock()
 
 	log.WithFields(log.Fields{
 		"tenant":               cfg.accountTenantID,
@@ -393,7 +412,7 @@ func (a *azureBackend) getAzurePipeline(ep *url.URL) (cfg AzureStoreConfig, clie
 	return cfg, client, nil
 }
 
-func (a *azureBackend) buildBlobURL(cfg AzureStoreConfig, client pipeline.Pipeline, path string) (*azblob.BlockBlobURL, error) {
+func (a *azureBackend) buildBlobURL(cfg azureStoreConfig, client pipeline.Pipeline, path string) (*azblob.BlockBlobURL, error) {
 	u, err := url.Parse(fmt.Sprint(cfg.containerURL(), "/", cfg.rewritePath(cfg.prefix, path)))
 	if err != nil {
 		return nil, err
@@ -403,15 +422,20 @@ func (a *azureBackend) buildBlobURL(cfg AzureStoreConfig, client pipeline.Pipeli
 }
 
 // Cache UserDelegationCredentials and refresh them when needed
-func (a *azureBackend) getUserDelegationCredential(storageMapping *url.URL) (*service.UserDelegationCredential, error) {
+func (a *azureBackend) getUserDelegationCredential(endpoint *url.URL) (*service.UserDelegationCredential, error) {
+	a.mu.Lock()
 	if a.udcs == nil {
-		a.udcs = make(map[string]UdcAndExp)
+		a.udcs = make(map[string]udcAndExp)
 	}
-	var cfg, err = parseAzureStorageMapping(storageMapping)
+	a.mu.Unlock()
+
+	var cfg, err = parseAzureEndpoint(endpoint)
 	if err != nil {
 		return nil, err
 	}
+	a.mu.Lock()
 	var udc, hasCachedUdc = a.udcs[cfg.accountTenantID]
+	a.mu.Unlock()
 
 	// https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blob-user-delegation-sas-create-cli#use-azure-ad-credentials-to-secure-a-sas
 	// According to the above docs, signed URLs generated with a UDC are invalid after
@@ -431,7 +455,7 @@ func (a *azureBackend) getUserDelegationCredential(storageMapping *url.URL) (*se
 			Expiry: to.Ptr(expTime.UTC().Format(sas.TimeFormat)),
 		}
 
-		var serviceClient, err = a.getAzureServiceClient(storageMapping)
+		var serviceClient, err = a.getAzureServiceClient(endpoint)
 		if err != nil {
 			return nil, err
 		}
@@ -448,11 +472,13 @@ func (a *azureBackend) getUserDelegationCredential(storageMapping *url.URL) (*se
 			"tenant":          cfg.accountTenantID,
 		}).Info("Refreshing Azure Storage UDC")
 
-		udc = UdcAndExp{
+		udc = udcAndExp{
 			udc: cred,
 			exp: &expTime,
 		}
+		a.mu.Lock()
 		a.udcs[cfg.accountTenantID] = udc
+		a.mu.Unlock()
 	}
 
 	return udc.udc, nil
