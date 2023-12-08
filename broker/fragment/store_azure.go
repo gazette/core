@@ -50,10 +50,10 @@ type udcAndExp struct {
 
 type azureBackend struct {
 	// This is a cache of configured Pipelines for each tenant. These do not expire
-	clients map[string]pipeline.Pipeline
+	pipelines map[string]pipeline.Pipeline
 	// This is a cache of Azure storage clients for each tenant. These do not expire
-	svcClients map[string]service.Client
-	mu         sync.Mutex
+	clients map[string]*service.Client
+	mu      sync.Mutex
 	// This is a cache of URL-signing credentials for each tenant. These DO expire
 	udcs map[string]udcAndExp
 }
@@ -267,25 +267,19 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		return nil, err
 	}
 
-	a.mu.Lock()
-	if a.svcClients == nil {
-		a.svcClients = make(map[string]service.Client)
-	}
-	a.mu.Unlock()
-
 	if endpoint.Scheme == "azure" {
 		var accountName = os.Getenv("AZURE_ACCOUNT_NAME")
 		var accountKey = os.Getenv("AZURE_ACCOUNT_KEY")
 
 		a.mu.Lock()
-		client, ok := a.svcClients[accountName]
+		client, ok := a.clients[accountName]
 		a.mu.Unlock()
 
 		if ok {
 			log.WithFields(log.Fields{
 				"storageAccountName": accountName,
 			}).Info("Re-using cached azure:// service client")
-			return &client, nil
+			return client, nil
 		}
 
 		sharedKeyCred, err := service.NewSharedKeyCredential(accountName, accountKey)
@@ -298,7 +292,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		}
 
 		a.mu.Lock()
-		a.svcClients[accountName] = *serviceClient
+		a.clients[accountName] = serviceClient
 		a.mu.Lock()
 		return serviceClient, nil
 	} else if endpoint.Scheme == "azure-ad" {
@@ -308,14 +302,14 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		var clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
 
 		a.mu.Lock()
-		client, ok := a.svcClients[cfg.accountTenantID]
+		client, ok := a.clients[cfg.accountTenantID]
 		a.mu.Unlock()
 
 		if ok {
 			log.WithFields(log.Fields{
 				"accountTenantId": cfg.accountTenantID,
 			}).Info("Re-using cached azure-ad:// service client")
-			return &client, nil
+			return client, nil
 		}
 
 		identityCreds, err := azidentity.NewClientSecretCredential(
@@ -337,7 +331,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		}
 
 		a.mu.Lock()
-		a.svcClients[cfg.accountTenantID] = *serviceClient
+		a.clients[cfg.accountTenantID] = serviceClient
 		a.mu.Unlock()
 
 		return serviceClient, nil
@@ -351,7 +345,7 @@ func (a *azureBackend) getAzurePipeline(ep *url.URL) (cfg azureStoreConfig, clie
 	}
 
 	a.mu.Lock()
-	client = a.clients[cfg.accountTenantID]
+	client = a.pipelines[cfg.accountTenantID]
 	a.mu.Unlock()
 
 	if client != nil {
@@ -395,11 +389,9 @@ func (a *azureBackend) getAzurePipeline(ep *url.URL) (cfg azureStoreConfig, clie
 	}
 
 	client = azblob.NewPipeline(credentials, azblob.PipelineOptions{})
+
 	a.mu.Lock()
-	if a.clients == nil {
-		a.clients = make(map[string]pipeline.Pipeline)
-	}
-	a.clients[cfg.accountTenantID] = client
+	a.pipelines[cfg.accountTenantID] = client
 	a.mu.Unlock()
 
 	log.WithFields(log.Fields{
@@ -423,12 +415,6 @@ func (a *azureBackend) buildBlobURL(cfg azureStoreConfig, client pipeline.Pipeli
 
 // Cache UserDelegationCredentials and refresh them when needed
 func (a *azureBackend) getUserDelegationCredential(endpoint *url.URL) (*service.UserDelegationCredential, error) {
-	a.mu.Lock()
-	if a.udcs == nil {
-		a.udcs = make(map[string]udcAndExp)
-	}
-	a.mu.Unlock()
-
 	var cfg, err = parseAzureEndpoint(endpoint)
 	if err != nil {
 		return nil, err
