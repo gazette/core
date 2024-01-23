@@ -75,6 +75,11 @@ func (a *azureBackend) SignGet(endpoint *url.URL, fragment pb.Fragment, d time.D
 	if err != nil {
 		return "", err
 	}
+	// this step is needed to set the sharedkeyCredentials
+	_, err = a.getAzureServiceClient(endpoint)
+	if err != nil {
+		return "", err
+	}
 	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
 
 	if endpoint.Scheme == "azure" {
@@ -314,6 +319,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		if err != nil {
 			return nil, err
 		}
+		a.sharedKeyCredentials = sharedKeyCred
 		serviceClient, err := service.NewClientWithSharedKeyCredential(cfg.serviceUrl(), sharedKeyCred, &service.ClientOptions{})
 		if err != nil {
 			return nil, err
@@ -321,7 +327,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 
 		a.mu.Lock()
 		a.clients[accountName] = serviceClient
-		a.mu.Lock()
+		a.mu.Unlock()
 		return serviceClient, nil
 	} else if endpoint.Scheme == "azure-ad" {
 		// Link to the Azure docs describing what fields are required for active directory auth
