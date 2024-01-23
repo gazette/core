@@ -29,11 +29,11 @@ func RegisterGRPCDispatcher(localZone string) {
 // passed to a gRPC RPC call. If ProcessSpec_ID is non-zero valued, the RPC is
 // dispatched to the specified member. Otherwise, the RPC is dispatched to a
 // Route member, preferring:
-//  * A member not having a currently-broken network connection (eg, due to
-//    a stale Route or network split).
-//  * A member which is in the same zone as the caller (potentially reducing
-//    network traffic costs.
-//  * A member having a Ready connection (potentially reducing latency).
+//   - A member not having a currently-broken network connection (eg, due to
+//     a stale Route or network split).
+//   - A member which is in the same zone as the caller (potentially reducing
+//     network traffic costs.
+//   - A member having a Ready connection (potentially reducing latency).
 func WithDispatchRoute(ctx context.Context, rt Route, id ProcessSpec_ID) context.Context {
 	return context.WithValue(ctx, dispatchRouteCtxKey{}, dispatchRoute{route: rt, id: id})
 }
@@ -110,7 +110,7 @@ func (d *dispatcher) UpdateClientConnState(_ balancer.ClientConnState) error {
 // implements its own resolution and selection of an appropriate A record.
 func (d *dispatcher) ResolverError(_ error) {}
 
-func (d *dispatcher) UpdateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {
+func (d *dispatcher) updateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {
 	d.mu.Lock()
 	var id, ok = d.connID[sc]
 	if !ok {
@@ -152,6 +152,13 @@ func (d *dispatcher) UpdateSubConnState(sc balancer.SubConn, state balancer.SubC
 	})
 }
 
+// This method has been deprecated but may still be in use. See https://github.com/grpc/grpc-go/pull/6481
+// For updates to the logic, apply them to `updateSubConnState` instead which has been integrated with the new
+// StateListener interface
+func (d *dispatcher) UpdateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {
+	d.updateSubConnState(sc, state)
+}
+
 // markedSubConn tracks the last mark associated with a SubConn.
 // SubConns not used for a complete sweep interval are closed.
 type markedSubConn struct {
@@ -186,9 +193,12 @@ func (d *dispatcher) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
 		if msc.subConn, err = d.cc.NewSubConn(
 			[]resolver.Address{{
 				Addr: d.idToAddr(dr.route, dispatchID),
-				Type: resolver.Backend,
 			}},
-			balancer.NewSubConnOptions{},
+			balancer.NewSubConnOptions{
+				StateListener: func(state balancer.SubConnState) {
+					d.updateSubConnState(msc.subConn, state)
+				},
+			},
 		); err != nil {
 			return balancer.PickResult{}, err
 		}
@@ -305,10 +315,10 @@ func (d *dispatcher) sweep() {
 	d.mu.Unlock()
 
 	for _, sc := range toSweep {
-		// RemoveSubConn begins SubConn shutdown. We expect to see a
+		// SubConn.Shutdown begins a shutdown. We expect to see a
 		// HandleSubConnStateChange with connectivity.Shutdown, at which
 		// point we'll de-index it.
-		d.cc.RemoveSubConn(sc)
+		sc.Shutdown()
 	}
 }
 
