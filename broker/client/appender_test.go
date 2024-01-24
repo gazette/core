@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	gc "gopkg.in/check.v1"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/broker/teststub"
+	gc "gopkg.in/check.v1"
 )
 
 type AppenderSuite struct{}
@@ -125,6 +125,17 @@ func (s *AppenderSuite) TestBrokerCommitError(c *gc.C) {
 			errRe:       `validating broker response: Commit.Journal: invalid length .*`,
 			cachedRoute: 0,
 		},
+		// Case: known error status (journal not found).
+		{
+			finish: func() {
+				broker.AppendRespCh <- pb.AppendResponse{
+					Status: pb.Status_JOURNAL_NOT_FOUND,
+					Header: *buildHeaderFixture(broker),
+				}
+			},
+			errVal:      ErrJournalNotFound,
+			cachedRoute: 1,
+		},
 		// Case: known error status (not primary broker).
 		{
 			finish: func() {
@@ -211,7 +222,7 @@ func (s *AppenderSuite) TestAppendCases(c *gc.C) {
 			{status: pb.Status_NOT_JOURNAL_PRIMARY_BROKER},
 			{status: pb.Status_OK},
 			// Case 2: Unexpected status is surfaced.
-			{status: pb.Status_INSUFFICIENT_JOURNAL_BROKERS},
+			{status: pb.Status_WRONG_APPEND_OFFSET},
 			// Case 3: As are errors.
 			{err: errors.New("an error")},
 		}
@@ -262,7 +273,7 @@ func (s *AppenderSuite) TestAppendCases(c *gc.C) {
 
 	// Case 2: Unexpected status is surfaced.
 	_, err = Append(ctx, rjc, pb.AppendRequest{Journal: "a/journal"}, con, tent)
-	c.Check(err, gc.ErrorMatches, "INSUFFICIENT_JOURNAL_BROKERS")
+	c.Check(err, gc.ErrorMatches, "WRONG_APPEND_OFFSET")
 
 	// Case 3: As are errors.
 	_, err = Append(ctx, rjc, pb.AppendRequest{Journal: "a/journal"}, con, tent)

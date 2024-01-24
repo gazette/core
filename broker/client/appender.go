@@ -96,6 +96,8 @@ func (a *Appender) Close() (err error) {
 		switch a.Response.Status {
 		case pb.Status_OK:
 			// Pass.
+		case pb.Status_JOURNAL_NOT_FOUND:
+			err = ErrJournalNotFound
 		case pb.Status_NOT_JOURNAL_PRIMARY_BROKER:
 			err = ErrNotJournalPrimaryBroker
 		case pb.Status_WRONG_APPEND_OFFSET:
@@ -178,7 +180,7 @@ func Append(ctx context.Context, rjc pb.RoutedJournalClient, req pb.AppendReques
 			return a.Response, nil
 		} else if s, ok := status.FromError(err); ok && s.Code() == codes.Unavailable {
 			// Fallthrough to retry
-		} else if err == ErrNotJournalPrimaryBroker {
+		} else if err == ErrNotJournalPrimaryBroker || err == ErrInsufficientJournalBrokers {
 			// Fallthrough.
 		} else {
 			return a.Response, err
