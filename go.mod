@@ -105,7 +105,7 @@ require (
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/inf.v0 v0.9.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apimachinery v0.0.0-20190620073744-d16981aedf33 // indirect
+	k8s.io/apimachinery v0.15.7 // indirect
 	k8s.io/client-go v0.0.0-20190620074045-585a16d2e773 // indirect
 	k8s.io/klog v0.3.1 // indirect
 	k8s.io/utils v0.0.0-20190221042446-c2654d5206da // indirect
