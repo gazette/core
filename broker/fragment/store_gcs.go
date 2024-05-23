@@ -2,6 +2,7 @@ package fragment
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -41,10 +42,21 @@ func (s *gcsBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration)
 	if err != nil {
 		return "", err
 	}
-	opts.Method = "GET"
-	opts.Expires = time.Now().Add(d)
 
-	return client.Bucket(cfg.bucket).SignedURL(cfg.rewritePath(cfg.prefix, fragment.ContentPath()), &opts)
+	if DisableSignedUrls {
+		u := &url.URL{
+			Path: fmt.Sprintf("/%s/%s", cfg.bucket, cfg.rewritePath(cfg.prefix, fragment.ContentPath())),
+		}
+		u.Scheme = "https"
+		u.Host = "storage.googleapis.com"
+
+		return u.String(), nil
+	} else {
+		opts.Method = "GET"
+		opts.Expires = time.Now().Add(d)
+
+		return client.Bucket(cfg.bucket).SignedURL(cfg.rewritePath(cfg.prefix, fragment.ContentPath()), &opts)
+	}
 }
 
 func (s *gcsBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (exists bool, err error) {
