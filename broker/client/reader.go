@@ -8,9 +8,11 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.gazette.dev/core/broker/codecs"
+	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,9 +26,9 @@ import (
 // seek to the requested offset, and read its content.
 //
 // Reader returns EOF if:
-//  * The broker closes the RPC, eg because its assignment has change or it's shutting down.
-//  * The requested EndOffset has been read through.
-//  * A Fragment being read by the Reader reaches EOF.
+//   - The broker closes the RPC, eg because its assignment has change or it's shutting down.
+//   - The requested EndOffset has been read through.
+//   - A Fragment being read by the Reader reaches EOF.
 //
 // If Block is true, Read may block indefinitely. Otherwise, ErrOffsetNotYetAvailable
 // is returned upon reaching the journal write head.
@@ -57,6 +59,10 @@ func NewReader(ctx context.Context, client pb.RoutedJournalClient, req pb.ReadRe
 	}
 	return r
 }
+
+// Arize logic to avoid use of signed URLs on GCS
+var TransformSignedURLs = false
+var gcs = fragment.GcsBackend{}
 
 // Read from the journal. If this is the first Read of the Reader, a Read RPC is started.
 func (r *Reader) Read(p []byte) (n int, err error) {
@@ -164,9 +170,24 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 
 	// If the frame preceding EOF provided a fragment URL, open it directly.
 	if !r.Request.MetadataOnly && r.Response.Status == pb.Status_OK && r.Response.FragmentUrl != "" {
-		if r.direct, err = OpenFragmentURL(r.ctx, *r.Response.Fragment,
-			r.Request.Offset, r.Response.FragmentUrl); err == nil {
-			n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
+		if TransformSignedURLs {
+			var url *url.URL
+			if url, err = url.Parse(r.Response.FragmentUrl); err != nil {
+				return 0, err
+
+			}
+			if url.Scheme != "gs" {
+				return 0, fmt.Error("TransformSignedURLs is only supported for GCS")
+			}
+			if r.direct, err = gcs.Open(r.ctx, r.Response.FragmentUrl,
+				*r.Response.Fragment, r.Request.Offset); err == nil {
+				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
+			}
+		} else {
+			if r.direct, err = OpenFragmentURL(r.ctx, *r.Response.Fragment,
+				r.Request.Offset, r.Response.FragmentUrl); err == nil {
+				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
+			}
 		}
 		return
 	}
@@ -197,9 +218,10 @@ func (r *Reader) AdjustedOffset(br *bufio.Reader) int64 {
 }
 
 // Seek provides a limited form of seeking support. Specifically, if:
-//  * A Fragment URL is being directly read, and
-//  * The Seek offset is ahead of the current Reader offset, and
-//  * The Fragment also covers the desired Seek offset
+//   - A Fragment URL is being directly read, and
+//   - The Seek offset is ahead of the current Reader offset, and
+//   - The Fragment also covers the desired Seek offset
+//
 // Then a seek is performed by reading and discarding to the seeked offset.
 // Seek will otherwise return ErrSeekRequiresNewReader.
 func (r *Reader) Seek(offset int64, whence int) (int64, error) {
@@ -349,15 +371,14 @@ func (fr *FragmentReader) Close() error {
 // fragments are persisted, and to which this client also has access. The
 // returned cleanup function removes the handler and restores the prior http.Client.
 //
-//      const root = "/mnt/shared-nas-array/path/to/fragment-root"
-//      defer client.InstallFileTransport(root)()
+//	const root = "/mnt/shared-nas-array/path/to/fragment-root"
+//	defer client.InstallFileTransport(root)()
 //
-//      var rr = NewRetryReader(ctx, client, protocol.ReadRequest{
-//          Journal: "a/journal/with/nas/fragment/store",
-//          DoNotProxy: true,
-//      })
-//      // rr.Read will read Fragments directly from NAS.
-//
+//	var rr = NewRetryReader(ctx, client, protocol.ReadRequest{
+//	    Journal: "a/journal/with/nas/fragment/store",
+//	    DoNotProxy: true,
+//	})
+//	// rr.Read will read Fragments directly from NAS.
 func InstallFileTransport(root string) (remove func()) {
 	var transport = http.DefaultTransport.(*http.Transport).Clone()
 	transport.RegisterProtocol("file", http.NewFileTransport(http.Dir(root)))

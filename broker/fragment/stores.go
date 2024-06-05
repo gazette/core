@@ -36,12 +36,12 @@ type backend interface {
 
 var sharedStores = struct {
 	s3    *s3Backend
-	gcs   *gcsBackend
+	gcs   *GcsBackend
 	azure *azureBackend
 	fs    *fsBackend
 }{
 	s3:  newS3Backend(),
-	gcs: &gcsBackend{},
+	gcs: &GcsBackend{},
 	azure: &azureBackend{
 		pipelines: make(map[string]pipeline.Pipeline),
 		clients:   make(map[string]*service.Client),
