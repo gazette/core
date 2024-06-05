@@ -171,15 +171,15 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	// If the frame preceding EOF provided a fragment URL, open it directly.
 	if !r.Request.MetadataOnly && r.Response.Status == pb.Status_OK && r.Response.FragmentUrl != "" {
 		if TransformSignedURLs {
-			var url *url.URL
-			if url, err = url.Parse(r.Response.FragmentUrl); err != nil {
+			var fragURL *url.URL
+			if fragURL, err = url.Parse(r.Response.FragmentUrl); err != nil {
 				return 0, err
 
 			}
-			if url.Scheme != "gs" {
+			if fragURL.Scheme != "gs" {
 				return 0, fmt.Error("TransformSignedURLs is only supported for GCS")
 			}
-			if r.direct, err = gcs.OpenWithOffset(r.ctx, r.Response.FragmentUrl,
+			if r.direct, err = gcs.OpenWithOffset(r.ctx, fragURL,
 				*r.Response.Fragment, r.Request.Offset); err == nil {
 				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
 			}
