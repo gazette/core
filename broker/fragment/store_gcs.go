@@ -143,3 +143,68 @@ func (s *gcsBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	}
 	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).Delete(ctx)
 }
+
+func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, opts storage.SignedURLOptions, err error) {
+	var conf *jwt.Config
+
+	if err = parseStoreArgs(ep, &cfg); err != nil {
+		return
+	}
+	// Omit leading slash from bucket prefix. Note that FragmentStore already
+	// enforces that URL Paths end in '/'.
+	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
+
+	s.clientMu.Lock()
+	defer s.clientMu.Unlock()
+
+	if s.client != nil {
+		client = s.client
+		opts = s.signedURLOptions
+		return
+	}
+	var ctx = context.Background()
+
+	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
+	if err != nil {
+		return
+	} else if creds.JSON != nil {
+		conf, err = google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
+		if err != nil {
+			return
+		}
+		client, err = storage.NewClient(ctx, option.WithTokenSource(conf.TokenSource(ctx)))
+		if err != nil {
+			return
+		}
+		opts = storage.SignedURLOptions{
+			GoogleAccessID: conf.Email,
+			PrivateKey:     conf.PrivateKey,
+		}
+		s.client, s.signedURLOptions = client, opts
+
+		log.WithFields(log.Fields{
+			"ProjectID":      creds.ProjectID,
+			"GoogleAccessID": conf.Email,
+			"PrivateKeyID":   conf.PrivateKeyID,
+			"Subject":        conf.Subject,
+			"Scopes":         conf.Scopes,
+		}).Info("constructed new GCS client")
+	} else {
+		// Possible to use GCS without a service account (e.g. with a GCE instance and workload identity).
+		client, err = storage.NewClient(ctx, option.WithTokenSource(creds.TokenSource))
+		if err != nil {
+			return
+		}
+
+		// workload identity approach which SignGet() method accepts if you have
+		// "iam.serviceAccounts.signBlob" permissions against your service account.
+		opts = storage.SignedURLOptions{}
+		s.client, s.signedURLOptions = client, opts
+
+		log.WithFields(log.Fields{
+			"ProjectID": creds.ProjectID,
+		}).Info("constructed new GCS client without JWT")
+	}
+
+	return
+}
