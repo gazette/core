@@ -173,6 +173,9 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 
 	// If the frame preceding EOF provided a fragment URL, open it directly.
 	if !r.Request.MetadataOnly && r.Response.Status == pb.Status_OK && r.Response.FragmentUrl != "" {
+		log.WithFields(log.Fields{
+			"FragmentUrl": r.Response.FragmentUrl,
+		}).Info("reader handle FragmentUrl")
 		if TransformSignedURLs {
 			var fragURL *url.URL
 			if fragURL, err = url.Parse(r.Response.FragmentUrl); err != nil {
