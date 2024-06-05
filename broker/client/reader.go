@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 
 	"cloud.google.com/go/storage"
@@ -448,12 +449,6 @@ type gcsBackend struct {
 	client   *storage.Client
 	clientMu sync.Mutex
 }
-type GSStoreConfig struct {
-	bucket string
-	prefix string
-
-	RewriterConfig
-}
 
 // Arize Open routine with offset for use with consumers and signed URLs.
 func (s *gcsBackend) openWithOffset(ctx context.Context, ep *url.URL, fragment pb.Fragment, offset int64) (io.ReadCloser, error) {
@@ -521,6 +516,27 @@ func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.
 	}
 
 	return
+}
+
+type GSStoreConfig struct {
+	bucket string
+	prefix string
+
+	RewriterConfig
+}
+
+type RewriterConfig struct {
+	// Find is the string to replace in the unmodified journal name.
+	Find string
+	// Replace is the string with which Find is replaced in the constructed store path.
+	Replace string
+}
+
+func (cfg RewriterConfig) rewritePath(s, j string) string {
+	if cfg.Find == "" {
+		return s + j
+	}
+	return s + strings.Replace(j, cfg.Find, cfg.Replace, 1)
 }
 
 func parseStoreArgs(ep *url.URL, args interface{}) error {
