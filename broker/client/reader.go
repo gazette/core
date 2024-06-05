@@ -12,12 +12,14 @@ import (
 	"sync"
 
 	"cloud.google.com/go/storage"
+	"github.com/gorilla/schema"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/codecs"
 	pb "go.gazette.dev/core/broker/protocol"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/jwt"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -446,6 +448,12 @@ type gcsBackend struct {
 	client   *storage.Client
 	clientMu sync.Mutex
 }
+type GSStoreConfig struct {
+	bucket string
+	prefix string
+
+	RewriterConfig
+}
 
 // Arize Open routine with offset for use with consumers and signed URLs.
 func (s *gcsBackend) openWithOffset(ctx context.Context, ep *url.URL, fragment pb.Fragment, offset int64) (io.ReadCloser, error) {
@@ -513,4 +521,16 @@ func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.
 	}
 
 	return
+}
+
+func parseStoreArgs(ep *url.URL, args interface{}) error {
+	var decoder = schema.NewDecoder()
+	decoder.IgnoreUnknownKeys(false)
+
+	if q, err := url.ParseQuery(ep.RawQuery); err != nil {
+		return err
+	} else if err = decoder.Decode(args, q); err != nil {
+		return fmt.Errorf("parsing store URL arguments: %s", err)
+	}
+	return nil
 }
