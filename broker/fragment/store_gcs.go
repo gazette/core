@@ -82,7 +82,7 @@ func (s *GcsBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment
 }
 
 // Arize Open routine with offset for use with consumers and signed URLs.
-func (s *GcsBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment, offset int64) (io.ReadCloser, error) {
+func (s *GcsBackend) OpenWithOffset(ctx context.Context, ep *url.URL, fragment pb.Fragment, offset int64) (io.ReadCloser, error) {
 	cfg, client, _, err := s.gcsClient(ep)
 	if err != nil {
 		return nil, err
