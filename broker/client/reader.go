@@ -9,11 +9,15 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"sync"
 
+	"cloud.google.com/go/storage"
 	"github.com/prometheus/client_golang/prometheus"
+	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/codecs"
-	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
+	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/jwt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -59,10 +63,6 @@ func NewReader(ctx context.Context, client pb.RoutedJournalClient, req pb.ReadRe
 	}
 	return r
 }
-
-// Arize logic to avoid use of signed URLs on GCS
-var TransformSignedURLs = false
-var gcs = fragment.GcsBackend{}
 
 // Read from the journal. If this is the first Read of the Reader, a Read RPC is started.
 func (r *Reader) Read(p []byte) (n int, err error) {
@@ -179,7 +179,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 			if fragURL.Scheme != "gs" {
 				return 0, fmt.Errorf("TransformSignedURLs is only supported for GCS")
 			}
-			if r.direct, err = gcs.OpenWithOffset(r.ctx, fragURL,
+			if r.direct, err = gcs.openWithOffset(r.ctx, fragURL,
 				*r.Response.Fragment, r.Request.Offset); err == nil {
 				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
 			}
@@ -435,3 +435,82 @@ var (
 	// httpClient is the http.Client used by OpenFragmentURL
 	httpClient = http.DefaultClient
 )
+
+// stores_test.go, which is in broker/fragment, imports broker/client so we cannot import broker/fragment here
+// to avoid a cycle. Instead we will repeat a subset of store_gcs.go.
+
+var TransformSignedURLs = false
+var gcs = &gcsBackend{}
+
+type gcsBackend struct {
+	client   *storage.Client
+	clientMu sync.Mutex
+}
+
+// Arize Open routine with offset for use with consumers and signed URLs.
+func openWithOffset(ctx context.Context, ep *url.URL, fragment pb.Fragment, offset int64) (io.ReadCloser, error) {
+	cfg, gClient, _, err := s.gcsClient(ep)
+	if err != nil {
+		return nil, err
+	}
+	return gClient.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).NewRangeReader(ctx, offset, -1)
+}
+
+func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, err error) {
+	var conf *jwt.Config
+
+	if err = parseStoreArgs(ep, &cfg); err != nil {
+		return
+	}
+	// Omit leading slash from bucket prefix. Note that FragmentStore already
+	// enforces that URL Paths end in '/'.
+	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
+
+	s.clientMu.Lock()
+	defer s.clientMu.Unlock()
+
+	if s.client != nil {
+		client = s.client
+		return
+	}
+	var ctx = context.Background()
+
+	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
+	if err != nil {
+		return
+	} else if creds.JSON != nil {
+		conf, err = google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
+		if err != nil {
+			return
+		}
+		client, err = storage.NewClient(ctx, option.WithTokenSource(conf.TokenSource(ctx)))
+		if err != nil {
+			return
+		}
+		s.client = client
+
+		log.WithFields(log.Fields{
+			"ProjectID":      creds.ProjectID,
+			"GoogleAccessID": conf.Email,
+			"PrivateKeyID":   conf.PrivateKeyID,
+			"Subject":        conf.Subject,
+			"Scopes":         conf.Scopes,
+		}).Info("reader constructed new GCS client")
+	} else {
+		// Possible to use GCS without a service account (e.g. with a GCE instance and workload identity).
+		client, err = storage.NewClient(ctx, option.WithTokenSource(creds.TokenSource))
+		if err != nil {
+			return
+		}
+
+		// workload identity approach which SignGet() method accepts if you have
+		// "iam.serviceAccounts.signBlob" permissions against your service account.
+		s.client = client
+
+		log.WithFields(log.Fields{
+			"ProjectID": creds.ProjectID,
+		}).Info("reader constructed new GCS client without JWT")
+	}
+
+	return
+}

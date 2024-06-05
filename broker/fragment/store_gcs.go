@@ -27,17 +27,17 @@ type GSStoreConfig struct {
 	RewriterConfig
 }
 
-type GcsBackend struct {
+type gcsBackend struct {
 	client           *storage.Client
 	signedURLOptions storage.SignedURLOptions
 	clientMu         sync.Mutex
 }
 
-func (s *GcsBackend) Provider() string {
+func (s *gcsBackend) Provider() string {
 	return "gcs"
 }
 
-func (s *GcsBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
+func (s *gcsBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
 	cfg, client, opts, err := s.gcsClient(ep)
 	if err != nil {
 		return "", err
@@ -59,7 +59,7 @@ func (s *GcsBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration)
 	}
 }
 
-func (s *GcsBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (exists bool, err error) {
+func (s *gcsBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (exists bool, err error) {
 	cfg, client, _, err := s.gcsClient(ep)
 	if err != nil {
 		return false, err
@@ -73,7 +73,7 @@ func (s *GcsBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragme
 	return exists, err
 }
 
-func (s *GcsBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
+func (s *gcsBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
 	cfg, client, _, err := s.gcsClient(ep)
 	if err != nil {
 		return nil, err
@@ -81,16 +81,7 @@ func (s *GcsBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment
 	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).NewReader(ctx)
 }
 
-// Arize Open routine with offset for use with consumers and signed URLs.
-func (s *GcsBackend) OpenWithOffset(ctx context.Context, ep *url.URL, fragment pb.Fragment, offset int64) (io.ReadCloser, error) {
-	cfg, client, _, err := s.gcsClient(ep)
-	if err != nil {
-		return nil, err
-	}
-	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).NewRangeReader(ctx, offset, -1)
-}
-
-func (s *GcsBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) error {
+func (s *gcsBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) error {
 	cfg, client, _, err := s.gcsClient(ep)
 	if err != nil {
 		return err
@@ -114,7 +105,7 @@ func (s *GcsBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) erro
 	return err
 }
 
-func (s *GcsBackend) List(ctx context.Context, store pb.FragmentStore, ep *url.URL, journal pb.Journal, callback func(pb.Fragment)) error {
+func (s *gcsBackend) List(ctx context.Context, store pb.FragmentStore, ep *url.URL, journal pb.Journal, callback func(pb.Fragment)) error {
 	var cfg, client, _, err = s.gcsClient(ep)
 	if err != nil {
 		return err
@@ -145,75 +136,10 @@ func (s *GcsBackend) List(ctx context.Context, store pb.FragmentStore, ep *url.U
 	return err
 }
 
-func (s *GcsBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
+func (s *gcsBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	cfg, client, _, err := s.gcsClient(fragment.BackingStore.URL())
 	if err != nil {
 		return err
 	}
 	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).Delete(ctx)
-}
-
-func (s *GcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, opts storage.SignedURLOptions, err error) {
-	var conf *jwt.Config
-
-	if err = parseStoreArgs(ep, &cfg); err != nil {
-		return
-	}
-	// Omit leading slash from bucket prefix. Note that FragmentStore already
-	// enforces that URL Paths end in '/'.
-	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
-
-	s.clientMu.Lock()
-	defer s.clientMu.Unlock()
-
-	if s.client != nil {
-		client = s.client
-		opts = s.signedURLOptions
-		return
-	}
-	var ctx = context.Background()
-
-	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
-	if err != nil {
-		return
-	} else if creds.JSON != nil {
-		conf, err = google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
-		if err != nil {
-			return
-		}
-		client, err = storage.NewClient(ctx, option.WithTokenSource(conf.TokenSource(ctx)))
-		if err != nil {
-			return
-		}
-		opts = storage.SignedURLOptions{
-			GoogleAccessID: conf.Email,
-			PrivateKey:     conf.PrivateKey,
-		}
-		s.client, s.signedURLOptions = client, opts
-
-		log.WithFields(log.Fields{
-			"ProjectID":      creds.ProjectID,
-			"GoogleAccessID": conf.Email,
-			"PrivateKeyID":   conf.PrivateKeyID,
-			"Subject":        conf.Subject,
-			"Scopes":         conf.Scopes,
-		}).Info("constructed new GCS client")
-	} else {
-		// Possible to use GCS without a service account (e.g. with a GCE instance and workload identity).
-		client, err = storage.NewClient(ctx, option.WithTokenSource(creds.TokenSource))
-		if err != nil {
-			return
-		}
-
-		// workload identity approach which SignGet() method accepts if you have
-		// "iam.serviceAccounts.signBlob" permissions against your service account.
-		opts = storage.SignedURLOptions{}
-		s.client, s.signedURLOptions = client, opts
-
-		log.WithFields(log.Fields{
-			"ProjectID": creds.ProjectID,
-		}).Info("constructed new GCS client without JWT")
-	}
-
-	return
 }
