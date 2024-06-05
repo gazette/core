@@ -449,7 +449,7 @@ type gcsBackend struct {
 
 // Arize Open routine with offset for use with consumers and signed URLs.
 func (s *gcsBackend) openWithOffset(ctx context.Context, ep *url.URL, fragment pb.Fragment, offset int64) (io.ReadCloser, error) {
-	cfg, gClient, _, err := s.gcsClient(ep)
+	cfg, gClient, err := s.gcsClient(ep)
 	if err != nil {
 		return nil, err
 	}
