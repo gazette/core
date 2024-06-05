@@ -177,7 +177,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 
 			}
 			if fragURL.Scheme != "gs" {
-				return 0, fmt.Error("TransformSignedURLs is only supported for GCS")
+				return 0, fmt.Errorf("TransformSignedURLs is only supported for GCS")
 			}
 			if r.direct, err = gcs.OpenWithOffset(r.ctx, fragURL,
 				*r.Response.Fragment, r.Request.Offset); err == nil {
