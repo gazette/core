@@ -177,17 +177,13 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 			"FragmentUrl": r.Response.FragmentUrl,
 		}).Warn("reader handle FragmentUrl")
 		if TransformSignedURLs {
-			var fragURL *url.URL
-			if fragURL, err = url.Parse(r.Response.FragmentUrl); err != nil {
-				return 0, err
-
-			}
+			fragURL := r.Response.Fragment.BackingStore.URL()
 			log.WithFields(log.Fields{
 				"url":      fmt.Sprintf("%+v", fragURL),
 				"fragment": fmt.Sprintf("%+v", *r.Response.Fragment),
 			}).Warn("reader handle url")
 			if fragURL.Scheme != "gs" {
-				return 0, fmt.Errorf("TransformSignedURLs is only supported for GCS")
+				return 0, fmt.Errorf("TransformSignedURL unsupported scheme: %s", fragURL.Scheme)
 			}
 			if r.direct, err = gcs.openWithOffset(r.ctx, fragURL,
 				*r.Response.Fragment, r.Request.Offset); err == nil {
