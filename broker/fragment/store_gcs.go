@@ -68,6 +68,10 @@ func (s *gcsBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragme
 	if err != nil {
 		return false, err
 	}
+	log.WithFields(log.Fields{
+		"ep":       fmt.Sprintf("%+v", *ep),
+		"fragment": fmt.Sprintf("%+v", fragment),
+	}).Info("Exists fragment")
 	_, err = client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).Attrs(ctx)
 	if err == nil {
 		exists = true
