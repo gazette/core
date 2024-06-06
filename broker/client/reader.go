@@ -186,7 +186,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 				return 0, fmt.Errorf("TransformSignedURL unsupported scheme: %s", fragURL.Scheme)
 			}
 			if r.direct, err = gcs.openWithOffset(r.ctx, fragURL,
-				*r.Response.Fragment, r.Request.Offset); err == nil {
+				*r.Response.Fragment, r.Request.Offset-r.Response.Fragment.Begin); err == nil {
 				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
 			}
 		} else {
