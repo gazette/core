@@ -173,18 +173,10 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 
 	// If the frame preceding EOF provided a fragment URL, open it directly.
 	if !r.Request.MetadataOnly && r.Response.Status == pb.Status_OK && r.Response.FragmentUrl != "" {
-		log.WithFields(log.Fields{
-			"FragmentUrl": r.Response.FragmentUrl,
-		}).Warn("reader handle FragmentUrl")
-		if TransformSignedURLs {
+		if SkipSignedURLs {
 			fragURL := r.Response.Fragment.BackingStore.URL()
-			log.WithFields(log.Fields{
-				"url":      fmt.Sprintf("%+v", fragURL),
-				"fragment": fmt.Sprintf("%+v", *r.Response.Fragment),
-				"offset":   r.Request.Offset,
-			}).Warn("reader handle url")
 			if fragURL.Scheme != "gs" {
-				return 0, fmt.Errorf("TransformSignedURL unsupported scheme: %s", fragURL.Scheme)
+				return 0, fmt.Errorf("SkipSignedURL unsupported scheme: %s", fragURL.Scheme)
 			}
 			if r.direct, err = OpenUnsignedFragmentURL(r.ctx, *r.Response.Fragment,
 				r.Request.Offset, fragURL); err == nil {
@@ -466,7 +458,7 @@ var (
 // stores_test.go, which is in broker/fragment, imports broker/client so we cannot import broker/fragment here
 // to avoid a cycle. Instead we will repeat a subset of store_gcs.go.
 
-var TransformSignedURLs = false
+var SkipSignedURLs = false
 var gcs = &gcsBackend{}
 
 type gcsBackend struct {

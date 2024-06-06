@@ -44,10 +44,6 @@ func (s *gcsBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration)
 	}
 
 	if DisableSignedUrls {
-		log.WithFields(log.Fields{
-			"ep":       fmt.Sprintf("%+v", *ep),
-			"fragment": fmt.Sprintf("%+v", fragment),
-		}).Info("signGet disable signed urls")
 		u := &url.URL{
 			Path: fmt.Sprintf("/%s/%s", cfg.bucket, cfg.rewritePath(cfg.prefix, fragment.ContentPath())),
 		}
@@ -68,10 +64,6 @@ func (s *gcsBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragme
 	if err != nil {
 		return false, err
 	}
-	log.WithFields(log.Fields{
-		"ep":       fmt.Sprintf("%+v", *ep),
-		"fragment": fmt.Sprintf("%+v", fragment),
-	}).Info("Exists fragment")
 	_, err = client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).Attrs(ctx)
 	if err == nil {
 		exists = true
@@ -86,10 +78,6 @@ func (s *gcsBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment
 	if err != nil {
 		return nil, err
 	}
-	log.WithFields(log.Fields{
-		"ep":       fmt.Sprintf("%+v", *ep),
-		"fragment": fmt.Sprintf("%+v", fragment),
-	}).Info("Open fragment")
 	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).NewReader(ctx)
 }
 
