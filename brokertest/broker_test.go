@@ -3,6 +3,7 @@ package brokertest
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"testing"
@@ -14,6 +15,8 @@ import (
 	"go.gazette.dev/core/etcdtest"
 	"go.gazette.dev/core/server"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func TestSimpleReadAndWrite(t *testing.T) {
@@ -248,7 +251,16 @@ func updateReplication(t require.TestingT, ctx context.Context, bk pb.JournalCli
 // may see "transport is closing" errors due to the loopback ClientConn being closed
 // before the final EOF response is read.
 func newDialedClient(t *testing.T, bk *Broker) (*grpc.ClientConn, pb.RoutedJournalClient) {
-	var conn, err = grpc.Dial(bk.Endpoint().URL().Host, grpc.WithInsecure())
+	var url = bk.Endpoint().URL()
+
+	var tc credentials.TransportCredentials
+	if url.Scheme == "https" {
+		tc = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})
+	} else {
+		tc = insecure.NewCredentials()
+	}
+
+	var conn, err = grpc.Dial(url.Host, grpc.WithTransportCredentials(tc))
 	require.NoError(t, err)
 	return conn, pb.NewRoutedJournalClient(pb.NewJournalClient(conn), pb.NoopDispatchRouter{})
 }
