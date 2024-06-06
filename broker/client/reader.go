@@ -182,6 +182,10 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 				return 0, err
 
 			}
+			log.WithFields(log.Fields{
+				"url":      fmt.Sprintf("%+v", fragURL),
+				"fragment": fmt.Sprintf("%+v", *r.Response.Fragment),
+			}).Warn("reader handle url")
 			if fragURL.Scheme != "gs" {
 				return 0, fmt.Errorf("TransformSignedURLs is only supported for GCS")
 			}

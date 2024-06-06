@@ -45,8 +45,8 @@ func (s *gcsBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration)
 
 	if DisableSignedUrls {
 		log.WithFields(log.Fields{
-			"ep":       fmt.Sprintf("%v", *ep),
-			"fragment": fmt.Sprintf("%v", fragment),
+			"ep":       fmt.Sprintf("%+v", *ep),
+			"fragment": fmt.Sprintf("%+v", fragment),
 		}).Info("signGet disable signed urls")
 		u := &url.URL{
 			Path: fmt.Sprintf("/%s/%s", cfg.bucket, cfg.rewritePath(cfg.prefix, fragment.ContentPath())),
