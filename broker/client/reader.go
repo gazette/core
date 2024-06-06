@@ -181,6 +181,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 			log.WithFields(log.Fields{
 				"url":      fmt.Sprintf("%+v", fragURL),
 				"fragment": fmt.Sprintf("%+v", *r.Response.Fragment),
+				"offset":   r.Request.Offset,
 			}).Warn("reader handle url")
 			if fragURL.Scheme != "gs" {
 				return 0, fmt.Errorf("TransformSignedURL unsupported scheme: %s", fragURL.Scheme)
