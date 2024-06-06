@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"testing"
 
@@ -9,6 +10,8 @@ import (
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/etcdtest"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func TestE2EAppendAndReplicatedRead(t *testing.T) {
@@ -334,7 +337,16 @@ func applySpoolContentFixture(r *replica) {
 // may see "transport is closing" errors due to the loopback ClientConn being closed
 // before a final EOF response is read.
 func newDialedClient(t *testing.T, bk *testBroker) (*grpc.ClientConn, pb.JournalClient) {
-	var conn, err = grpc.Dial(bk.srv.Endpoint().URL().Host, grpc.WithInsecure())
+	var url = bk.srv.Endpoint().URL()
+
+	var tc credentials.TransportCredentials
+	if url.Scheme == "https" {
+		tc = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})
+	} else {
+		tc = insecure.NewCredentials()
+	}
+
+	var conn, err = grpc.Dial(url.Host, grpc.WithTransportCredentials(tc))
 	require.NoError(t, err)
 	return conn, pb.NewJournalClient(conn)
 }

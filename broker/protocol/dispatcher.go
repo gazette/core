@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"golang.org/x/net/trace"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/codes"
@@ -144,6 +145,13 @@ func (d *dispatcher) updateSubConnState(sc balancer.SubConn, state balancer.SubC
 		sc.Connect()
 	}
 	d.mu.Unlock()
+
+	if state.ConnectivityState == connectivity.TransientFailure {
+		logrus.WithFields(logrus.Fields{
+			"id":  id,
+			"err": state.ConnectionError,
+		}).Warn("subconnection is in transient failure")
+	}
 
 	// Notify gRPC that block requests may now be able to proceed.
 	d.cc.UpdateState(balancer.State{
