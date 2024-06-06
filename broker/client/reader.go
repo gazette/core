@@ -302,7 +302,12 @@ func OpenFragmentURL(ctx context.Context, fragment pb.Fragment, offset int64, ur
 }
 
 func OpenUnsignedFragmentURL(ctx context.Context, fragment pb.Fragment, offset int64, url *url.URL) (*FragmentReader, error) {
-	if rdr, err := gcs.open(ctx, url, fragment); err != nil {
+	var (
+		rdr io.ReadCloser
+		err error
+	)
+
+	if rdr, err = gcs.open(ctx, url, fragment); err != nil {
 		return nil, err
 	}
 
