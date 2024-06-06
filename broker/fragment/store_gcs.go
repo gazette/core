@@ -82,6 +82,10 @@ func (s *gcsBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment
 	if err != nil {
 		return nil, err
 	}
+	log.WithFields(log.Fields{
+		"ep":       fmt.Sprintf("%+v", *ep),
+		"fragment": fmt.Sprintf("%+v", fragment),
+	}).Info("Open fragment")
 	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).NewReader(ctx)
 }
 
