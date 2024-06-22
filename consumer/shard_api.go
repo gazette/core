@@ -60,7 +60,7 @@ func ShardList(ctx context.Context, srv *Service, req *pc.ListRequest) (*pc.List
 	defer s.KS.Mu.RUnlock()
 	s.KS.Mu.RLock()
 
-	var metaLabels, allLabels pb.LabelSet
+	var scratch pb.LabelSet
 
 	var it = allocator.LeftJoin{
 		LenL: len(s.Items),
@@ -75,10 +75,10 @@ func ShardList(ctx context.Context, srv *Service, req *pc.ListRequest) (*pc.List
 		var shard = pc.ListResponse_Shard{
 			Spec: *s.Items[cur.Left].Decoded.(allocator.Item).ItemValue.(*pc.ShardSpec)}
 
-		metaLabels = pc.ExtractShardSpecMetaLabels(&shard.Spec, metaLabels)
-		allLabels = pb.UnionLabelSets(metaLabels, shard.Spec.LabelSet, allLabels)
+		// LabelSetExt() truncates `scratch` while re-using its storage.
+		scratch = shard.Spec.LabelSetExt(scratch)
 
-		if !req.Selector.Matches(allLabels) {
+		if !req.Selector.Matches(scratch) {
 			continue
 		}
 		shard.ModRevision = s.Items[cur.Left].Raw.ModRevision

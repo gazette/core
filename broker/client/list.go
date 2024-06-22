@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"sync/atomic"
 	"time"
 
@@ -11,17 +13,16 @@ import (
 	"google.golang.org/grpc"
 )
 
-// PolledList periodically polls the List RPC with a given ListRequest, making
+// WatchedList drives ongoing List RPCs with a given ListRequest, making
 // its most recent result available via List. It's a building block for
 // applications which interact with dynamic journal sets and wish to react
 // to changes in their set membership over time.
 //
-//      var partitions, _ = protocol.ParseLabelSelector("logs=clicks, source=mobile")
-//      var pl, err = NewPolledList(ctx, client, time.Minute, protocol.ListRequest{
-//          Selector: partitions,
-//      })
-//
-type PolledList struct {
+//	var partitions, _ = protocol.ParseLabelSelector("logs=clicks, source=mobile")
+//	var pl, err = NewPolledList(ctx, client, protocol.ListRequest{
+//	    Selector: partitions,
+//	})
+type WatchedList struct {
 	ctx      context.Context
 	client   pb.JournalClient
 	req      pb.ListRequest
@@ -29,16 +30,33 @@ type PolledList struct {
 	updateCh chan struct{}
 }
 
-// NewPolledList returns a PolledList of the ListRequest which is initialized and
-// ready for immediate use, and which will regularly refresh with the given Duration.
+// NewWatchedList returns a WatchedList of the ListRequest which is initialized and
+// ready for immediate use, and which is kept up-to-date with watched changes from brokers.
 // An error encountered in the first List RPC is returned. Subsequent RPC errors
 // will be logged as warnings and retried as part of regular refreshes.
-func NewPolledList(ctx context.Context, client pb.JournalClient, dur time.Duration, req pb.ListRequest) (*PolledList, error) {
-	var resp, err = ListAllJournals(ctx, client, req)
+func NewWatchedList(ctx context.Context, client pb.JournalClient, req pb.ListRequest) (*WatchedList, error) {
+	req = pb.ListRequest{
+		Selector: req.Selector,
+		Watch:    true,
+	}
+
+	var stream, err = client.List(pb.WithDispatchDefault(ctx), &req, grpc.WaitForReady(true))
+	if err != nil {
+		return nil, mapGRPCCtxErr(ctx, err)
+	}
+	resp, err := ReadListResponse(stream, req)
 	if err != nil {
 		return nil, err
 	}
-	var pl = &PolledList{
+
+	// Initialize route cache with listed journals.
+	if dr, ok := client.(pb.DispatchRouter); ok {
+		for _, j := range resp.Journals {
+			dr.UpdateRoute(j.Spec.Name.String(), &j.Route)
+		}
+	}
+
+	var pl = &WatchedList{
 		ctx:      ctx,
 		client:   client,
 		req:      req,
@@ -47,61 +65,119 @@ func NewPolledList(ctx context.Context, client pb.JournalClient, dur time.Durati
 	pl.resp.Store(resp)
 	pl.updateCh <- struct{}{}
 
-	go pl.periodicRefresh(dur)
+	go pl.watch(stream)
 	return pl, nil
 }
 
 // List returns the most recent polled & merged ListResponse (see ListAllJournals).
-func (pl *PolledList) List() *pb.ListResponse { return pl.resp.Load().(*pb.ListResponse) }
+func (pl *WatchedList) List() *pb.ListResponse { return pl.resp.Load().(*pb.ListResponse) }
 
 // UpdateCh returns a channel which is signaled with each update of the
 // PolledList. Only one channel is allocated and one signal sent per-update,
 // so if multiple goroutines select from UpdateCh only one will wake.
-func (pl *PolledList) UpdateCh() <-chan struct{} { return pl.updateCh }
+func (pl *WatchedList) UpdateCh() <-chan struct{} { return pl.updateCh }
 
-func (pl *PolledList) periodicRefresh(dur time.Duration) {
-	var ticker = time.NewTicker(dur)
+func (pl *WatchedList) watch(stream pb.Journal_ListClient) {
+	var attempt int
 	for {
-		select {
-		case <-ticker.C:
-			var resp, err = ListAllJournals(pl.ctx, pl.client, pl.req)
-			if err != nil {
-				log.WithFields(log.Fields{"err": err, "req": pl.req.String()}).
-					Warn("periodic List refresh failed (will retry)")
-			} else {
-				pl.resp.Store(resp)
+		var err error
+		var resp *pb.ListResponse
 
-				select {
-				case pl.updateCh <- struct{}{}:
-				default: // Don't block if nobody's reading.
-				}
-			}
-		case <-pl.ctx.Done():
-			ticker.Stop()
-			return
+		if stream == nil {
+			pl.req.WatchResume = &pl.List().Header
+			stream, err = pl.client.List(pb.WithDispatchDefault(pl.ctx), &pl.req, grpc.WaitForReady(true))
 		}
+		if err == nil {
+			resp, err = ReadListResponse(stream, pl.req)
+		}
+
+		if err != nil {
+			stream = nil
+
+			log.WithFields(log.Fields{"err": err, "attempt": attempt, "req": pl.req.String()}).
+				Warn("watched journal listing failed (will retry)")
+
+			// Wait for back-off timer or context cancellation.
+			select {
+			case <-pl.ctx.Done():
+				return
+			case <-time.After(backoff(attempt)):
+			}
+			continue
+		}
+
+		// We don't UpdateRoute here because:
+		// * Routes for journals already being read are known.
+		// * Newly-added journals have unstable routes as they're being assigned.
+		// * The cache size may be limited and we don't want to perturb it.
+		pl.resp.Store(resp)
+
+		select {
+		case pl.updateCh <- struct{}{}:
+		default: // Don't block if nobody's reading.
+		}
+
+		attempt = 0
 	}
 }
 
-// ListAllJournals performs a broker journal listing.
+// ListAllJournals performs a unary broker journal listing.
 // Any encountered error is returned.
 func ListAllJournals(ctx context.Context, client pb.JournalClient, req pb.ListRequest) (*pb.ListResponse, error) {
-	// List RPCs may be dispatched to any broker.
-	var resp, err = client.List(pb.WithDispatchDefault(ctx), &req, grpc.FailFast(false))
+	if req.Watch {
+		panic("ListAllJournals cannot be used to Watch a listing")
+	}
+	var stream, err = client.List(pb.WithDispatchDefault(ctx), &req, grpc.WaitForReady(true))
 	if err != nil {
-		return resp, mapGRPCCtxErr(ctx, err)
+		return nil, mapGRPCCtxErr(ctx, err)
+	}
+
+	if resp, err := ReadListResponse(stream, req); err != nil {
+		return nil, err
+	} else {
+		if dr, ok := client.(pb.DispatchRouter); ok {
+			for _, j := range resp.Journals {
+				dr.UpdateRoute(j.Spec.Name.String(), &j.Route)
+			}
+		}
+		return resp, nil
+	}
+}
+
+// ReadListResponse reads a complete ListResponse snapshot from the stream.
+func ReadListResponse(stream pb.Journal_ListClient, req pb.ListRequest) (*pb.ListResponse, error) {
+	var resp, err = stream.Recv()
+
+	if err != nil {
+		return nil, mapGRPCCtxErr(stream.Context(), err)
 	} else if err = resp.Validate(); err != nil {
 		return resp, err
 	} else if resp.Status != pb.Status_OK {
 		return resp, errors.New(resp.Status.String())
+	} else if req.WatchResume != nil && req.WatchResume.Etcd.Revision >= resp.Header.Etcd.Revision {
+		return nil, fmt.Errorf("server sent unexpected ListResponse revision (%d; expected > %d)",
+			resp.Header.Etcd.Revision, req.WatchResume.Etcd.Revision)
 	}
 
-	if dr, ok := client.(pb.DispatchRouter); ok {
-		for _, j := range resp.Journals {
-			dr.UpdateRoute(j.Spec.Name.String(), &j.Route)
+	for {
+		if next, err := stream.Recv(); err == io.EOF {
+			if req.Watch {
+				return nil, io.ErrUnexpectedEOF // Unexpected EOF of long-lived watch.
+			} else {
+				return resp, nil // Expected EOF of unary listing.
+			}
+		} else if err != nil {
+			return nil, mapGRPCCtxErr(stream.Context(), err)
+		} else if len(next.Journals) == 0 {
+			if req.Watch {
+				return resp, nil
+			} else {
+				return nil, fmt.Errorf("unexpected empty ListResponse.Journals in unary listing")
+			}
+		} else {
+			resp.Journals = append(resp.Journals, next.Journals...)
 		}
 	}
-	return resp, nil
 }
 
 // GetJournal retrieves the JournalSpec of the named Journal, or returns an error.
