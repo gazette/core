@@ -22,7 +22,7 @@ import (
 type AddressConfig struct {
 	Address       pb.Endpoint `long:"address" env:"ADDRESS" default:"http://localhost:8080" description:"Service address endpoint"`
 	CertFile      string      `long:"cert-file" env:"CERT_FILE" default:"" description:"Path to the client TLS certificate"`
-	KeyFile       string      `long:"key-file" env:"KEY_FILE" default:"" description:"Path to the client TLS private key"`
+	CertKeyFile   string      `long:"cert-key-file" env:"CERT_KEY_FILE" default:"" description:"Path to the client TLS private key"`
 	TrustedCAFile string      `long:"trusted-ca-file" env:"TRUSTED_CA_FILE" default:"" description:"Path to the trusted CA for client verification of server certificates"`
 	AuthKeys      string      `long:"auth-keys" env:"AUTH_KEYS" description:"Whitespace separated, base64-encoded keys. The first key is used to sign Authorization tokens."`
 }
@@ -32,7 +32,7 @@ func (c *AddressConfig) MustDial(ctx context.Context) *grpc.ClientConn {
 	var tc credentials.TransportCredentials
 
 	if c.Address.URL().Scheme == "https" {
-		var tlsConfig, err = server.BuildTLSConfig(c.CertFile, c.KeyFile, c.TrustedCAFile)
+		var tlsConfig, err = server.BuildTLSConfig(c.CertFile, c.CertKeyFile, c.TrustedCAFile)
 		Must(err, "failed to build TLS config")
 		tc = credentials.NewTLS(tlsConfig)
 	} else {

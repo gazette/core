@@ -77,11 +77,11 @@ func (cmdServe) Execute(args []string) error {
 
 	if Config.Broker.ServerCertFile != "" {
 		serverTLS, err = server.BuildTLSConfig(
-			Config.Broker.ServerCertFile, Config.Broker.ServerKeyFile, Config.Broker.ServerCAFile)
+			Config.Broker.ServerCertFile, Config.Broker.ServerCertKeyFile, Config.Broker.ServerCAFile)
 		mbp.Must(err, "building server TLS config")
 
 		peerTLS, err = server.BuildTLSConfig(
-			Config.Broker.PeerCertFile, Config.Broker.PeerKeyFile, Config.Broker.PeerCAFile)
+			Config.Broker.PeerCertFile, Config.Broker.PeerCertKeyFile, Config.Broker.PeerCAFile)
 		mbp.Must(err, "building peer TLS config")
 	}
 
