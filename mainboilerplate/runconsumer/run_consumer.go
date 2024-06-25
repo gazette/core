@@ -141,11 +141,11 @@ func (sc Cmd) Execute(args []string) error {
 
 	if bc.Consumer.ServerCertFile != "" {
 		serverTLS, err = server.BuildTLSConfig(
-			bc.Consumer.ServerCertFile, bc.Consumer.ServerKeyFile, bc.Consumer.ServerCAFile)
+			bc.Consumer.ServerCertFile, bc.Consumer.ServerCertKeyFile, bc.Consumer.ServerCAFile)
 		mbp.Must(err, "building server TLS config")
 
 		peerTLS, err = server.BuildTLSConfig(
-			bc.Consumer.PeerCertFile, bc.Consumer.PeerKeyFile, bc.Consumer.PeerCAFile)
+			bc.Consumer.PeerCertFile, bc.Consumer.PeerCertKeyFile, bc.Consumer.PeerCAFile)
 		mbp.Must(err, "building peer TLS config")
 	}
 

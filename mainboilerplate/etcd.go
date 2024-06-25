@@ -16,7 +16,7 @@ import (
 type EtcdConfig struct {
 	Address       protocol.Endpoint `long:"address" env:"ADDRESS" default:"http://localhost:2379" description:"Etcd service address endpoint"`
 	CertFile      string            `long:"cert-file" env:"CERT_FILE" default:"" description:"Path to the client TLS certificate"`
-	KeyFile       string            `long:"key-file" env:"KEY_FILE" default:"" description:"Path to the client TLS private key"`
+	CertKeyFile   string            `long:"cert-key-file" env:"CERT_KEY_FILE" default:"" description:"Path to the client TLS private key"`
 	TrustedCAFile string            `long:"trusted-ca-file" env:"TRUSTED_CA_FILE" default:"" description:"Path to the trusted CA for client verification of server certificates"`
 	LeaseTTL      time.Duration     `long:"lease" env:"LEASE_TTL" default:"20s" description:"Time-to-live of Etcd lease"`
 }
@@ -29,7 +29,7 @@ func (c *EtcdConfig) MustDial() *clientv3.Client {
 	switch addr.Scheme {
 	case "https":
 		var err error
-		tlsConfig, err = server.BuildTLSConfig(c.CertFile, c.KeyFile, c.TrustedCAFile)
+		tlsConfig, err = server.BuildTLSConfig(c.CertFile, c.CertKeyFile, c.TrustedCAFile)
 		Must(err, "failed to build TLS config")
 	case "unix":
 		// The Etcd client requires hostname is stripped from unix:// URLs.
