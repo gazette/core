@@ -10,20 +10,41 @@ import (
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
 	pc "go.gazette.dev/core/consumer/protocol"
+	"go.gazette.dev/core/server"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 // AddressConfig of a remote service.
 type AddressConfig struct {
-	Address pb.Endpoint `long:"address" env:"ADDRESS" default:"http://localhost:8080" description:"Service address endpoint"`
+	Address       pb.Endpoint `long:"address" env:"ADDRESS" default:"http://localhost:8080" description:"Service address endpoint"`
+	CertFile      string      `long:"cert-file" env:"CERT_FILE" default:"" description:"Path to the client TLS certificate"`
+	KeyFile       string      `long:"key-file" env:"KEY_FILE" default:"" description:"Path to the client TLS private key"`
+	TrustedCAFile string      `long:"trusted-ca-file" env:"TRUSTED_CA_FILE" default:"" description:"Path to the trusted CA for client verification of server certificates"`
 }
 
 // MustDial dials the server address using a protocol.Dispatcher balancer, and panics on error.
 func (c *AddressConfig) MustDial(ctx context.Context) *grpc.ClientConn {
-	var cc, err = grpc.DialContext(ctx,
+	var tc credentials.TransportCredentials
+
+	if c.Address.URL().Scheme == "https" {
+		var tlsConfig, err = server.BuildTLSConfig(c.CertFile, c.KeyFile, c.TrustedCAFile)
+		Must(err, "failed to build TLS config")
+		tc = credentials.NewTLS(tlsConfig)
+	} else {
+		tc = insecure.NewCredentials()
+	}
+
+	// Use a tighter bound for the maximum back-off delay (default is 120s).
+	var backoffConfig = backoff.DefaultConfig
+	backoffConfig.MaxDelay = 5 * time.Second
+
+	cc, err := grpc.DialContext(ctx,
 		c.Address.GRPCAddr(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(tc),
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoffConfig}),
 		// A single Gazette broker frequently serves LOTS of Journals.
 		// Readers will start many concurrent reads of various journals,
 		// but may process them in arbitrary orders, which means a journal
@@ -33,9 +54,6 @@ func (c *AddressConfig) MustDial(ctx context.Context) *grpc.ClientConn {
 		// only stream-level flow control.
 		grpc.WithInitialConnWindowSize(math.MaxInt32),
 		grpc.WithDefaultServiceConfig(fmt.Sprintf(`{"loadBalancingConfig": [{"%s":{}}]}`, pb.DispatcherGRPCBalancerName)),
-		// Use a tighter bound for the maximum back-off delay (default is 120s).
-		// TODO(johnny): Make this configurable?
-		grpc.WithBackoffMaxDelay(time.Second*5),
 		// Instrument client for gRPC metric collection.
 		grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor),
 		grpc.WithStreamInterceptor(grpc_prometheus.StreamClientInterceptor),
