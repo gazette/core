@@ -1,24 +1,19 @@
 package broker
 
 import (
-	"context"
 	"io"
-	"io/ioutil"
 	"net"
 
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
-	"google.golang.org/grpc/status"
 )
 
 // Read dispatches the JournalServer.Read API.
-func (svc *Service) Read(req *pb.ReadRequest, stream pb.Journal_ReadServer) (err error) {
+func (svc *Service) Read(claims pb.Claims, req *pb.ReadRequest, stream pb.Journal_ReadServer) (err error) {
 	var resolved *resolution
 	defer instrumentJournalServerRPC("Read", &err, &resolved)()
 
@@ -37,9 +32,7 @@ func (svc *Service) Read(req *pb.ReadRequest, stream pb.Journal_ReadServer) (err
 		return err
 	}
 
-	resolved, err = svc.resolver.resolve(resolveArgs{
-		ctx:            stream.Context(),
-		journal:        req.Journal,
+	resolved, err = svc.resolver.resolve(stream.Context(), claims, req.Journal, resolveOpts{
 		mayProxy:       !req.DoNotProxy,
 		requirePrimary: false,
 		proxyHeader:    req.Header,
@@ -56,23 +49,13 @@ func (svc *Service) Read(req *pb.ReadRequest, stream pb.Journal_ReadServer) (err
 		return proxyRead(stream, req, svc.jc, svc.stopProxyReadsCh)
 	}
 
-	err = serveRead(stream, req, &resolved.Header, resolved.replica.index)
-
-	// Blocking Read RPCs live indefinitely, until cancelled by the caller or
-	// due to journal reassignment. Interpret local or remote cancellation as
-	// a graceful closure of the RPC and not an error.
-	if ec, sc := errors.Cause(err), status.Code(err); ec == context.Canceled ||
-		ec == context.DeadlineExceeded ||
-		sc == codes.Canceled ||
-		sc == codes.DeadlineExceeded {
-
-		err = nil
-	}
-	return err
+	return pb.SuppressCancellationError(serveRead(stream, req, &resolved.Header, resolved.replica.index))
 }
 
 // proxyRead forwards a ReadRequest to a resolved peer broker.
 func proxyRead(stream grpc.ServerStream, req *pb.ReadRequest, jc pb.JournalClient, stopCh <-chan struct{}) error {
+	// We verified the client's authorization and are running under its context.
+	// pb.AuthJournalClient will self-sign claims to proxy this journal on the client's behalf.
 	var ctx = pb.WithDispatchRoute(stream.Context(), req.Header.Route, req.Header.ProcessId)
 
 	// We use the |stream| context for this RPC, which means a cancellation from
@@ -126,11 +109,14 @@ type proxyChunk struct {
 
 // serveRead evaluates a client's Read RPC against the local replica index.
 func serveRead(stream grpc.ServerStream, req *pb.ReadRequest, hdr *pb.Header, index *fragment.Index) error {
-	var buffer = make([]byte, chunkSize)
-	var reader io.ReadCloser
+	var (
+		buffer = make([]byte, chunkSize)
+		ctx    = stream.Context()
+		reader io.ReadCloser
+	)
 
 	for i := 0; true; i++ {
-		var resp, file, err = index.Query(stream.Context(), req)
+		var resp, file, err = index.Query(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -158,10 +144,10 @@ func serveRead(stream grpc.ServerStream, req *pb.ReadRequest, hdr *pb.Header, in
 		req.Offset = resp.Offset
 
 		if file != nil {
-			reader = ioutil.NopCloser(io.NewSectionReader(
+			reader = io.NopCloser(io.NewSectionReader(
 				file, req.Offset-resp.Fragment.Begin, resp.Fragment.End-req.Offset))
 		} else {
-			if reader, err = fragment.Open(stream.Context(), *resp.Fragment); err != nil {
+			if reader, err = fragment.Open(ctx, *resp.Fragment); err != nil {
 				return err
 			} else if reader, err = client.NewFragmentReader(reader, *resp.Fragment, req.Offset); err != nil {
 				return err
