@@ -358,25 +358,22 @@ func SubtractJournalSpecs(a, b JournalSpec) JournalSpec {
 	return a
 }
 
-// ExtractJournalSpecMetaLabels adds to the LabelSet a singular label "name",
-// with value of the JournalSpec Name, and multi-label "prefix", having a value
-// for each path component prefix of Name.
-func ExtractJournalSpecMetaLabels(spec *JournalSpec, out LabelSet) LabelSet {
-	var name = spec.Name.String()
-	out.Labels = append(out.Labels[:0], Label{Name: "name", Value: name})
-
-	for i, j := 0, strings.IndexByte(name, '/'); j != -1; j = strings.IndexByte(name[i:], '/') {
-		i += j + 1
-		out.Labels = append(out.Labels, Label{Name: "prefix", Value: name[:i]})
-	}
-	return out
+// LabelSetExt adds additional metadata labels to the LabelSet of the JournalSpec,
+// returning the result. The result is built by truncating `buf` and then appending
+// the merged LabelSet.
+func (m *JournalSpec) LabelSetExt(buf LabelSet) LabelSet {
+	return UnionLabelSets(LabelSet{
+		Labels: []Label{
+			{Name: "name", Value: m.Name.String()},
+		},
+	}, m.LabelSet, buf)
 }
 
 // validateJournalLabelConstraints asserts expected invariants of MessageType,
 // MessageSubType, and ContentType labels:
-//  * ContentType must parse as a RFC 1521 MIME / media-type.
-//  * If MessageType is present, so is ContentType.
-//  * If MessageSubType is present, so is MessageType.
+//   - ContentType must parse as a RFC 1521 MIME / media-type.
+//   - If MessageType is present, so is ContentType.
+//   - If MessageSubType is present, so is MessageType.
 func validateJournalLabelConstraints(ls LabelSet) error {
 	if err := ValidateSingleValueLabels(ls); err != nil {
 		return err
