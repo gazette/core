@@ -255,10 +255,12 @@ func (svc *Service) Apply(ctx context.Context, claims pb.Claims, req *pb.ApplyRe
 		}
 	}
 
+	s.KS.Mu.RLock()
 	resp = &pb.ApplyResponse{
 		Status: pb.Status_OK,
 		Header: pbx.NewUnroutedHeader(s),
 	}
+	s.KS.Mu.RUnlock()
 
 	var txnResp clientv3.OpResponse
 	if txnResp, err = svc.etcd.Do(ctx, clientv3.OpTxn(cmp, ops, nil)); err != nil {

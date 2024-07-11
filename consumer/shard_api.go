@@ -52,17 +52,17 @@ func ShardStat(ctx context.Context, claims pb.Claims, srv *Service, req *pc.Stat
 func ShardList(ctx context.Context, claims pb.Claims, srv *Service, req *pc.ListRequest) (*pc.ListResponse, error) {
 	var s = srv.Resolver.state
 
-	var resp = &pc.ListResponse{
-		Status: pc.Status_OK,
-		Header: pbx.NewUnroutedHeader(s),
-	}
 	if err := req.Validate(); err != nil {
-		return resp, err
+		return nil, err
 	}
 
 	defer s.KS.Mu.RUnlock()
 	s.KS.Mu.RLock()
 
+	var resp = &pc.ListResponse{
+		Status: pc.Status_OK,
+		Header: pbx.NewUnroutedHeader(s),
+	}
 	var scratch pb.LabelSet
 
 	var it = allocator.LeftJoin{
@@ -140,10 +140,12 @@ func ShardApply(ctx context.Context, claims pb.Claims, srv *Service, req *pc.App
 		}
 	}
 
+	s.KS.Mu.RLock()
 	var resp = &pc.ApplyResponse{
 		Status: pc.Status_OK,
 		Header: pbx.NewUnroutedHeader(s),
 	}
+	s.KS.Mu.RUnlock()
 
 	var txnResp, err = srv.Etcd.Do(ctx, clientv3.OpTxn(cmp, ops, nil))
 	if err != nil {
@@ -162,23 +164,20 @@ func ShardApply(ctx context.Context, claims pb.Claims, srv *Service, req *pc.App
 
 // ShardGetHints is the default implementation of the ShardServer.Hints API.
 func ShardGetHints(ctx context.Context, claims pb.Claims, srv *Service, req *pc.GetHintsRequest) (*pc.GetHintsResponse, error) {
-	var (
-		resp = &pc.GetHintsResponse{
-			Status: pc.Status_OK,
-			Header: pbx.NewUnroutedHeader(srv.State),
-		}
-		ks   = srv.State.KS
-		spec *pc.ShardSpec
-	)
 
-	ks.Mu.RLock()
-	var item, ok = allocator.LookupItem(ks, req.Shard.String())
-	ks.Mu.RUnlock()
+	srv.State.KS.Mu.RLock()
+	var resp = &pc.GetHintsResponse{
+		Status: pc.Status_OK,
+		Header: pbx.NewUnroutedHeader(srv.State),
+	}
+	var item, ok = allocator.LookupItem(srv.State.KS, req.Shard.String())
+	srv.State.KS.Mu.RUnlock()
+
 	if !ok {
 		resp.Status = pc.Status_SHARD_NOT_FOUND
 		return resp, nil
 	}
-	spec = item.ItemValue.(*pc.ShardSpec)
+	var spec = item.ItemValue.(*pc.ShardSpec)
 
 	if !claims.Selector.Matches(spec.LabelSetExt(pb.LabelSet{})) {
 		resp.Status = pc.Status_SHARD_NOT_FOUND

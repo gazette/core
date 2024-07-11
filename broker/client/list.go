@@ -60,7 +60,10 @@ func NewWatchedList(ctx context.Context, client pb.JournalClient, req pb.ListReq
 }
 
 // List returns the most recent ListResponse snapshot, or nil if a snapshot has not been received yet.
-func (pl *WatchedList) List() *pb.ListResponse { return pl.resp.Load().(*pb.ListResponse) }
+func (pl *WatchedList) List() (out *pb.ListResponse) {
+	out, _ = pl.resp.Load().(*pb.ListResponse)
+	return
+}
 
 // UpdateCh returns a channel which is signaled with each update or error of the
 // PolledList. Errors are informational only: WatchedList will retry on all errors,
@@ -92,15 +95,16 @@ func (pl *WatchedList) watch() {
 		} else {
 			stream = nil // Must restart.
 
-			log.WithFields(log.Fields{"err": err, "attempt": attempt, "req": pl.req.String()}).
-				Warn("watched journal listing failed (will retry)")
-
 			// Wait for back-off timer or context cancellation.
 			select {
 			case <-pl.ctx.Done():
 				return
 			case <-time.After(backoff(attempt)):
 			}
+
+			log.WithFields(log.Fields{"err": err, "attempt": attempt, "req": pl.req.String()}).
+				Warn("watched journal listing failed (will retry)")
+
 			attempt += 1
 		}
 
