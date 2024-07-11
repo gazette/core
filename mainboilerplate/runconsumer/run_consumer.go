@@ -6,6 +6,7 @@ package runconsumer
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"os"
 	"os/signal"
@@ -16,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/allocator"
+	"go.gazette.dev/core/auth"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/consumer"
@@ -79,6 +81,7 @@ type BaseConfig struct {
 		Limit          uint32        `long:"limit" env:"LIMIT" default:"32" description:"Maximum number of Shards this consumer process will allocate"`
 		MaxHotStandbys uint32        `long:"max-hot-standbys" env:"MAX_HOT_STANDBYS" default:"3" description:"Maximum effective hot standbys of any one shard, which upper-bounds its stated hot-standbys."`
 		WatchDelay     time.Duration `long:"watch-delay" env:"WATCH_DELAY" default:"30ms" description:"Delay applied to the application of watched Etcd events. Larger values amortize the processing of fast-changing Etcd keys."`
+		AuthKeys       string        `long:"auth-keys" env:"AUTH_KEYS" description:"Whitespace separated, base64-encoded keys used to sign (first key) and verify (all keys) Authorization tokens."`
 	} `group:"Consumer" namespace:"consumer" env-namespace:"CONSUMER"`
 
 	Broker struct {
@@ -113,6 +116,19 @@ func (sc Cmd) Execute(args []string) error {
 	defer mbp.InitDiagnosticsAndRecover(bc.Diagnostics)()
 	mbp.InitLog(bc.Log)
 
+	var authorizer pb.Authorizer
+	var verifier pb.Verifier
+
+	if bc.Consumer.AuthKeys != "" {
+		var a, err = auth.NewKeyedAuth(bc.Consumer.AuthKeys)
+		mbp.Must(err, "parsing authorization keys")
+		authorizer, verifier = a, a
+		bc.Consumer.AuthKeys = "redacted" // Don't log keys.
+	} else {
+		var a = auth.NewNoopAuth()
+		authorizer, verifier = a, a
+	}
+
 	log.WithFields(log.Fields{
 		"config":    sc.Cfg,
 		"version":   mbp.Version,
@@ -120,8 +136,21 @@ func (sc Cmd) Execute(args []string) error {
 	}).Info("consumer configuration")
 	pb.RegisterGRPCDispatcher(bc.Consumer.Zone)
 
+	var err error
+	var serverTLS, peerTLS *tls.Config
+
+	if bc.Consumer.ServerCertFile != "" {
+		serverTLS, err = server.BuildTLSConfig(
+			bc.Consumer.ServerCertFile, bc.Consumer.ServerCertKeyFile, bc.Consumer.ServerCAFile)
+		mbp.Must(err, "building server TLS config")
+
+		peerTLS, err = server.BuildTLSConfig(
+			bc.Consumer.PeerCertFile, bc.Consumer.PeerCertKeyFile, bc.Consumer.PeerCAFile)
+		mbp.Must(err, "building peer TLS config")
+	}
+
 	// Bind our server listener, grabbing a random available port if Port is zero.
-	var srv, err = server.New("", bc.Consumer.Port)
+	srv, err := server.New("", bc.Consumer.Host, bc.Consumer.Port, serverTLS, peerTLS)
 	mbp.Must(err, "building Server instance")
 
 	if bc.Broker.Cache.Size <= 0 {
@@ -149,11 +178,11 @@ func (sc Cmd) Execute(args []string) error {
 		ks       = consumer.NewKeySpace(bc.Etcd.Prefix)
 		state    = allocator.NewObservedState(ks, allocator.MemberKey(ks, spec.Id.Zone, spec.Id.Suffix), consumer.ShardIsConsistent)
 		rjc      = bc.Broker.MustRoutedJournalClient(context.Background())
-		service  = consumer.NewService(sc.App, state, rjc, srv.GRPCLoopback, etcd)
+		service  = consumer.NewService(sc.App, authorizer, verifier, state, rjc, srv.GRPCLoopback, etcd)
 		tasks    = task.NewGroup(context.Background())
 		signalCh = make(chan os.Signal, 1)
 	)
-	pc.RegisterShardServer(srv.GRPCServer, service)
+	pc.RegisterShardServer(srv.GRPCServer, pc.NewAuthShardServer(service, service.Verifier))
 	ks.WatchApplyDelay = bc.Consumer.WatchDelay
 
 	// Register Resolver as a prometheus.Collector for tracking shard status

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +11,7 @@ import (
 	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/allocator"
+	"go.gazette.dev/core/auth"
 	"go.gazette.dev/core/broker"
 	"go.gazette.dev/core/broker/fragment"
 	"go.gazette.dev/core/broker/http_gateway"
@@ -32,6 +34,7 @@ var Config = new(struct {
 		MinAppendRate  uint32        `long:"min-append-rate" env:"MIN_APPEND_RATE" default:"65536" description:"Min rate (in bytes-per-sec) at which a client may stream Append RPC content. RPCs unable to sustain this rate are aborted"`
 		DisableStores  bool          `long:"disable-stores" env:"DISABLE_STORES" description:"Disable use of any configured journal fragment stores. The broker will neither list or persist remote fragments, and all data is discarded on broker exit."`
 		WatchDelay     time.Duration `long:"watch-delay" env:"WATCH_DELAY" default:"30ms" description:"Delay applied to the application of watched Etcd events. Larger values amortize the processing of fast-changing Etcd keys."`
+		AuthKeys       string        `long:"auth-keys" env:"AUTH_KEYS" description:"Whitespace separated, base64-encoded keys used to sign (first key) and verify (all keys) Authorization tokens."`
 	} `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 
 	Etcd struct {
@@ -49,6 +52,19 @@ func (cmdServe) Execute(args []string) error {
 	defer mbp.InitDiagnosticsAndRecover(Config.Diagnostics)()
 	mbp.InitLog(Config.Log)
 
+	var authorizer pb.Authorizer
+	var verifier pb.Verifier
+
+	if Config.Broker.AuthKeys != "" {
+		var a, err = auth.NewKeyedAuth(Config.Broker.AuthKeys)
+		mbp.Must(err, "parsing authorization keys")
+		authorizer, verifier = a, a
+		Config.Broker.AuthKeys = "redacted" // Don't log keys.
+	} else {
+		var a = auth.NewNoopAuth()
+		authorizer, verifier = a, a
+	}
+
 	log.WithFields(log.Fields{
 		"config":    Config,
 		"version":   mbp.Version,
@@ -56,8 +72,21 @@ func (cmdServe) Execute(args []string) error {
 	}).Info("broker configuration")
 	pb.RegisterGRPCDispatcher(Config.Broker.Zone)
 
+	var err error
+	var serverTLS, peerTLS *tls.Config
+
+	if Config.Broker.ServerCertFile != "" {
+		serverTLS, err = server.BuildTLSConfig(
+			Config.Broker.ServerCertFile, Config.Broker.ServerCertKeyFile, Config.Broker.ServerCAFile)
+		mbp.Must(err, "building server TLS config")
+
+		peerTLS, err = server.BuildTLSConfig(
+			Config.Broker.PeerCertFile, Config.Broker.PeerCertKeyFile, Config.Broker.PeerCAFile)
+		mbp.Must(err, "building peer TLS config")
+	}
+
 	// Bind our server listener, grabbing a random available port if Port is zero.
-	var srv, err = server.New("", Config.Broker.Port)
+	srv, err := server.New("", Config.Broker.Host, Config.Broker.Port, serverTLS, peerTLS)
 	mbp.Must(err, "building Server instance")
 
 	// If a file:// root was provided, ensure it exists and apply it.
@@ -73,7 +102,7 @@ func (cmdServe) Execute(args []string) error {
 	fragment.DisableStores = Config.Broker.DisableStores
 
 	var (
-		lo   = pb.NewJournalClient(srv.GRPCLoopback)
+		lo   = pb.NewAuthJournalClient(pb.NewJournalClient(srv.GRPCLoopback), authorizer)
 		etcd = Config.Etcd.MustDial()
 		spec = &pb.BrokerSpec{
 			JournalLimit: Config.Broker.Limit,
@@ -84,12 +113,11 @@ func (cmdServe) Execute(args []string) error {
 			allocator.MemberKey(ks, spec.Id.Zone, spec.Id.Suffix),
 			broker.JournalIsConsistent)
 		service  = broker.NewService(allocState, lo, etcd)
-		rjc      = pb.NewRoutedJournalClient(lo, service)
 		tasks    = task.NewGroup(context.Background())
 		signalCh = make(chan os.Signal, 1)
 	)
-	pb.RegisterJournalServer(srv.GRPCServer, service)
-	srv.HTTPMux.Handle("/", http_gateway.NewGateway(rjc))
+	pb.RegisterJournalServer(srv.GRPCServer, pb.NewAuthJournalServer(service, verifier))
+	srv.HTTPMux.Handle("/", http_gateway.NewGateway(pb.NewRoutedJournalClient(lo, pb.NoopDispatchRouter{})))
 	ks.WatchApplyDelay = Config.Broker.WatchDelay
 
 	log.WithFields(log.Fields{
