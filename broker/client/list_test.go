@@ -118,22 +118,23 @@ func (s *ListSuite) TestPolledList(c *gc.C) {
 		return &fixture, nil
 	}
 
-	// Expect NewPolledList calls ListAllJournals once, and List is prepared before return.
+	// Expect NewWatchedList synchronously lists journals before return.
 	callCh <- struct{}{}
 
 	var ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 
-	var pl, err = NewPolledList(ctx, broker.Client(), 5*time.Millisecond, pb.ListRequest{})
+	var pl, err = NewWatchedList(ctx, broker.Client(), pb.ListRequest{})
 	c.Check(err, gc.IsNil)
 	c.Check(pl.List(), gc.DeepEquals, &fixture)
 	<-pl.UpdateCh() // Expect UpdateCh is initially ready to select.
 
 	// Alter the fixture. List will eventually reflect it, after being given a chance to refresh.
 	fixture.Journals = mk("part-one", "part-two", "part-three")
+	fixture.Header.Etcd.Revision += 1
 	c.Check(pl.List(), gc.Not(gc.DeepEquals), &fixture)
 
-	// Expect another poll is done, and the PolledList updates.
+	// Expect another listing is done, and the PolledList updates.
 	callCh <- struct{}{}
 	<-pl.UpdateCh()
 
