@@ -3,11 +3,13 @@ package client
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.gazette.dev/core/broker/codecs"
@@ -349,17 +351,16 @@ func (fr *FragmentReader) Close() error {
 // fragments are persisted, and to which this client also has access. The
 // returned cleanup function removes the handler and restores the prior http.Client.
 //
-//      const root = "/mnt/shared-nas-array/path/to/fragment-root"
-//      defer client.InstallFileTransport(root)()
+//	const root = "/mnt/shared-nas-array/path/to/fragment-root"
+//	defer client.InstallFileTransport(root)()
 //
-//      var rr = NewRetryReader(ctx, client, protocol.ReadRequest{
-//          Journal: "a/journal/with/nas/fragment/store",
-//          DoNotProxy: true,
-//      })
-//      // rr.Read will read Fragments directly from NAS.
-//
+//	var rr = NewRetryReader(ctx, client, protocol.ReadRequest{
+//	    Journal: "a/journal/with/nas/fragment/store",
+//	    DoNotProxy: true,
+//	})
+//	// rr.Read will read Fragments directly from NAS.
 func InstallFileTransport(root string) (remove func()) {
-	var transport = http.DefaultTransport.(*http.Transport).Clone()
+	var transport = httpClient.Transport.(*http.Transport).Clone()
 	transport.RegisterProtocol("file", http.NewFileTransport(http.Dir(root)))
 
 	var prevClient = httpClient
@@ -389,6 +390,29 @@ func fragmentLabels(fragment pb.Fragment) prometheus.Labels {
 	}
 }
 
+// newHttpClient returns an http client for readers to use for fetching fragments.
+// It disables http2 because we've observed some rather horrific behavior from http2
+// lately. When there's an error with the underlying transport, the http2 client can still
+// use it for additional streams, creating the potential for connection failures to cause
+// more widespread errors for other requests to the same host. Falling back to http 1.1
+// is intended to be a short term workaround.
+func newHttpClient() *http.Client {
+	// The Go docs on disabling http2 are wrong. See: https://github.com/golang/go/issues/39302
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSNextProto:      make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+			TLSClientConfig:   &tls.Config{},
+			ForceAttemptHTTP2: false,
+			// Defaults below are taken from http.DefaultTransport
+			Proxy:                 http.ProxyFromEnvironment,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+}
+
 var (
 	// Map common broker error statuses into named errors.
 	ErrInsufficientJournalBrokers = errors.New(pb.Status_INSUFFICIENT_JOURNAL_BROKERS.String())
@@ -412,5 +436,5 @@ var (
 	ErrDidNotReadExpectedEOF = errors.New("did not read EOF at expected Fragment.End")
 
 	// httpClient is the http.Client used by OpenFragmentURL
-	httpClient = http.DefaultClient
+	httpClient = newHttpClient()
 )
