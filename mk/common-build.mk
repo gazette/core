@@ -80,6 +80,7 @@ ci-release-%: $(ROCKSDIR)/librocksdb.so go-install $$($$@-targets)
 	ln ${$@-targets} ${ROCKSDIR}/librocksdb.so.${ROCKSDB_VERSION} \
 		${WORKDIR}/ci-release
 	docker build \
+		--no-cache \
 		-f ${COREDIR}/mk/ci-release.Dockerfile \
 		-t $(subst -,/,$*):latest \
 		${WORKDIR}/ci-release/

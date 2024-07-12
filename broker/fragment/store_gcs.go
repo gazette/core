@@ -13,6 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
 	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/jwt"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
@@ -37,14 +38,25 @@ func (s *gcsBackend) Provider() string {
 }
 
 func (s *gcsBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
-	cfg, _, opts, err := s.gcsClient(ep)
+	cfg, client, opts, err := s.gcsClient(ep)
 	if err != nil {
 		return "", err
 	}
-	opts.Method = "GET"
-	opts.Expires = time.Now().Add(d)
 
-	return storage.SignedURL(cfg.bucket, cfg.rewritePath(cfg.prefix, fragment.ContentPath()), &opts)
+	if DisableSignedUrls {
+		u := &url.URL{
+			Path: fmt.Sprintf("/%s/%s", cfg.bucket, cfg.rewritePath(cfg.prefix, fragment.ContentPath())),
+		}
+		u.Scheme = "https"
+		u.Host = "storage.googleapis.com"
+
+		return u.String(), nil
+	} else {
+		opts.Method = "GET"
+		opts.Expires = time.Now().Add(d)
+
+		return client.Bucket(cfg.bucket).SignedURL(cfg.rewritePath(cfg.prefix, fragment.ContentPath()), &opts)
+	}
 }
 
 func (s *gcsBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (exists bool, err error) {
@@ -133,6 +145,8 @@ func (s *gcsBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 }
 
 func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, opts storage.SignedURLOptions, err error) {
+	var conf *jwt.Config
+
 	if err = parseStoreArgs(ep, &cfg); err != nil {
 		return
 	}
@@ -153,31 +167,44 @@ func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.
 	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
 	if err != nil {
 		return
-	} else if creds.JSON == nil {
-		err = fmt.Errorf("use of GCS requires that a service-account private key be supplied with application default credentials")
-		return
-	}
-	conf, err := google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
-	if err != nil {
-		return
-	}
-	client, err = storage.NewClient(ctx, option.WithTokenSource(conf.TokenSource(ctx)))
-	if err != nil {
-		return
-	}
-	opts = storage.SignedURLOptions{
-		GoogleAccessID: conf.Email,
-		PrivateKey:     conf.PrivateKey,
-	}
-	s.client, s.signedURLOptions = client, opts
+	} else if creds.JSON != nil {
+		conf, err = google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
+		if err != nil {
+			return
+		}
+		client, err = storage.NewClient(ctx, option.WithTokenSource(conf.TokenSource(ctx)))
+		if err != nil {
+			return
+		}
+		opts = storage.SignedURLOptions{
+			GoogleAccessID: conf.Email,
+			PrivateKey:     conf.PrivateKey,
+		}
+		s.client, s.signedURLOptions = client, opts
 
-	log.WithFields(log.Fields{
-		"ProjectID":      creds.ProjectID,
-		"GoogleAccessID": conf.Email,
-		"PrivateKeyID":   conf.PrivateKeyID,
-		"Subject":        conf.Subject,
-		"Scopes":         conf.Scopes,
-	}).Info("constructed new GCS client")
+		log.WithFields(log.Fields{
+			"ProjectID":      creds.ProjectID,
+			"GoogleAccessID": conf.Email,
+			"PrivateKeyID":   conf.PrivateKeyID,
+			"Subject":        conf.Subject,
+			"Scopes":         conf.Scopes,
+		}).Info("constructed new GCS client")
+	} else {
+		// Possible to use GCS without a service account (e.g. with a GCE instance and workload identity).
+		client, err = storage.NewClient(ctx, option.WithTokenSource(creds.TokenSource))
+		if err != nil {
+			return
+		}
+
+		// workload identity approach which SignGet() method accepts if you have
+		// "iam.serviceAccounts.signBlob" permissions against your service account.
+		opts = storage.SignedURLOptions{}
+		s.client, s.signedURLOptions = client, opts
+
+		log.WithFields(log.Fields{
+			"ProjectID": creds.ProjectID,
+		}).Info("constructed new GCS client without JWT")
+	}
 
 	return
 }

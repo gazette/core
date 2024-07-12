@@ -49,6 +49,7 @@ type udcAndExp struct {
 }
 
 type azureBackend struct {
+	sharedKeyCredentials *sas.SharedKeyCredential
 	// This is a cache of configured Pipelines for each tenant. These do not expire
 	pipelines map[string]pipeline.Pipeline
 	// This is a cache of Azure storage clients for each tenant. These do not expire
@@ -65,37 +66,69 @@ func (a *azureBackend) Provider() string {
 // See here for an example of how to use the Azure client libraries to create signatures:
 // https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/storage/azblob/service/examples_test.go#L285
 func (a *azureBackend) SignGet(endpoint *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
+	var (
+		sasQueryParams sas.QueryParameters
+		err            error
+	)
+
 	cfg, err := parseAzureEndpoint(endpoint)
+	if err != nil {
+		return "", err
+	}
+	// this step is needed to set the sharedkeyCredentials
+	_, err = a.getAzureServiceClient(endpoint)
 	if err != nil {
 		return "", err
 	}
 	blobName := cfg.rewritePath(cfg.prefix, fragment.ContentPath())
 
-	udc, err := a.getUserDelegationCredential(endpoint)
-	if err != nil {
-		return "", err
+	if endpoint.Scheme == "azure" {
+		// Note: for arize we assume azure scheme is for blob SAS (as opposed to container SAS in azure-ad case)
+		perms := sas.BlobPermissions{Add: true, Read: true, Write: true}
+
+		sasQueryParams, err = sas.BlobSignatureValues{
+			Protocol:      sas.ProtocolHTTPS, // Users MUST use HTTPS (not HTTP)
+			ExpiryTime:    time.Now().UTC().Add(d),
+			ContainerName: cfg.containerName,
+			BlobName:      blobName,
+			Permissions:   perms.String(),
+		}.SignWithSharedKey(a.sharedKeyCredentials)
+
+		if err != nil {
+			return "", err
+		}
+	} else if endpoint.Scheme == "azure-ad" {
+		udc, err := a.getUserDelegationCredential(endpoint)
+		if err != nil {
+			return "", err
+		}
+
+		sasQueryParams, err = sas.BlobSignatureValues{
+			Protocol:      sas.ProtocolHTTPS,       // Users MUST use HTTPS (not HTTP)
+			ExpiryTime:    time.Now().UTC().Add(d), // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
+			ContainerName: cfg.containerName,
+			BlobName:      blobName,
+
+			// These are the permissions granted to the signed URLs
+			// To produce a container SAS (as opposed to a blob SAS), assign to Permissions using
+			// ContainerSASPermissions and make sure the BlobName field is "" (the default).
+			Permissions: to.Ptr(sas.ContainerPermissions{Read: true, Add: true, Write: true}).String(),
+		}.SignWithUserDelegation(udc)
+
+		if err != nil {
+			return "", err
+		}
+
+		log.WithFields(log.Fields{
+			"tenantId":           cfg.accountTenantID,
+			"storageAccountName": cfg.storageAccountName,
+			"containerName":      cfg.containerName,
+			"blobName":           blobName,
+			"expiryTime":         sasQueryParams.ExpiryTime(),
+		}).Debug("Signed get request")
+	} else {
+		return "", fmt.Errorf("unknown scheme: %s", endpoint.Scheme)
 	}
-
-	sasQueryParams, err := sas.BlobSignatureValues{
-		Protocol:      sas.ProtocolHTTPS,       // Users MUST use HTTPS (not HTTP)
-		ExpiryTime:    time.Now().UTC().Add(d), // Timestamps are expected in UTC https://docs.microsoft.com/en-us/rest/api/storageservices/create-service-sas#service-sas-example
-		ContainerName: cfg.containerName,
-		BlobName:      blobName,
-		// These are the permissions granted to the signed URLs
-		Permissions: to.Ptr(sas.BlobPermissions{Read: true}).String(),
-	}.SignWithUserDelegation(udc)
-
-	if err != nil {
-		return "", err
-	}
-
-	log.WithFields(log.Fields{
-		"tenantId":           cfg.accountTenantID,
-		"storageAccountName": cfg.storageAccountName,
-		"containerName":      cfg.containerName,
-		"blobName":           blobName,
-		"expiryTime":         sasQueryParams.ExpiryTime(),
-	}).Debug("Signed get request")
 
 	return fmt.Sprintf("%s/%s?%s", cfg.containerURL(), blobName, sasQueryParams.Encode()), nil
 }
@@ -300,6 +333,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		if err != nil {
 			return nil, err
 		}
+		a.sharedKeyCredentials = sharedKeyCred
 		serviceClient, err := service.NewClientWithSharedKeyCredential(cfg.serviceUrl(), sharedKeyCred, &service.ClientOptions{})
 		if err != nil {
 			return nil, err
@@ -307,7 +341,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 
 		a.mu.Lock()
 		a.clients[accountName] = serviceClient
-		a.mu.Lock()
+		a.mu.Unlock()
 		return serviceClient, nil
 	} else if endpoint.Scheme == "azure-ad" {
 		// Link to the Azure docs describing what fields are required for active directory auth
@@ -371,7 +405,6 @@ func (a *azureBackend) getAzurePipeline(ep *url.URL) (cfg azureStoreConfig, clie
 	if ep.Scheme == "azure" {
 		var accountName = os.Getenv("AZURE_ACCOUNT_NAME")
 		var accountKey = os.Getenv("AZURE_ACCOUNT_KEY")
-
 		// Create an azblob credential that we can pass to `NewPipeline`
 		credentials, err = azblob.NewSharedKeyCredential(accountName, accountKey)
 		if err != nil {
