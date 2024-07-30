@@ -29,6 +29,7 @@ type azureStoreConfig struct {
 	accountTenantID string // The tenant ID that owns the storage account that we're writing into
 	// NOTE: This is not the tenant ID that owns the servie principal
 	storageAccountName string // Storage accounts in Azure are the equivalent to a "bucket" in S3
+	serviceUrlLocation string // suffix portion of the serviceUrl (e.g. "blob.core.windows.net")
 	containerName      string // In azure, blobs are stored inside of containers, which live inside accounts
 	prefix             string // This is the path prefix for the blobs inside the container
 
@@ -36,7 +37,7 @@ type azureStoreConfig struct {
 }
 
 func (cfg *azureStoreConfig) serviceUrl() string {
-	return fmt.Sprintf("https://%s.blob.core.windows.net", cfg.storageAccountName)
+	return fmt.Sprintf("https://%s.%s", cfg.storageAccountName, cfg.serviceUrlLocation)
 }
 
 func (cfg *azureStoreConfig) containerURL() string {
@@ -122,6 +123,7 @@ func (a *azureBackend) SignGet(endpoint *url.URL, fragment pb.Fragment, d time.D
 		log.WithFields(log.Fields{
 			"tenantId":           cfg.accountTenantID,
 			"storageAccountName": cfg.storageAccountName,
+			"serviceUrlLocation": cfg.serviceUrlLocation,
 			"containerName":      cfg.containerName,
 			"blobName":           blobName,
 			"expiryTime":         sasQueryParams.ExpiryTime(),
@@ -216,12 +218,14 @@ func (a *azureBackend) List(ctx context.Context, store pb.FragmentStore, ep *url
 			} else if frag, err := pb.ParseFragmentFromRelativePath(journal, blob.Name[len(*segmentList.Prefix):]); err != nil {
 				log.WithFields(log.Fields{
 					"storageAccountName": cfg.storageAccountName,
+					"serviceUrlLocation": cfg.serviceUrlLocation,
 					"name":               blob.Name,
 					"err":                err,
 				}).Warning("parsing fragment")
 			} else if *(blob.Properties.ContentLength) == 0 && frag.ContentLength() > 0 {
 				log.WithFields(log.Fields{
 					"storageAccountName": cfg.storageAccountName,
+					"serviceUrlLocation": cfg.serviceUrlLocation,
 					"name":               blob.Name,
 				}).Warning("zero-length fragment")
 			} else {
@@ -292,6 +296,12 @@ func parseAzureEndpoint(endpoint *url.URL) (cfg azureStoreConfig, err error) {
 	// Omit leading slash from URI. Note that FragmentStore already
 	// enforces that URL Paths end in '/'.
 	var splitPath = strings.Split(endpoint.Path[1:], "/")
+
+	// arize change to support china cloud
+	cfg.serviceUrlLocation = os.Getenv("AZURE_SERVICE_URL_LOCATION")
+	if cfg.serviceUrlLocation == "" {
+		cfg.serviceUrlLocation = "blob.core.windows.net"
+	}
 
 	if endpoint.Scheme == "azure" {
 		// Since only one non-ad "Shared Key" credential can be injected via
@@ -444,6 +454,7 @@ func (a *azureBackend) getAzurePipeline(ep *url.URL) (cfg azureStoreConfig, clie
 	log.WithFields(log.Fields{
 		"tenant":               cfg.accountTenantID,
 		"storageAccountName":   cfg.storageAccountName,
+		"serviceUrlLocation":   cfg.serviceUrlLocation,
 		"storageContainerName": cfg.containerName,
 		"pathPrefix":           cfg.prefix,
 	}).Info("constructed new Azure Storage pipeline client")
