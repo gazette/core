@@ -29,7 +29,7 @@ type azureStoreConfig struct {
 	accountTenantID string // The tenant ID that owns the storage account that we're writing into
 	// NOTE: This is not the tenant ID that owns the servie principal
 	storageAccountName string // Storage accounts in Azure are the equivalent to a "bucket" in S3
-	baseDomain         string // base domain for azure cloud (e.g. "windows.net")
+	baseDomain         string // base domain for azure cloud (e.g. "blob.core.windows.net")
 	containerName      string // In azure, blobs are stored inside of containers, which live inside accounts
 	prefix             string // This is the path prefix for the blobs inside the container
 
@@ -37,7 +37,7 @@ type azureStoreConfig struct {
 }
 
 func (cfg *azureStoreConfig) serviceUrl() string {
-	return fmt.Sprintf("https://%s.blob.core.%s", cfg.storageAccountName, cfg.baseDomain)
+	return fmt.Sprintf("https://%s.%s", cfg.storageAccountName, cfg.baseDomain)
 }
 
 func (cfg *azureStoreConfig) containerURL() string {
