@@ -98,6 +98,31 @@ func (s *IndexSuite) TestQueryAtHead(c *gc.C) {
 	c.Check(err, gc.IsNil)
 }
 
+func (s *IndexSuite) TestQueryAtMissingByteZero(c *gc.C) {
+	var ind = NewIndex(context.Background())
+	var now = time.Now().Unix()
+
+	// Establish local fragment fixtures.
+	var set = buildSet(c, 100, 200, 200, 300)
+	ind.SpoolCommit(set[0])
+
+	// A read from byte zero cannot proceed.
+	var resp, _, _ = ind.Query(context.Background(), &pb.ReadRequest{Offset: 0, Block: false})
+	c.Check(resp.Status, gc.Equals, pb.Status_OFFSET_NOT_YET_AVAILABLE)
+
+	// Set ModTime, marking the fragment as very recently persisted.
+	// A read from byte zero now skips forward.
+	set[0].ModTime = now
+	ind.ReplaceRemote(set)
+
+	resp, _, _ = ind.Query(context.Background(), &pb.ReadRequest{Offset: 0, Block: false})
+	c.Check(resp, gc.DeepEquals, &pb.ReadResponse{
+		Offset:    100,
+		WriteHead: 300,
+		Fragment:  &pb.Fragment{Begin: 100, End: 200, ModTime: now},
+	})
+}
+
 func (s *IndexSuite) TestQueryAtMissingMiddle(c *gc.C) {
 	var ind = NewIndex(context.Background())
 	var baseTime = time.Unix(1500000000, 0)
@@ -263,7 +288,9 @@ func (s *IndexSuite) TestWalkStoresAndURLSigning(c *gc.C) {
 	<-ind.FirstRefreshCh()
 
 	c.Check(ind.set, gc.HasLen, 3)
-	c.Check(ind.EndOffset(), gc.Equals, int64(0x255))
+	var bo, eo = ind.OffsetRange()
+	c.Check(bo, gc.Equals, int64(0x0))
+	c.Check(eo, gc.Equals, int64(0x255))
 
 	// Expect root/one provides Fragment 222-255.
 	var resp, _, _ = ind.Query(context.Background(), &pb.ReadRequest{Offset: 0x223})
@@ -279,7 +306,9 @@ func (s *IndexSuite) TestWalkStoresAndURLSigning(c *gc.C) {
 	ind.ReplaceRemote(set)
 
 	c.Check(ind.set, gc.HasLen, 4) // Combined Fragments are reflected.
-	c.Check(ind.EndOffset(), gc.Equals, int64(0x555))
+	bo, eo = ind.OffsetRange()
+	c.Check(bo, gc.Equals, int64(0x0))
+	c.Check(eo, gc.Equals, int64(0x555))
 
 	// Expect root/two now provides Fragment 222-333.
 	resp, _, _ = ind.Query(context.Background(), &pb.ReadRequest{Offset: 0x223})

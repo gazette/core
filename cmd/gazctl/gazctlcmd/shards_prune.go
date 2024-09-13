@@ -47,8 +47,10 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 	var rjc = ShardsCfg.Broker.MustRoutedJournalClient(ctx)
 
 	var metrics = shardsPruneMetrics{}
-	var logSegmentSets = make(map[pb.Journal]recoverylog.SegmentSet)
+	var logSegmentSets = make(map[pb.Journal][]recoverylog.Segment)
 	var skipRecoveryLogs = make(map[pb.Journal]bool)
+	// Retain the raw hints responses, so that we can log them if they're used to prune fragments
+	var rawHintsResponses = make(map[pb.Journal][]pc.GetHintsResponse)
 
 	for _, shard := range listShards(rsc, cmd.Selector).Shards {
 		metrics.shardsTotal++
@@ -59,6 +61,7 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 		mbp.Must(err, "failed to fetch hints")
 
 		var recoveryLog = shard.Spec.RecoveryLog()
+		rawHintsResponses[recoveryLog] = append(rawHintsResponses[recoveryLog], *allHints)
 
 		for _, curHints := range append(allHints.BackupHints, allHints.PrimaryHints) {
 			var hints = curHints.Hints
@@ -82,7 +85,7 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 					"shard":   shard.Spec.Id,
 					"reason":  reason,
 					"journal": recoveryLog,
-				}).Warn("will skip pruning recovery log journal")
+				}).Debug("will skip pruning recovery log journal")
 
 				break
 			}
@@ -91,36 +94,88 @@ func (cmd *cmdShardsPrune) Execute([]string) error {
 
 	for journal, segments := range logSegmentSets {
 		if skipRecoveryLogs[journal] {
-			log.WithField("journal", journal).Warn("skipping journal because another shard is missing hints that cover it")
+			log.WithField("journal", journal).Warn("skipping journal because a shard is missing hints that cover it")
 			continue
 		}
 		log.WithField("journal", journal).Debug("checking fragments of journal")
+		var prunedFragments []pb.Fragment
 		for _, f := range fetchFragments(ctx, rjc, journal) {
 			var spec = f.Spec
 
 			metrics.fragmentsTotal++
 			metrics.bytesTotal += spec.ContentLength()
 
-			if len(segments.Intersect(journal, spec.Begin, spec.End)) == 0 {
+			if !overlapsAnySegment(segments, spec) {
+				if spec.ModTime == 0 {
+					// This shouldn't ever happen, as long as the label selector covers all shards that are using
+					// each journal. But we don't validate that up front, so failing fast is the next best thing.
+					log.WithFields(log.Fields{
+						"journal":        spec.Journal,
+						"name":           spec.ContentName(),
+						"begin":          spec.Begin,
+						"end":            spec.End,
+						"hintedSegments": segments,
+					}).Fatal("unpersisted fragment does not overlap any hinted segments (the label selector argument does not include all shards using this log)")
+				}
 				log.WithFields(log.Fields{
-					"log":  spec.Journal,
-					"name": spec.ContentName(),
-					"size": spec.ContentLength(),
-					"mod":  spec.ModTime,
-				}).Info("pruning fragment")
+					"log":   spec.Journal,
+					"name":  spec.ContentName(),
+					"size":  spec.ContentLength(),
+					"mod":   spec.ModTime,
+					"begin": spec.Begin,
+					"end":   spec.End,
+				}).Debug("pruning fragment")
 
-				metrics.fragmentsPruned++
-				metrics.bytesPruned += spec.ContentLength()
-
+				var removed = true
 				if !cmd.DryRun {
-					mbp.Must(fragment.Remove(ctx, spec), "error removing fragment", "path", spec.ContentPath())
+					if err := fragment.Remove(ctx, spec); err != nil {
+						removed = false
+						metrics.failedToRemove++
+						log.WithFields(log.Fields{
+							"fragment": spec,
+							"error":    err,
+						}).Warn("failed to remove fragment (skipping)")
+					}
+				}
+				if removed {
+					metrics.fragmentsPruned++
+					metrics.bytesPruned += spec.ContentLength()
+					prunedFragments = append(prunedFragments, spec)
 				}
 			}
+		}
+		if len(prunedFragments) > 0 {
+			log.WithFields(log.Fields{
+				"journal":         journal,
+				"allHints":        rawHintsResponses[journal],
+				"liveSegments":    segments,
+				"prunedFragments": prunedFragments,
+			}).Info("pruned fragments")
 		}
 		logShardsPruneMetrics(metrics, journal.String(), "finished pruning log")
 	}
 	logShardsPruneMetrics(metrics, "", "finished pruning logs for all shards")
+
+	if metrics.failedToRemove > 0 {
+		log.WithField("failures", metrics.failedToRemove).Fatal("failed to remove fragments")
+	}
 	return nil
+}
+
+func overlapsAnySegment(segments []recoverylog.Segment, fragment pb.Fragment) bool {
+	for _, seg := range segments {
+		if (seg.FirstOffset < fragment.End || fragment.End == 0) &&
+			(seg.LastOffset > fragment.Begin || seg.LastOffset == 0) {
+			return true
+		}
+	}
+	if len(segments) == 0 {
+		log.WithFields(log.Fields{
+			"log": fragment.Journal,
+		}).Warn("no live segments for log")
+		return true
+	}
+	return false
 }
 
 func fetchFragments(ctx context.Context, journalClient pb.RoutedJournalClient, journal pb.Journal) []pb.FragmentsResponse__Fragment {
@@ -135,14 +190,13 @@ func fetchFragments(ctx context.Context, journalClient pb.RoutedJournalClient, j
 	return resp.Fragments
 }
 
-func foldHintsIntoSegments(hints recoverylog.FSMHints, sets map[pb.Journal]recoverylog.SegmentSet) {
+func foldHintsIntoSegments(hints recoverylog.FSMHints, sets map[pb.Journal][]recoverylog.Segment) {
 	var _, segments, err = hints.LiveLogSegments()
 	if err != nil {
 		mbp.Must(err, "unable to fetch hint segments")
 	} else if len(segments) == 0 {
 		panic("segment is empty") // We check this prior to calling in.
 	}
-
 	// Zero the LastOffset of the final hinted Segment. This has the effect of implicitly
 	// intersecting with all fragments having offsets greater than its FirstOffset.
 	// We want this behavior because playback will continue to read offsets & Fragments
@@ -150,26 +204,7 @@ func foldHintsIntoSegments(hints recoverylog.FSMHints, sets map[pb.Journal]recov
 	segments[len(segments)-1].LastOffset = 0
 
 	for _, segment := range segments {
-		var set = sets[segment.Log]
-
-		// set.Add() will return an error if we attempt to add a segment having a
-		// greater SeqNo and LastOffset != 0, to a set already having a lesser
-		// SeqNo and LastOffset == 0. Or, if FirstSeqNo is equal, it will replace
-		// a zero LastOffset with a non-zero one (which is not what we want
-		// in this case).
-		//
-		// So, zero LastOffset here if |segment| isn't strictly less than
-		// and non-overlapping with a pre-existing last LastOffset==0 element.
-		//
-		// Conceptually, we've defined a "tail" of the log where we won't delete
-		// anything, and are letting the /oldest/ hints bound how early that tail
-		// portion begins.
-		if l := len(set); l != 0 && set[l-1].LastOffset == 0 && set[l-1].FirstSeqNo <= segment.LastSeqNo {
-			segment.LastOffset = 0
-		}
-
-		mbp.Must(set.Add(segment), "failed to add segment", "log", segment.Log)
-		sets[segment.Log] = set
+		sets[segment.Log] = append(sets[segment.Log], segment)
 	}
 }
 
@@ -180,6 +215,7 @@ type shardsPruneMetrics struct {
 	bytesTotal      int64
 	bytesPruned     int64
 	skippedJournals int64
+	failedToRemove  int64
 }
 
 func logShardsPruneMetrics(m shardsPruneMetrics, journal, message string) {
@@ -192,6 +228,7 @@ func logShardsPruneMetrics(m shardsPruneMetrics, journal, message string) {
 		"bytesPruned":     m.bytesPruned,
 		"bytesKept":       m.bytesTotal - m.bytesPruned,
 		"skippedJournals": m.skippedJournals,
+		"failedToRemove":  m.failedToRemove,
 	}
 	if journal != "" {
 		fields["journal"] = journal
