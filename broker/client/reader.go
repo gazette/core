@@ -175,7 +175,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 
 	// If the frame preceding EOF provided a fragment URL, open it directly.
 	if !r.Request.MetadataOnly && r.Response.Status == pb.Status_OK && r.Response.FragmentUrl != "" {
-		if SkipSignedURLs {
+		if SkipSignedURLs > 0 {
 			fragURL := r.Response.Fragment.BackingStore.URL()
 			if fragURL.Scheme != "gs" {
 				return 0, fmt.Errorf("SkipSignedURL unsupported scheme: %s", fragURL.Scheme)
@@ -483,7 +483,7 @@ var (
 // stores_test.go, which is in broker/fragment, imports broker/client so we cannot import broker/fragment here
 // to avoid a cycle. Instead we will repeat a subset of store_gcs.go.
 
-var SkipSignedURLs = false
+var SkipSignedURLs = uint32(0)
 var gcs = &gcsBackend{}
 
 type gcsBackend struct {
