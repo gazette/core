@@ -2,6 +2,7 @@ package fragment
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -144,6 +145,11 @@ func (s *gcsBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).Delete(ctx)
 }
 
+// to help identify when JSON credentials are an external account used by workload identity
+type credentialsFile struct {
+	Type string `json:"type"`
+}
+
 func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, opts storage.SignedURLOptions, err error) {
 	var conf *jwt.Config
 
@@ -167,7 +173,18 @@ func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.
 	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
 	if err != nil {
 		return
-	} else if creds.JSON != nil {
+	}
+
+	// best effort to determine if JWT credentials are for external account
+	externalAccount := false
+	if creds.JSON != nil {
+		var f credentialsFile
+		if err := json.Unmarshal(creds.JSON, &f); err == nil {
+			externalAccount = f.Type == "external_account"
+		}
+	}
+
+	if creds.JSON != nil && !externalAccount {
 		conf, err = google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
 		if err != nil {
 			return
