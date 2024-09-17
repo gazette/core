@@ -3,8 +3,8 @@ package client
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -501,10 +501,10 @@ func (s *gcsBackend) open(ctx context.Context, ep *url.URL, fragment pb.Fragment
 	return gClient.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).NewReader(ctx)
 }
 
-/ to help identify when JSON credentials are an external account used by workload identity
- type credentialsFile struct {
- 	Type string `json:"type"`
- }
+// to help identify when JSON credentials are an external account used by workload identity
+type credentialsFile struct {
+	Type string `json:"type"`
+}
 
 func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, err error) {
 	var conf *jwt.Config
