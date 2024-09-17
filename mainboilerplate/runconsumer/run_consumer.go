@@ -205,6 +205,7 @@ func Main(app Application) {
 	var cfg = app.NewConfig()
 
 	var parser = flags.NewParser(cfg, flags.Default)
+	log.Info("Starting consumer...")
 	_, _ = parser.AddCommand("serve", "Serve as Gazette consumer", `
 		serve a Gazette consumer with the provided configuration, until signaled to
 		exit (via SIGTERM). Upon receiving a signal, the consumer will seek to discharge

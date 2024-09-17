@@ -77,11 +77,11 @@ jobs:
                 docker_tag="${{ secrets.REGISTRY_PATH }}/gazette/broker:latest"
                 push_images='true'
             elif [[ '${{ github.ref }}' == 'refs/heads/arize' ]]; then
-                version="0.89.1-arize-${sha:0:7}"
+                version="0.99.0-arize-${sha:0:7}"
                 docker_tag="${{ secrets.REGISTRY_PATH }}/gazette/broker:arize-${sha:0:7}"
                 push_images='true'
             elif [[ '${{ github.ref }}' == *'arize'* ]]; then
-                version="0.89.1-dev-${sha:0:7}"
+                version="0.99.0-dev-${sha:0:7}"
                 docker_tag="${{ secrets.REGISTRY_PATH }}/gazette/broker:dev-${sha:0:7}"
                 push_images='true'
             else
