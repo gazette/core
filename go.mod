@@ -20,7 +20,7 @@ require (
 	github.com/gorilla/schema v1.4.1
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/jessevdk/go-flags v1.5.0
+	github.com/jessevdk/go-flags v1.6.1
 	github.com/jgraettinger/cockroach-encoding v1.1.0
 	github.com/jgraettinger/gorocksdb v0.0.0-20240221161858-8f4873ee26e0
 	github.com/jgraettinger/urkel v0.1.2
