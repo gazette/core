@@ -79,7 +79,7 @@ type BaseConfig struct {
 		Limit          uint32        `long:"limit" env:"LIMIT" default:"32" description:"Maximum number of Shards this consumer process will allocate"`
 		MaxHotStandbys uint32        `long:"max-hot-standbys" env:"MAX_HOT_STANDBYS" default:"3" description:"Maximum effective hot standbys of any one shard, which upper-bounds its stated hot-standbys."`
 		WatchDelay     time.Duration `long:"watch-delay" env:"WATCH_DELAY" default:"30ms" description:"Delay applied to the application of watched Etcd events. Larger values amortize the processing of fast-changing Etcd keys."`
-		SkipSignedURLs uint32        `long:"skip-signed-urls" env:"SKIP_SIGNED_URLS" default:"0" description:"When a signed URL is received, use fragment info instead to retrieve data with auth header. This is useful when clients do not wish/require the signing."`
+		SkipSignedURLs bool          `long:"skip-signed-urls" env:"SKIP_SIGNED_URLS" default:"false" description:"When a signed URL is received, use fragment info instead to retrieve data with auth header. This is useful when clients do not wish/require the signing."`
 	} `group:"Consumer" namespace:"consumer" env-namespace:"CONSUMER"`
 
 	Broker struct {
@@ -204,7 +204,7 @@ func (sc Cmd) Execute(args []string) error {
 func Main(app Application) {
 	var cfg = app.NewConfig()
 
-	var parser = flags.NewParser(cfg, flags.Default)
+	var parser = flags.NewParser(cfg, flags.Default|flags.AllowBoolValues)
 	log.Info("Starting consumer...")
 	_, _ = parser.AddCommand("serve", "Serve as Gazette consumer", `
 		serve a Gazette consumer with the provided configuration, until signaled to
