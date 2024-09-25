@@ -481,8 +481,12 @@ var (
 
 // ARIZE specific code to end of file.
 //
+// To support unsigned URLs we need to be able to deal with buckets directly as a consumer and not via the signed URL.
+// In OpenUnsignedFragmentURL we need to be able to open the fragment directly from the bucket. It would have
+// been nice to use the backend interface in stores.go which the broker uses to access buckets. Unfortunately
 // stores_test.go, which is in broker/fragment, imports broker/client so we cannot import broker/fragment here
-// to avoid a cycle. Instead we will repeat a subset of store_gcs.go.
+// to avoid a cycle. Instead we will repeat a subset of store_gcs.go. This makes the use support of unsigned URLs
+// very gcs specific.
 
 var SkipSignedURLs = false
 var gcs = &gcsBackend{}
