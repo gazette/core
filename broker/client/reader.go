@@ -4,16 +4,26 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strings"
+	"sync"
 	"time"
 
+	"cloud.google.com/go/storage"
+	"github.com/gorilla/schema"
 	"github.com/prometheus/client_golang/prometheus"
+	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/codecs"
 	pb "go.gazette.dev/core/broker/protocol"
+	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/jwt"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -26,9 +36,9 @@ import (
 // seek to the requested offset, and read its content.
 //
 // Reader returns EOF if:
-//  * The broker closes the RPC, eg because its assignment has change or it's shutting down.
-//  * The requested EndOffset has been read through.
-//  * A Fragment being read by the Reader reaches EOF.
+//   - The broker closes the RPC, eg because its assignment has change or it's shutting down.
+//   - The requested EndOffset has been read through.
+//   - A Fragment being read by the Reader reaches EOF.
 //
 // If Block is true, Read may block indefinitely. Otherwise, ErrOffsetNotYetAvailable
 // is returned upon reaching the journal write head.
@@ -166,9 +176,20 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 
 	// If the frame preceding EOF provided a fragment URL, open it directly.
 	if !r.Request.MetadataOnly && r.Response.Status == pb.Status_OK && r.Response.FragmentUrl != "" {
-		if r.direct, err = OpenFragmentURL(r.ctx, *r.Response.Fragment,
-			r.Request.Offset, r.Response.FragmentUrl); err == nil {
-			n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
+		if SkipSignedURLs {
+			fragURL := r.Response.Fragment.BackingStore.URL()
+			if fragURL.Scheme != "gs" {
+				return 0, fmt.Errorf("SkipSignedURL unsupported scheme: %s", fragURL.Scheme)
+			}
+			if r.direct, err = OpenUnsignedFragmentURL(r.ctx, *r.Response.Fragment,
+				r.Request.Offset, fragURL); err == nil {
+				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
+			}
+		} else {
+			if r.direct, err = OpenFragmentURL(r.ctx, *r.Response.Fragment,
+				r.Request.Offset, r.Response.FragmentUrl); err == nil {
+				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
+			}
 		}
 		return
 	}
@@ -199,9 +220,10 @@ func (r *Reader) AdjustedOffset(br *bufio.Reader) int64 {
 }
 
 // Seek provides a limited form of seeking support. Specifically, if:
-//  * A Fragment URL is being directly read, and
-//  * The Seek offset is ahead of the current Reader offset, and
-//  * The Fragment also covers the desired Seek offset
+//   - A Fragment URL is being directly read, and
+//   - The Seek offset is ahead of the current Reader offset, and
+//   - The Fragment also covers the desired Seek offset
+//
 // Then a seek is performed by reading and discarding to the seeked offset.
 // Seek will otherwise return ErrSeekRequiresNewReader.
 func (r *Reader) Seek(offset int64, whence int) (int64, error) {
@@ -272,6 +294,24 @@ func OpenFragmentURL(ctx context.Context, fragment pb.Fragment, offset int64, ur
 	}
 
 	return NewFragmentReader(resp.Body, fragment, offset)
+}
+
+func OpenUnsignedFragmentURL(ctx context.Context, fragment pb.Fragment, offset int64, url *url.URL) (*FragmentReader, error) {
+	var (
+		rdr io.ReadCloser
+		err error
+	)
+
+	if rdr, err = gcs.open(ctx, url, fragment); err != nil {
+		return nil, err
+	}
+
+	// Record metrics related to opening the fragment.
+	var labels = fragmentLabels(fragment)
+	fragmentOpen.With(labels).Inc()
+	fragmentOpenBytes.With(labels).Add(float64(fragment.End - fragment.Begin))
+
+	return NewFragmentReader(rdr, fragment, offset)
 }
 
 // NewFragmentReader wraps a io.ReadCloser of raw Fragment bytes with a
@@ -438,3 +478,137 @@ var (
 	// httpClient is the http.Client used by OpenFragmentURL
 	httpClient = newHttpClient()
 )
+
+// ARIZE specific code to end of file.
+//
+// To support unsigned URLs we need to be able to deal with buckets directly as a consumer and not via the signed URL.
+// In OpenUnsignedFragmentURL we need to be able to open the fragment directly from the bucket. It would have
+// been nice to use the backend interface in stores.go which the broker uses to access buckets. Unfortunately
+// stores_test.go, which is in broker/fragment, imports broker/client so we cannot import broker/fragment here
+// to avoid a cycle. Instead we will repeat a subset of store_gcs.go. This makes the use support of unsigned URLs
+// very gcs specific.
+
+var SkipSignedURLs = false
+var gcs = &gcsBackend{}
+
+type gcsBackend struct {
+	client   *storage.Client
+	clientMu sync.Mutex
+}
+
+// Arize Open routine for use with consumers and signed URLs.
+func (s *gcsBackend) open(ctx context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
+	cfg, gClient, err := s.gcsClient(ep)
+	if err != nil {
+		return nil, err
+	}
+	return gClient.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).NewReader(ctx)
+}
+
+// to help identify when JSON credentials are an external account used by workload identity
+type credentialsFile struct {
+	Type string `json:"type"`
+}
+
+func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, err error) {
+	var conf *jwt.Config
+
+	if err = parseStoreArgs(ep, &cfg); err != nil {
+		return
+	}
+	// Omit leading slash from bucket prefix. Note that FragmentStore already
+	// enforces that URL Paths end in '/'.
+	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
+
+	s.clientMu.Lock()
+	defer s.clientMu.Unlock()
+
+	if s.client != nil {
+		client = s.client
+		return
+	}
+	var ctx = context.Background()
+
+	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
+	if err != nil {
+		return
+	}
+
+	// best effort to determine if JWT credentials are for external account
+	externalAccount := false
+	if creds.JSON != nil {
+		var f credentialsFile
+		if err := json.Unmarshal(creds.JSON, &f); err == nil {
+			externalAccount = f.Type == "external_account"
+		}
+	}
+
+	if creds.JSON != nil && !externalAccount {
+		conf, err = google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
+		if err != nil {
+			return
+		}
+		client, err = storage.NewClient(ctx, option.WithTokenSource(conf.TokenSource(ctx)))
+		if err != nil {
+			return
+		}
+		s.client = client
+
+		log.WithFields(log.Fields{
+			"ProjectID":      creds.ProjectID,
+			"GoogleAccessID": conf.Email,
+			"PrivateKeyID":   conf.PrivateKeyID,
+			"Subject":        conf.Subject,
+			"Scopes":         conf.Scopes,
+		}).Info("reader constructed new GCS client")
+	} else {
+		// Possible to use GCS without a service account (e.g. with a GCE instance and workload identity).
+		client, err = storage.NewClient(ctx, option.WithTokenSource(creds.TokenSource))
+		if err != nil {
+			return
+		}
+
+		// workload identity approach which SignGet() method accepts if you have
+		// "iam.serviceAccounts.signBlob" permissions against your service account.
+		s.client = client
+
+		log.WithFields(log.Fields{
+			"ProjectID": creds.ProjectID,
+		}).Info("reader constructed new GCS client without JWT")
+	}
+
+	return
+}
+
+type GSStoreConfig struct {
+	bucket string
+	prefix string
+
+	RewriterConfig
+}
+
+type RewriterConfig struct {
+	// Find is the string to replace in the unmodified journal name.
+	Find string
+	// Replace is the string with which Find is replaced in the constructed store path.
+	Replace string
+}
+
+func (cfg RewriterConfig) rewritePath(s, j string) string {
+	if cfg.Find == "" {
+		return s + j
+	}
+	return s + strings.Replace(j, cfg.Find, cfg.Replace, 1)
+}
+
+func parseStoreArgs(ep *url.URL, args interface{}) error {
+	var decoder = schema.NewDecoder()
+	decoder.IgnoreUnknownKeys(false)
+
+	if q, err := url.ParseQuery(ep.RawQuery); err != nil {
+		return err
+	} else if err = decoder.Decode(args, q); err != nil {
+		return fmt.Errorf("parsing store URL arguments: %s", err)
+	}
+	return nil
+}

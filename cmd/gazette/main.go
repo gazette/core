@@ -131,7 +131,7 @@ func (cmdServe) Execute(args []string) error {
 }
 
 func main() {
-	var parser = flags.NewParser(Config, flags.Default)
+	var parser = flags.NewParser(Config, flags.Default|flags.AllowBoolValues)
 
 	_, _ = parser.AddCommand("serve", "Serve as Gazette broker", `
 Serve a Gazette broker with the provided configuration, until signaled to
