@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -89,6 +90,11 @@ func (cmdServe) Execute(args []string) error {
 	// Bind our server listener, grabbing a random available port if Port is zero.
 	srv, err := server.New("", Config.Broker.Host, Config.Broker.Port, serverTLS, peerTLS, Config.Broker.MaxGRPCRecvSize, nil)
 	mbp.Must(err, "building Server instance")
+
+	if !Config.Diagnostics.Private {
+		// Expose diagnostics over the main service port.
+		srv.HTTPMux = http.DefaultServeMux
+	}
 
 	// If a file:// root was provided, ensure it exists and apply it.
 	if Config.Broker.FileRoot != "" {
