@@ -274,7 +274,7 @@ func parseAzureEndpoint(endpoint *url.URL) (cfg azureStoreConfig, err error) {
 	return cfg, nil
 }
 
-func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service.Client, err error) {
+func (a *azureBackend) getAzureStorageClient(endpoint *url.URL) (client *service.Client, err error) {
 	var cfg azureStoreConfig
 
 	if cfg, err = parseAzureEndpoint(endpoint); err != nil {
@@ -286,15 +286,21 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		var accountKey = os.Getenv("AZURE_ACCOUNT_KEY")
 
 		a.mu.Lock()
-		client, ok := a.clients[accountName]
+		client, ok := a.clients[accountName+cfg.storageAccountName]
 		a.mu.Unlock()
 
 		if ok {
 			log.WithFields(log.Fields{
 				"storageAccountName": accountName,
-			}).Info("Re-using cached azure:// service client")
+				"containerName":      cfg.containerName,
+			}).Info("Re-using cached azure:// storage account client")
 			return client, nil
 		}
+
+		log.WithFields(log.Fields{
+			"storageAccountName": accountName,
+			"containerName":      cfg.containerName,
+		}).Info("Building new azure:// storage account client")
 
 		sharedKeyCred, err := service.NewSharedKeyCredential(accountName, accountKey)
 		if err != nil {
@@ -306,7 +312,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		}
 
 		a.mu.Lock()
-		a.clients[accountName] = serviceClient
+		a.clients[accountName+cfg.storageAccountName] = serviceClient
 		a.mu.Unlock()
 		return serviceClient, nil
 	} else if endpoint.Scheme == "azure-ad" {
@@ -316,15 +322,23 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		var clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
 
 		a.mu.Lock()
-		client, ok := a.clients[cfg.accountTenantID]
+		client, ok := a.clients[cfg.accountTenantID+cfg.storageAccountName]
 		a.mu.Unlock()
 
 		if ok {
 			log.WithFields(log.Fields{
-				"accountTenantId": cfg.accountTenantID,
-			}).Info("Re-using cached azure-ad:// service client")
+				"accountTenantId":    cfg.accountTenantID,
+				"storageAccountName": cfg.storageAccountName,
+				"containerName":      cfg.containerName,
+			}).Info("Re-using cached azure-ad:// storage account client")
 			return client, nil
 		}
+
+		log.WithFields(log.Fields{
+			"accountTenantId":    cfg.accountTenantID,
+			"storageAccountName": cfg.storageAccountName,
+			"containerName":      cfg.containerName,
+		}).Info("Building new azure-ad:// storage account client")
 
 		identityCreds, err := azidentity.NewClientSecretCredential(
 			cfg.accountTenantID,
@@ -345,7 +359,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		}
 
 		a.mu.Lock()
-		a.clients[cfg.accountTenantID] = serviceClient
+		a.clients[cfg.accountTenantID+cfg.storageAccountName] = serviceClient
 		a.mu.Unlock()
 
 		return serviceClient, nil
@@ -455,12 +469,12 @@ func (a *azureBackend) getUserDelegationCredential(endpoint *url.URL) (*service.
 			Expiry: to.Ptr(expTime.UTC().Format(sas.TimeFormat)),
 		}
 
-		var serviceClient, err = a.getAzureServiceClient(endpoint)
+		var storageClient, err = a.getAzureStorageClient(endpoint)
 		if err != nil {
 			return nil, err
 		}
 
-		cred, err := serviceClient.GetUserDelegationCredential(context.Background(), info, nil)
+		cred, err := storageClient.GetUserDelegationCredential(context.Background(), info, nil)
 		if err != nil {
 			return nil, err
 		}
