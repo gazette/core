@@ -439,8 +439,8 @@ func (b *appendFSM) onValidatePreconditions() {
 	} else if b.pln.spool.End != maxOffset && b.req.Offset == 0 && b.resolved.journalSpec.Flags.MayWrite() {
 		b.resolved.status = pb.Status_INDEX_HAS_GREATER_OFFSET
 		b.state = stateError
-	} else if b.req.Offset != 0 && b.req.Offset != maxOffset {
-		// If a request offset is present, it must match |maxOffset|.
+	} else if b.req.Offset != 0 && b.req.Offset < maxOffset {
+		// If a request offset is present, it must match or exceed `maxOffset`.
 		b.resolved.status = pb.Status_WRONG_APPEND_OFFSET
 		b.state = stateError
 	} else if b.req.Offset != 0 && b.pln.spool.End != maxOffset {
