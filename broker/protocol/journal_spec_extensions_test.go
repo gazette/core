@@ -77,8 +77,8 @@ func (s *JournalSuite) TestSpecValidationCases(c *gc.C) {
 	c.Check(spec.Validate(), gc.ErrorMatches, `Name cannot have a metadata path segment \(;disallowed/meta; expected no segment\)`)
 	spec.Name = "a/journal"
 
-	spec.Replication = 0
-	c.Check(spec.Validate(), gc.ErrorMatches, `invalid Replication \(0; expected 1 <= Replication <= 5\)`)
+	spec.Replication = -1
+	c.Check(spec.Validate(), gc.ErrorMatches, `invalid Replication \(-1; expected 0 <= Replication <= 5\)`)
 	spec.Replication = 1024
 	c.Check(spec.Validate(), gc.ErrorMatches, `invalid Replication \(1024; .*`)
 	spec.Replication = 3

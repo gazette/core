@@ -350,7 +350,7 @@ func (s *RPCSuite) TestApplyRequestValidationCases(c *gc.C) {
 		Changes: []ApplyRequest_Change{
 			{
 				ExpectModRevision: -2,
-				Upsert:            &JournalSpec{Name: "a/journal"},
+				Upsert:            &JournalSpec{Name: "a/journal", Replication: -1},
 				Delete:            "a/journal",
 			},
 			{

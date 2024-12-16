@@ -96,8 +96,8 @@ func (m *JournalSpec) Validate() error {
 		return ExtendContext(err, "Name")
 	} else if _, meta := m.Name.SplitMeta(); meta != "" {
 		return NewValidationError("Name cannot have a metadata path segment (%s; expected no segment)", meta)
-	} else if m.Replication < 1 || m.Replication > maxJournalReplication {
-		return NewValidationError("invalid Replication (%d; expected 1 <= Replication <= %d)",
+	} else if m.Replication < 0 || m.Replication > maxJournalReplication {
+		return NewValidationError("invalid Replication (%d; expected 0 <= Replication <= %d)",
 			m.Replication, maxJournalReplication)
 	} else if err = m.LabelSet.Validate(); err != nil {
 		return ExtendContext(err, "Labels")
