@@ -438,6 +438,16 @@ func TestFSMValidatePreconditions(t *testing.T) {
 	require.Equal(t, int64(456), fsm.rollToOffset)
 	fsm.returnPipeline()
 
+	// Case: journal append bound rolls the offset forward.
+	setTestJournal(broker, pb.JournalSpec{Name: "a/journal", Replication: 1, AppendBound: 789}, broker.id)
+
+	fsm = newFSM(broker, ctx, pb.AppendRequest{Journal: "a/journal"})
+	require.True(t, fsm.runTo(stateValidatePreconditions))
+	fsm.onValidatePreconditions()
+	require.Equal(t, stateSendPipelineSync, fsm.state)
+	require.Equal(t, int64(789), fsm.rollToOffset)
+	fsm.returnPipeline()
+
 	broker.cleanup()
 }
 
