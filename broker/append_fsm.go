@@ -436,6 +436,10 @@ func (b *appendFSM) onValidatePreconditions() {
 
 		b.resolved.status = pb.Status_REGISTER_MISMATCH
 		b.state = stateError
+	} else if b.pln.spool.End < b.resolved.journalSpec.AppendBound {
+		// Re-sync the pipeline at this larger bound for appends.
+		b.rollToOffset = b.resolved.journalSpec.AppendBound
+		b.state = stateSendPipelineSync
 	} else if b.pln.spool.End != maxOffset && b.req.Offset == 0 && b.resolved.journalSpec.Flags.MayWrite() {
 		b.resolved.status = pb.Status_INDEX_HAS_GREATER_OFFSET
 		b.state = stateError
