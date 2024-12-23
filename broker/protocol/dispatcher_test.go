@@ -243,18 +243,15 @@ type mockClientConn struct {
 type mockSubConn struct {
 	Name string
 	disp *dispatcher
+	balancer.SubConn
 }
 
 func (s1 mockSubConn) Equal(s2 mockSubConn) bool {
 	return s1.Name == s2.Name
 }
 
-func (s mockSubConn) UpdateAddresses([]resolver.Address)      { panic("deprecated") }
 func (s mockSubConn) UpdateState(state balancer.SubConnState) { s.disp.updateSubConnState(s, state) }
 func (s mockSubConn) Connect()                                {}
-func (s mockSubConn) GetOrBuildProducer(balancer.ProducerBuilder) (balancer.Producer, func()) {
-	return nil, func() {}
-}
 func (s mockSubConn) Shutdown() {
 	var c = s.disp.cc.(*mockClientConn)
 	c.removed = append(c.removed, s)
@@ -270,9 +267,7 @@ func (c *mockClientConn) UpdateAddresses(balancer.SubConn, []resolver.Address) {
 func (c *mockClientConn) UpdateState(balancer.State)                           {}
 func (c *mockClientConn) ResolveNow(resolver.ResolveNowOptions)                {}
 func (c *mockClientConn) Target() string                                       { return "default.addr:80" }
-func (c *mockClientConn) RemoveSubConn(sc balancer.SubConn) {
-	sc.Shutdown()
-}
+func (c *mockClientConn) RemoveSubConn(sc balancer.SubConn)                    { sc.Shutdown() }
 
 type mockRouter struct{ invalidated string }
 
