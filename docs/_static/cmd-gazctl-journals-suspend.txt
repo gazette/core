@@ -1,14 +1,17 @@
 Usage:
-  gazctl [OPTIONS] journals [journals-OPTIONS] prune [prune-OPTIONS]
+  gazctl [OPTIONS] journals [journals-OPTIONS] suspend [suspend-OPTIONS]
 
-Deletes fragments across all configured fragment stores of matching journals that are older than the configured retention.
+Suspend idle journals to use fewer or zero broker replicas.
 
-There is a caveat when pruning journals. For a given journal, there could be multiple fragments covering the same offset. These fragments contain identical data at a given offset, but the brokers
-are tracking only the largest fragment, i.e. the fragment that covers the largest span of offsets. As a result, the prune command will delete only this tracked fragment, leaving the smaller
-fragments untouched. As a workaround, operators can wait for the fragment listing to refresh and prune the journals again.
+Suspension updates the 'suspend' field of the JournalSpec with its suspended
+status and its resumption offset. When applying other updates to JournalSpecs,
+operators utilizing journal suspension must take care to not overwrite the
+journal's suspension configuration.
 
-Use --selector to supply a LabelSelector to select journals to prune.
-See "journals list --help" for details and examples.
+Typically this means reading the current JournalSpec and its ModRevision,
+copying the current 'suspend' field alongside other changes being made,
+and then applying the updated JournalSpec with ExpectModRevision.
+Note that the 'journals edit' subcommand uses this workflow.
 
 
 Help Options:
@@ -32,7 +35,7 @@ Help Options:
           --broker.cache.size=                            Size of client route cache. If <= zero, no cache is used (server always proxies) (default: 0) [$BROKER_CACHE_SIZE]
           --broker.cache.ttl=                             Time-to-live of route cache entries. (default: 1m) [$BROKER_CACHE_TTL]
 
-[prune command options]
+[suspend command options]
       -l, --selector=                                     Label Selector query to filter on
-          --dry-run                                       Perform a dry-run of the apply
+      -f, --force                                         Suspend journals even if they have local fragments
 
