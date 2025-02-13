@@ -63,7 +63,7 @@ may have been made in the meantime.
         ... etc ...
 
 An applied revision value ``-1`` can be used to explicitly signal that the Etcd
-store revision should be ignored. This is helpful when the desired source-of-truth
+stored revision should be ignored. This is helpful when the desired source-of-truth
 for a set of JournalSpecs is versioned source control, and applying those specs 
 should always overwrite any existing Etcd versions.
 
