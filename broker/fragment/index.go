@@ -12,7 +12,7 @@ import (
 const (
 	// When a covering fragment cannot be found, we allow serving a *greater*
 	// fragment so long as it was last modified at least this long ago.
-	offsetJumpAgeThreshold = 6 * time.Hour
+	offsetJumpAgeThreshold = 30 * time.Minute
 )
 
 // Index maintains a queryable index of local and remote journal Fragments.
