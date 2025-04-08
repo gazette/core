@@ -1,8 +1,13 @@
 package protocol
 
 import (
+	"context"
 	"net/url"
 	"strings"
+
+	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // RoutedJournalClient composes a JournalClient and DispatchRouter.
@@ -11,15 +16,34 @@ type RoutedJournalClient interface {
 	DispatchRouter
 }
 
+// ComposedRoutedJournalClient implements the RoutedJournalClient interface
+// by composing separate implementations of its constituent interfaces.
+type ComposedRoutedJournalClient struct {
+	JournalClient
+	DispatchRouter
+}
+
 // NewRoutedJournalClient composes a JournalClient and DispatchRouter.
-func NewRoutedJournalClient(jc JournalClient, dr DispatchRouter) RoutedJournalClient {
-	return struct {
-		JournalClient
-		DispatchRouter
-	}{
+func NewRoutedJournalClient(jc JournalClient, dr DispatchRouter) *ComposedRoutedJournalClient {
+	return &ComposedRoutedJournalClient{
 		JournalClient:  jc,
 		DispatchRouter: dr,
 	}
+}
+
+// SuppressCancellationErrors filters errors which are common to long-lived
+// blocking RPCs which are eventually cancelled by the caller or the server.
+// It interprets local or remote cancellation as a graceful closure
+// of the RPC and not an error.
+func SuppressCancellationError(err error) error {
+	if ec, sc := errors.Cause(err), status.Code(err); ec == context.Canceled ||
+		ec == context.DeadlineExceeded ||
+		sc == codes.Canceled ||
+		sc == codes.DeadlineExceeded {
+
+		return nil
+	}
+	return err
 }
 
 // Validate returns an error if the ReadRequest is not well-formed.
@@ -98,6 +122,15 @@ func (m *ReadResponse) Validate() error {
 	return nil
 }
 
+func (x AppendRequest_Suspend) Validate() error {
+	switch x {
+	case AppendRequest_SUSPEND_RESUME, AppendRequest_SUSPEND_NO_RESUME, AppendRequest_SUSPEND_IF_FLUSHED, AppendRequest_SUSPEND_NOW:
+		return nil
+	default:
+		return NewValidationError("invalid Suspend variant (%s)", x)
+	}
+}
+
 // Validate returns an error if the AppendRequest is not well-formed.
 func (m *AppendRequest) Validate() error {
 	if m.Journal != "" {
@@ -128,6 +161,9 @@ func (m *AppendRequest) Validate() error {
 				return ExtendContext(err, "SubtractRegisters")
 			}
 		}
+		if err := m.Suspend.Validate(); err != nil {
+			return ExtendContext(err, "Suspend")
+		}
 	} else if m.Header != nil {
 		return NewValidationError("unexpected Header")
 	} else if m.DoNotProxy {
@@ -140,6 +176,8 @@ func (m *AppendRequest) Validate() error {
 		return NewValidationError("unexpected UnionRegisters")
 	} else if m.SubtractRegisters != nil {
 		return NewValidationError("unexpected SubtractRegisters")
+	} else if m.Suspend != AppendRequest_SUSPEND_RESUME {
+		return NewValidationError("unexpected Suspend (%v; expected SUSPEND_RESUMED)", m.Suspend)
 	}
 	return nil
 }

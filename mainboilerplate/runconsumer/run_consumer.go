@@ -6,16 +6,22 @@ package runconsumer
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/gogo/gateway"
+	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/jessevdk/go-flags"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/allocator"
+	"go.gazette.dev/core/auth"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/consumer"
@@ -23,6 +29,10 @@ import (
 	mbp "go.gazette.dev/core/mainboilerplate"
 	"go.gazette.dev/core/server"
 	"go.gazette.dev/core/task"
+
+	// This import isn't required, but it convinces `go mod tidy` to not remove
+	// packages which are required for building the protoc-gen-grpc-gateway plugin.
+	_ "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor"
 )
 
 // Application is the user-defined consumer Application which is executed
@@ -80,6 +90,7 @@ type BaseConfig struct {
 		MaxHotStandbys uint32        `long:"max-hot-standbys" env:"MAX_HOT_STANDBYS" default:"3" description:"Maximum effective hot standbys of any one shard, which upper-bounds its stated hot-standbys."`
 		WatchDelay     time.Duration `long:"watch-delay" env:"WATCH_DELAY" default:"30ms" description:"Delay applied to the application of watched Etcd events. Larger values amortize the processing of fast-changing Etcd keys."`
 		SkipSignedURLs bool          `long:"skip-signed-urls" env:"SKIP_SIGNED_URLS" description:"When a signed URL is received, use fragment info instead to retrieve data with auth header. This is useful when clients do not wish/require the signing."`
+		AuthKeys       string        `long:"auth-keys" env:"AUTH_KEYS" description:"Whitespace or comma separated, base64-encoded keys used to sign (first key) and verify (all keys) Authorization tokens." json:"-"`
 	} `group:"Consumer" namespace:"consumer" env-namespace:"CONSUMER"`
 
 	Broker struct {
@@ -104,8 +115,9 @@ const iniFilename = "gazette.ini"
 
 // Cmd wraps a Config and Application to provide an Execute entry-point.
 type Cmd struct {
-	Cfg Config
-	App Application
+	Cfg          Config
+	App          Application
+	WrapListener func(net.Listener, *tls.Config) (net.Listener, error)
 }
 
 func (sc Cmd) Execute(args []string) error {
@@ -114,6 +126,18 @@ func (sc Cmd) Execute(args []string) error {
 	defer mbp.InitDiagnosticsAndRecover(bc.Diagnostics)()
 	mbp.InitLog(bc.Log)
 
+	var authorizer pb.Authorizer
+	var verifier pb.Verifier
+
+	if bc.Consumer.AuthKeys != "" {
+		var a, err = auth.NewKeyedAuth(bc.Consumer.AuthKeys)
+		mbp.Must(err, "parsing authorization keys")
+		authorizer, verifier = a, a
+	} else {
+		var a = auth.NewNoopAuth()
+		authorizer, verifier = a, a
+	}
+
 	log.WithFields(log.Fields{
 		"config":    sc.Cfg,
 		"version":   mbp.Version,
@@ -121,12 +145,39 @@ func (sc Cmd) Execute(args []string) error {
 	}).Info("consumer configuration")
 	pb.RegisterGRPCDispatcher(bc.Consumer.Zone)
 
+	var err error
+	var serverTLS, peerTLS *tls.Config
+
+	if bc.Consumer.ServerCertFile != "" {
+		serverTLS, err = server.BuildTLSConfig(
+			bc.Consumer.ServerCertFile, bc.Consumer.ServerCertKeyFile, bc.Consumer.ServerCAFile)
+		mbp.Must(err, "building server TLS config")
+
+		peerTLS, err = server.BuildTLSConfig(
+			bc.Consumer.PeerCertFile, bc.Consumer.PeerCertKeyFile, bc.Consumer.PeerCAFile)
+		mbp.Must(err, "building peer TLS config")
+	}
+
 	// Bind our server listener, grabbing a random available port if Port is zero.
-	var srv, err = server.New("", bc.Consumer.Port)
+	srv, err := server.New(
+		"", // Bind all interfaces
+		bc.Consumer.Host,
+		bc.Consumer.Port,
+		serverTLS, peerTLS,
+		bc.Consumer.MaxGRPCRecvSize,
+		sc.WrapListener,
+	)
 	mbp.Must(err, "building Server instance")
 
 	// Arize avoidance of using signed URLs.
 	client.SkipSignedURLs = bc.Consumer.SkipSignedURLs
+
+	if !bc.Diagnostics.Private {
+		// Expose diagnostics over the main service port.
+		srv.HTTPMux = http.DefaultServeMux
+	} else if bc.Diagnostics.Port == "" {
+		log.Warn("diagnostics are not served over the public port, and a private port is not configured")
+	}
 
 	if bc.Broker.Cache.Size <= 0 {
 		log.Warn("--broker.cache.size is disabled; consider setting > 0")
@@ -153,11 +204,18 @@ func (sc Cmd) Execute(args []string) error {
 		ks       = consumer.NewKeySpace(bc.Etcd.Prefix)
 		state    = allocator.NewObservedState(ks, allocator.MemberKey(ks, spec.Id.Zone, spec.Id.Suffix), consumer.ShardIsConsistent)
 		rjc      = bc.Broker.MustRoutedJournalClient(context.Background())
-		service  = consumer.NewService(sc.App, state, rjc, srv.GRPCLoopback, etcd)
+		service  = consumer.NewService(sc.App, authorizer, verifier, state, rjc, srv.GRPCLoopback, etcd)
 		tasks    = task.NewGroup(context.Background())
 		signalCh = make(chan os.Signal, 1)
 	)
-	pc.RegisterShardServer(srv.GRPCServer, service)
+	pc.RegisterShardServer(srv.GRPCServer, pc.NewVerifiedShardServer(service, service.Verifier))
+
+	var mux *runtime.ServeMux = runtime.NewServeMux(
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &gateway.JSONPb{EmitDefaults: true}),
+		runtime.WithProtoErrorHandler(runtime.DefaultHTTPProtoErrorHandler),
+	)
+	pc.RegisterShardHandler(tasks.Context(), mux, srv.GRPCLoopback)
+	srv.HTTPMux.Handle("/v1/", bc.Consumer.CORSWrapper(mux))
 	ks.WatchApplyDelay = bc.Consumer.WatchDelay
 
 	// Register Resolver as a prometheus.Collector for tracking shard status

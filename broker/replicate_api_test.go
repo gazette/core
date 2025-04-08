@@ -14,6 +14,7 @@ import (
 func TestReplicateStreamAndCommit(t *testing.T) {
 	var ctx, etcd = pb.WithDispatchDefault(context.Background()), etcdtest.TestClient()
 	defer etcdtest.Cleanup()
+	ctx = pb.WithClaims(ctx, pb.Claims{Capability: pb.Capability_REPLICATE})
 
 	var broker = newTestBroker(t, etcd, pb.ProcessSpec_ID{Zone: "local", Suffix: "broker"})
 	setTestJournal(broker, pb.JournalSpec{Name: "a/journal", Replication: 2},
@@ -39,7 +40,7 @@ func TestReplicateStreamAndCommit(t *testing.T) {
 	require.NoError(t, stream.Send(&pb.ReplicateRequest{Content: []byte("bazbing"), ContentDelta: 6}))
 
 	// Precondition: content not observable in the Fragment index.
-	var _, eo = broker.replica("a/journal").index.OffsetRange()
+	var _, eo, _ = broker.replica("a/journal").index.Summary()
 	require.Equal(t, int64(0), eo)
 
 	// Commit.
@@ -57,7 +58,7 @@ func TestReplicateStreamAndCommit(t *testing.T) {
 	expectReplResponse(t, stream, &pb.ReplicateResponse{Status: pb.Status_OK})
 
 	// Post-condition: content is now observable.
-	_, eo = broker.replica("a/journal").index.OffsetRange()
+	_, eo, _ = broker.replica("a/journal").index.Summary()
 	require.Equal(t, int64(13), eo)
 
 	// Send EOF and expect its returned.
@@ -71,6 +72,7 @@ func TestReplicateStreamAndCommit(t *testing.T) {
 func TestReplicateRequestErrorCases(t *testing.T) {
 	var ctx, etcd = pb.WithDispatchDefault(context.Background()), etcdtest.TestClient()
 	defer etcdtest.Cleanup()
+	ctx = pb.WithClaims(ctx, pb.Claims{Capability: pb.Capability_REPLICATE})
 
 	var broker = newTestBroker(t, etcd, pb.ProcessSpec_ID{Zone: "local", Suffix: "broker"})
 
@@ -177,12 +179,46 @@ func TestReplicateRequestErrorCases(t *testing.T) {
 	_, err = stream.Recv()
 	require.Regexp(t, `.* no ack requested but status != OK: status:PROPOSAL_MISMATCH .*`, err)
 
+	// Case: Insufficient claimed capability.
+	stream, _ = broker.client().Replicate(
+		pb.WithClaims(ctx, pb.Claims{Capability: pb.Capability_APPEND}),
+	)
+	_, err = stream.Recv()
+	require.ErrorContains(t, err, "authorization is missing required REPLICATE capability")
+
+	// Case: Insufficient claimed selector.
+	stream, _ = broker.client().Replicate(
+		pb.WithClaims(ctx,
+			pb.Claims{
+				Capability: pb.Capability_REPLICATE,
+				Selector:   pb.MustLabelSelector("name=something/else"),
+			}),
+	)
+	require.NoError(t, stream.Send(&pb.ReplicateRequest{
+		Header: broker.header("a/journal"),
+		Proposal: &pb.Fragment{
+			Journal:          "a/journal",
+			CompressionCodec: pb.CompressionCodec_NONE,
+		},
+		Registers:   boxLabels(),
+		Acknowledge: true,
+	}))
+	resp, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, pb.Status_JOURNAL_NOT_FOUND, resp.Status) // Journal not visible to these claims.
+	require.Len(t, resp.Header.Route.Endpoints, 0)
+
+	// Expect broker closes.
+	_, err = stream.Recv()
+	require.Equal(t, io.EOF, err)
+
 	broker.cleanup()
 }
 
 func TestReplicateBlockingRestart(t *testing.T) {
 	var ctx, etcd = pb.WithDispatchDefault(context.Background()), etcdtest.TestClient()
 	defer etcdtest.Cleanup()
+	ctx = pb.WithClaims(ctx, pb.Claims{Capability: pb.Capability_REPLICATE})
 
 	var broker = newTestBroker(t, etcd, pb.ProcessSpec_ID{Zone: "local", Suffix: "broker"})
 	setTestJournal(broker, pb.JournalSpec{Name: "a/journal", Replication: 3},

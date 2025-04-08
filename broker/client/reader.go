@@ -105,10 +105,18 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 
 	// Lazy initialization: begin the Read RPC.
 	if r.stream == nil {
-		if r.stream, err = r.client.Read(
-			pb.WithDispatchItemRoute(r.ctx, r.client, r.Request.Journal.String(), false),
-			&r.Request,
-		); err == nil {
+		var ctx context.Context
+
+		// Prefer a prior response header route, and fall back to the route cache.
+		if r.Response.Header != nil {
+			ctx = pb.WithDispatchRoute(r.ctx, r.Response.Header.Route, pb.ProcessSpec_ID{})
+		} else {
+			ctx = pb.WithDispatchItemRoute(r.ctx, r.client, r.Request.Journal.String(), false)
+		}
+		// Clear last response of previous stream.
+		r.Response = pb.ReadResponse{}
+
+		if r.stream, err = r.client.Read(ctx, &r.Request); err == nil {
 			n, err = r.Read(p) // Recurse to attempt read against opened |r.stream|.
 		} else {
 			err = mapGRPCCtxErr(r.ctx, err)
@@ -200,12 +208,16 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 		if err != io.EOF {
 			panic(err.Error()) // Status_OK implies graceful stream closure.
 		}
+	case pb.Status_JOURNAL_NOT_FOUND:
+		err = ErrJournalNotFound
 	case pb.Status_NOT_JOURNAL_BROKER:
 		err = ErrNotJournalBroker
 	case pb.Status_INSUFFICIENT_JOURNAL_BROKERS:
 		err = ErrInsufficientJournalBrokers
 	case pb.Status_OFFSET_NOT_YET_AVAILABLE:
 		err = ErrOffsetNotYetAvailable
+	case pb.Status_SUSPENDED:
+		err = ErrSuspended
 	default:
 		err = errors.New(r.Response.Status.String())
 	}
@@ -457,10 +469,12 @@ var (
 	// Map common broker error statuses into named errors.
 	ErrInsufficientJournalBrokers = errors.New(pb.Status_INSUFFICIENT_JOURNAL_BROKERS.String())
 	ErrJournalNotFound            = errors.New(pb.Status_JOURNAL_NOT_FOUND.String())
+	ErrNoJournalPrimaryBroker     = errors.New(pb.Status_NO_JOURNAL_PRIMARY_BROKER.String())
 	ErrNotJournalBroker           = errors.New(pb.Status_NOT_JOURNAL_BROKER.String())
 	ErrNotJournalPrimaryBroker    = errors.New(pb.Status_NOT_JOURNAL_PRIMARY_BROKER.String())
 	ErrOffsetNotYetAvailable      = errors.New(pb.Status_OFFSET_NOT_YET_AVAILABLE.String())
 	ErrRegisterMismatch           = errors.New(pb.Status_REGISTER_MISMATCH.String())
+	ErrSuspended                  = errors.New(pb.Status_SUSPENDED.String())
 	ErrWrongAppendOffset          = errors.New(pb.Status_WRONG_APPEND_OFFSET.String())
 
 	// ErrOffsetJump is returned by Reader.Read to indicate that the next byte

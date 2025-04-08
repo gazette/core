@@ -354,6 +354,7 @@ func (w *Sequencer) Step() error {
 	if w.Dequeued != nil {
 		// Tighten clock to the processed Envelope.
 		w.emit.minClock = w.dequeuedClock
+		w.Dequeued.Message = nil // Release memory.
 	}
 
 	for w.emit.ringStart != -1 {
@@ -401,15 +402,21 @@ func (w *Sequencer) Step() error {
 		w.dequeuedClock = GetClock(uuid)
 
 		if w.dequeuedClock != 0 && w.dequeuedClock <= w.emit.minClock {
-			if w.replayIt != nil {
-				continue // These can happen during replays.
-			} else {
-				// We don't allow duplicates within the ring in the first place,
-				// with one exception: messages with zero-valued Clocks are not
-				// expected to be consistently ordered on clock.
-				// In QueueUncommitted we synthetically assigned a clock value.
-				panic("ring clock <= emit.minClock")
-			}
+			// We don't allow duplicates within the ring with one exception:
+			// messages with zero-valued Clocks are not expected to be
+			// consistently ordered on clock (in QueueUncommitted we
+			// synthetically assigned a clock value).
+			//
+			// However:
+			// - Duplicated sequences CAN happen during replays.
+			// - They can ALSO happen if we dequeued during replay,
+			//   and then observe the sequence duplicated again in the ring.
+			//
+			// While ordinarily we would discard such duplicates during ring
+			// maintenance operations, if the duplication straddles a recovered
+			// checkpoint boundary then all bets are off because checkpoints
+			// track only the last ACK and not the partial minClock.
+			continue
 		} else if w.dequeuedClock > w.emit.maxClock {
 			continue // ACK'd clock tells us not to commit.
 		}

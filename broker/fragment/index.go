@@ -125,12 +125,17 @@ func (fi *Index) Query(ctx context.Context, req *pb.ReadRequest) (*pb.ReadRespon
 	}
 }
 
-// OffsetRange returns the [Begin, End) offset range of all Fragments in the index.
-func (fi *Index) OffsetRange() (int64, int64) {
+// Summary returns the [Begin, End) offset range of all Fragments in the index,
+// and the persisted ModTime of the last Fragment (or zero, if it's local).
+func (fi *Index) Summary() (int64, int64, int64) {
 	defer fi.mu.RUnlock()
 	fi.mu.RLock()
 
-	return fi.set.BeginOffset(), fi.set.EndOffset()
+	if l := len(fi.set); l == 0 {
+		return 0, 0, 0
+	} else {
+		return fi.set[0].Begin, fi.set[l-1].End, fi.set[l-1].ModTime
+	}
 }
 
 // SpoolCommit adds local Spool Fragment |frag| to the index.
@@ -215,10 +220,6 @@ func (fi *Index) Inspect(ctx context.Context, callback func(CoverSet) error) err
 // CoverSet, or returns an encountered error.
 func WalkAllStores(ctx context.Context, name pb.Journal, stores []pb.FragmentStore) (CoverSet, error) {
 	var set CoverSet
-
-	if DisableStores {
-		return set, nil
-	}
 
 	for _, store := range stores {
 		var err = List(ctx, store, name, func(f pb.Fragment) {

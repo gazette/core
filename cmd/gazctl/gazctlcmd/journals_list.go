@@ -20,6 +20,7 @@ import (
 type cmdJournalsList struct {
 	ListConfig
 	Stores bool `long:"stores" description:"Show fragment store column"`
+	Watch  bool `long:"watch" description:"Use a long-lived watch"`
 }
 
 func init() {
@@ -53,8 +54,28 @@ func (cmd *cmdJournalsList) Execute([]string) error {
 
 	var ctx = context.Background()
 	var rjc = JournalsCfg.Broker.MustRoutedJournalClient(ctx)
-	var resp = listJournals(rjc, cmd.Selector)
 
+	if !cmd.Watch {
+		var resp = listJournals(rjc, cmd.Selector)
+		cmd.output(resp)
+		return nil
+	}
+
+	var req = pb.ListRequest{Watch: true}
+	var err error
+
+	req.Selector, err = pb.ParseLabelSelector(cmd.Selector)
+	mbp.Must(err, "failed to parse label selector", "selector", cmd.Selector)
+	var list = client.NewWatchedList(ctx, rjc, req, nil)
+	mbp.Must(<-list.UpdateCh(), "failed to list journals")
+
+	for {
+		cmd.output(list.List())
+		<-list.UpdateCh()
+	}
+}
+
+func (cmd *cmdJournalsList) output(resp *pb.ListResponse) {
 	switch cmd.Format {
 	case "table":
 		cmd.outputTable(resp)
@@ -66,7 +87,6 @@ func (cmd *cmdJournalsList) Execute([]string) error {
 	case "proto":
 		mbp.Must(proto.MarshalText(os.Stdout, resp), "failed to write output")
 	}
-	return nil
 }
 
 func (cmd *cmdJournalsList) outputTable(resp *pb.ListResponse) {
@@ -85,9 +105,7 @@ func (cmd *cmdJournalsList) outputTable(resp *pb.ListResponse) {
 	if cmd.Stores {
 		headers = append(headers, "Stores")
 	}
-	for _, l := range cmd.Labels {
-		headers = append(headers, l)
-	}
+	headers = append(headers, cmd.Labels...)
 	table.SetHeader(headers)
 
 	for _, j := range resp.Journals {
@@ -100,6 +118,10 @@ func (cmd *cmdJournalsList) outputTable(resp *pb.ListResponse) {
 			} else {
 				replicas = append(replicas, m.Suffix)
 			}
+		}
+
+		if j.Spec.Suspend.GetLevel() != pb.JournalSpec_Suspend_NONE {
+			primary = primary + " <S>"
 		}
 
 		var row = []string{

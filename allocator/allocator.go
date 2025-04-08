@@ -60,31 +60,35 @@ func Allocate(args AllocateArgs) error {
 			return nil
 		}
 
-		// Response of the last transaction we applied. We'll ensure we've minimally
-		// watched through its revision before driving further action.
-		var txnResponse *clientv3.TxnResponse
+		// `next` Etcd revision we must read through before proceeding.
+		var next = ks.Header.Revision + 1
 
 		if state.isLeader() {
 
 			// Do we need to re-solve for a maximum assignment?
 			if state.NetworkHash != lastNetworkHash {
 				var startTime = time.Now()
-				desired = solveDesiredAssignments(state, desired[:0])
+				desired = SolveDesiredAssignments(state, desired[:0])
 				var dur = time.Since(startTime)
 				allocatorMaxFlowRuntimeSeconds.Observe(dur.Seconds())
 
+				var added, removed, unchanged = ChangeSummary(state.Assignments, desired)
+
 				log.WithFields(log.Fields{
-					"dur":             dur,
-					"hash":            state.NetworkHash,
-					"itemSlots":       state.ItemSlots,
-					"items":           len(state.Items),
-					"lastHash":        lastNetworkHash,
-					"memberSlots":     state.MemberSlots,
-					"members":         len(state.Members),
-					"nextAssignments": len(desired),
-					"prevAssignments": len(state.Assignments),
-					"rev":             state.KS.Header.Revision,
-					"root":            state.KS.Root,
+					"asn.last":      len(state.Assignments),
+					"asn.next":      len(desired),
+					"asn.next.add":  added,
+					"asn.next.rem":  removed,
+					"asn.next.same": unchanged,
+					"dur":           dur,
+					"hash.last":     lastNetworkHash,
+					"hash.next":     state.NetworkHash,
+					"item.slots":    state.ItemSlots,
+					"item.total":    len(state.Items),
+					"mem.slots":     state.MemberSlots,
+					"mem.total":     len(state.Members),
+					"rev":           state.KS.Header.Revision,
+					"root":          state.KS.Root,
 				}).Info("solved for maximum assignment")
 
 				if len(desired) < state.ItemSlots {
@@ -104,7 +108,13 @@ func Allocate(args AllocateArgs) error {
 			// Converge the current state towards |desired|.
 			var err error
 			if err = converge(txn, state, desired); err == nil {
-				txnResponse, err = txn.Commit()
+				err = txn.Flush()
+			}
+
+			// We must read through any Etcd transactions applied by `txn`,
+			// even if it subsequently encountered an error.
+			if r := txn.Revision(); r > next {
+				next = r
 			}
 
 			if err != nil {
@@ -118,19 +128,13 @@ func Allocate(args AllocateArgs) error {
 				allocatorNumItemSlots.Set(float64(state.ItemSlots))
 
 				if args.TestHook != nil {
-					args.TestHook(round, txn.noop)
+					args.TestHook(round, txn.Revision() == 0)
 				}
 				round++
 			}
 		}
 
-		// Await the next KeySpace change. If we completed a transaction,
-		// ensure we read through its revision before iterating again.
-		var next = ks.Header.Revision + 1
-
-		if txnResponse != nil && txnResponse.Header.Revision > next {
-			next = txnResponse.Header.Revision
-		}
+		// Await the next known Etcd revision affecting our KeySpace.
 		if err := ks.WaitForRevision(ctx, next); err != nil {
 			return err
 		}
@@ -206,7 +210,7 @@ func removeDeadAssignments(txn checkpointTxn, ks *keyspace.KeySpace, asn keyspac
 	return nil
 }
 
-func solveDesiredAssignments(s *State, desired []Assignment) []Assignment {
+func SolveDesiredAssignments(s *State, desired []Assignment) []Assignment {
 	// Number of items to lump into each invocation of push/relabel.
 	// This is an arbitrary number which is empirically fast to solve,
 	// but is large enough that we're unlikely to see further improvements
@@ -231,6 +235,39 @@ func solveDesiredAssignments(s *State, desired []Assignment) []Assignment {
 	return desired
 }
 
+// Compute the total number of additions, removals, and unchanged assignments
+// if `current` assignments are shifted to `desired`.
+func ChangeSummary(current keyspace.KeyValues, desired []Assignment) (added, removed, unchanged int) {
+	for lhs, rhs := current, desired; len(lhs) != 0 || len(rhs) != 0; {
+		var cmp int
+
+		if len(lhs) == 0 {
+			cmp = 1
+		} else if len(rhs) == 0 {
+			cmp = -1
+		} else if lh, rh := lhs[0].Decoded.(Assignment), rhs[0]; lh.ItemID != rh.ItemID {
+			cmp = strings.Compare(lh.ItemID, rh.ItemID)
+		} else if lh.MemberZone != rh.MemberZone {
+			cmp = strings.Compare(lh.MemberZone, rh.MemberZone)
+		} else {
+			cmp = strings.Compare(lh.MemberSuffix, rh.MemberSuffix)
+		}
+
+		switch cmp {
+		case -1:
+			removed += 1
+			lhs = lhs[1:]
+		case 1:
+			added += 1
+			rhs = rhs[1:]
+		case 0:
+			unchanged += 1
+			lhs, rhs = lhs[1:], rhs[1:]
+		}
+	}
+	return
+}
+
 // modRevisionUnchanged returns a Cmp which verifies the key has not changed
 // from the current KeyValue.
 func modRevisionUnchanged(kv keyspace.KeyValue) clientv3.Cmp {
@@ -244,15 +281,24 @@ func modRevisionUnchanged(kv keyspace.KeyValue) clientv3.Cmp {
 //   - It allows If and Then to be called multiple times.
 //   - It removes Else, as incompatible with the checkpoint model. As such,
 //     a Txn which does not succeed becomes an error.
+//
+// If Checkpoint() or Flush() return an error, that error is terminal.
+// However, a preceding transaction may have been applied.
+// The caller must consult Revision() to determine the Etcd revision
+// to read-through before proceeding, or if this transaction was a noop then
+// Revision() will be zero.
 type checkpointTxn interface {
 	If(...clientv3.Cmp) checkpointTxn
 	Then(...clientv3.Op) checkpointTxn
-	Commit() (*clientv3.TxnResponse, error)
 
 	// Checkpoint ensures that all If and Then invocations since the last
 	// Checkpoint are issued in the same underlying Txn. It may partially
 	// flush the transaction to Etcd.
 	Checkpoint() error
+	// Flush a pending checkpoint to Etcd.
+	Flush() error
+	// Revision known to this checkpointTxn which should be read through.
+	Revision() int64
 }
 
 // batchedTxn implements the checkpointTxn interface, potentially queuing across
@@ -270,8 +316,8 @@ type batchedTxn struct {
 	nextOps  []clientv3.Op
 	// Cmps which should be asserted on every underlying Txn.
 	fixedCmps []clientv3.Cmp
-	// Flags whether no operations have committed with this batchedTxn.
-	noop bool
+	// Applied revision to be read through.
+	revision int64
 }
 
 // newBatchedTxn returns a batchedTxn using the given Context and KV. It will
@@ -290,7 +336,7 @@ func newBatchedTxn(ctx context.Context, kv clientv3.KV, fixedCmps ...clientv3.Cm
 			}
 		},
 		fixedCmps: fixedCmps,
-		noop:      true,
+		revision:  0,
 	}
 }
 
@@ -322,7 +368,7 @@ func (b *batchedTxn) Checkpoint() error {
 	b.nextCmps, b.nextOps = b.nextCmps[:0], b.nextOps[:0]
 
 	if lc, lo := len(b.cmps)+len(nc), len(b.ops)+len(no); lc > maxTxnOps || lo > maxTxnOps {
-		if _, err := b.Commit(); err != nil {
+		if err := b.Flush(); err != nil {
 			return err
 		}
 		b.cmps = append(b.cmps, b.fixedCmps...)
@@ -333,13 +379,12 @@ func (b *batchedTxn) Checkpoint() error {
 	return nil
 }
 
-func (b *batchedTxn) Commit() (*clientv3.TxnResponse, error) {
+func (b *batchedTxn) Flush() error {
 	if len(b.nextCmps) != 0 || len(b.nextOps) != 0 {
 		panic("must call Checkpoint before Commit")
 	} else if len(b.ops) == 0 {
-		return nil, nil // No-op.
+		return nil // No-op.
 	}
-
 	var response, err = b.txnDo(clientv3.OpTxn(b.cmps, b.ops, nil))
 
 	if log.GetLevel() >= log.DebugLevel {
@@ -347,14 +392,20 @@ func (b *batchedTxn) Commit() (*clientv3.TxnResponse, error) {
 	}
 
 	if err != nil {
-		return nil, err
+		return err
 	} else if !response.Succeeded {
-		return response, fmt.Errorf("transaction checks did not succeed")
+		// Don't retain the response revision because it may be outside our
+		// KeySpace, and we'd block indefinitely attempting to await it.
+		return fmt.Errorf("transaction checks did not succeed")
 	} else {
-		b.noop = false
+		b.revision = response.Header.Revision
 		b.cmps, b.ops = b.cmps[:0], b.ops[:0]
-		return response, nil
+		return nil
 	}
+}
+
+func (b *batchedTxn) Revision() int64 {
+	return b.revision
 }
 
 func (b *batchedTxn) debugLogTxn(response *clientv3.TxnResponse, err error) {

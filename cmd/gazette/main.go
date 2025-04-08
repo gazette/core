@@ -2,14 +2,20 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/gogo/gateway"
+	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/allocator"
+	"go.gazette.dev/core/auth"
 	"go.gazette.dev/core/broker"
 	"go.gazette.dev/core/broker/fragment"
 	"go.gazette.dev/core/broker/http_gateway"
@@ -27,11 +33,13 @@ var Config = new(struct {
 		mbp.ServiceConfig
 		Limit             uint32        `long:"limit" env:"LIMIT" default:"1024" description:"Maximum number of Journals the broker will allocate"`
 		FileRoot          string        `long:"file-root" env:"FILE_ROOT" description:"Local path which roots file:// fragment stores (optional)"`
+		FileOnly          bool          `long:"file-only" env:"FILE_ONLY" description:"Use the local file:// store for all journal fragments, ignoring cloud bucket storage configuration (for example, S3)"`
 		MaxAppendRate     uint32        `long:"max-append-rate" env:"MAX_APPEND_RATE" default:"0" description:"Max rate (in bytes-per-sec) that any one journal may be appended to. If zero, there is no max rate"`
 		MaxReplication    uint32        `long:"max-replication" env:"MAX_REPLICATION" default:"9" description:"Maximum effective replication of any one journal, which upper-bounds its stated replication."`
 		MinAppendRate     uint32        `long:"min-append-rate" env:"MIN_APPEND_RATE" default:"65536" description:"Min rate (in bytes-per-sec) at which a client may stream Append RPC content. RPCs unable to sustain this rate are aborted"`
-		DisableStores     bool          `long:"disable-stores" env:"DISABLE_STORES" description:"Disable use of any configured journal fragment stores. The broker will neither list or persist remote fragments, and all data is discarded on broker exit."`
 		WatchDelay        time.Duration `long:"watch-delay" env:"WATCH_DELAY" default:"30ms" description:"Delay applied to the application of watched Etcd events. Larger values amortize the processing of fast-changing Etcd keys."`
+		AuthKeys          string        `long:"auth-keys" env:"AUTH_KEYS" description:"Whitespace or comma separated, base64-encoded keys used to sign (first key) and verify (all keys) Authorization tokens." json:"-"`
+		AutoSuspend       bool          `long:"auto-suspend" env:"AUTO_SUSPEND" description:"Automatically suspend journals which have persisted all fragments"`
 		DisableSignedUrls bool          `long:"disable-signed-urls" env:"DISABLE_SIGNED_URLS" description:"When a signed URL is requested, return an unsigned URL instead. This is useful when clients do not require the signing."`
 	} `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 
@@ -50,6 +58,18 @@ func (cmdServe) Execute(args []string) error {
 	defer mbp.InitDiagnosticsAndRecover(Config.Diagnostics)()
 	mbp.InitLog(Config.Log)
 
+	var authorizer pb.Authorizer
+	var verifier pb.Verifier
+
+	if Config.Broker.AuthKeys != "" {
+		var a, err = auth.NewKeyedAuth(Config.Broker.AuthKeys)
+		mbp.Must(err, "parsing authorization keys")
+		authorizer, verifier = a, a
+	} else {
+		var a = auth.NewNoopAuth()
+		authorizer, verifier = a, a
+	}
+
 	log.WithFields(log.Fields{
 		"config":    Config,
 		"version":   mbp.Version,
@@ -57,25 +77,48 @@ func (cmdServe) Execute(args []string) error {
 	}).Info("broker configuration")
 	pb.RegisterGRPCDispatcher(Config.Broker.Zone)
 
+	var err error
+	var serverTLS, peerTLS *tls.Config
+
+	if Config.Broker.ServerCertFile != "" {
+		serverTLS, err = server.BuildTLSConfig(
+			Config.Broker.ServerCertFile, Config.Broker.ServerCertKeyFile, Config.Broker.ServerCAFile)
+		mbp.Must(err, "building server TLS config")
+
+		peerTLS, err = server.BuildTLSConfig(
+			Config.Broker.PeerCertFile, Config.Broker.PeerCertKeyFile, Config.Broker.PeerCAFile)
+		mbp.Must(err, "building peer TLS config")
+	}
+
 	// Bind our server listener, grabbing a random available port if Port is zero.
-	var srv, err = server.New("", Config.Broker.Port)
+	srv, err := server.New("", Config.Broker.Host, Config.Broker.Port, serverTLS, peerTLS, Config.Broker.MaxGRPCRecvSize, nil)
 	mbp.Must(err, "building Server instance")
+
+	if !Config.Diagnostics.Private {
+		// Expose diagnostics over the main service port.
+		srv.HTTPMux = http.DefaultServeMux
+	} else if Config.Diagnostics.Port == "" {
+		log.Warn("diagnostics are not served over the public port, and a private port is not configured")
+	}
 
 	// If a file:// root was provided, ensure it exists and apply it.
 	if Config.Broker.FileRoot != "" {
 		_, err = os.Stat(Config.Broker.FileRoot)
 		mbp.Must(err, "configured local file:// root failed")
 		fragment.FileSystemStoreRoot = Config.Broker.FileRoot
+	} else if Config.Broker.FileOnly {
+		mbp.Must(fmt.Errorf("--file-root is not configured"), "a file root must be defined when using --file-only")
 	}
 
-	broker.MinAppendRate = int64(Config.Broker.MinAppendRate)
+	broker.AutoSuspend = Config.Broker.AutoSuspend
 	broker.MaxAppendRate = int64(Config.Broker.MaxAppendRate)
+	broker.MinAppendRate = int64(Config.Broker.MinAppendRate)
+	fragment.ForceFileStore = Config.Broker.FileOnly
 	pb.MaxReplication = int32(Config.Broker.MaxReplication)
-	fragment.DisableStores = Config.Broker.DisableStores
 	fragment.DisableSignedUrls = Config.Broker.DisableSignedUrls
 
 	var (
-		lo   = pb.NewJournalClient(srv.GRPCLoopback)
+		lo   = pb.NewAuthJournalClient(pb.NewJournalClient(srv.GRPCLoopback), authorizer)
 		etcd = Config.Etcd.MustDial()
 		spec = &pb.BrokerSpec{
 			JournalLimit: Config.Broker.Limit,
@@ -86,12 +129,18 @@ func (cmdServe) Execute(args []string) error {
 			allocator.MemberKey(ks, spec.Id.Zone, spec.Id.Suffix),
 			broker.JournalIsConsistent)
 		service  = broker.NewService(allocState, lo, etcd)
-		rjc      = pb.NewRoutedJournalClient(lo, service)
 		tasks    = task.NewGroup(context.Background())
 		signalCh = make(chan os.Signal, 1)
 	)
-	pb.RegisterJournalServer(srv.GRPCServer, service)
-	srv.HTTPMux.Handle("/", http_gateway.NewGateway(rjc))
+	pb.RegisterJournalServer(srv.GRPCServer, pb.NewVerifiedJournalServer(service, verifier))
+
+	var mux *runtime.ServeMux = runtime.NewServeMux(
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &gateway.JSONPb{EmitDefaults: true}),
+		runtime.WithProtoErrorHandler(runtime.DefaultHTTPProtoErrorHandler),
+	)
+	pb.RegisterJournalHandler(tasks.Context(), mux, srv.GRPCLoopback)
+	srv.HTTPMux.Handle("/v1/", Config.Broker.CORSWrapper(mux))
+	srv.HTTPMux.Handle("/", http_gateway.NewGateway(pb.NewRoutedJournalClient(lo, pb.NoopDispatchRouter{})))
 	ks.WatchApplyDelay = Config.Broker.WatchDelay
 
 	log.WithFields(log.Fields{
