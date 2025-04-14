@@ -102,6 +102,8 @@ func (m *ApplyRequest_Change) Validate() error {
 			return pb.ExtendContext(err, "Delete")
 		} else if m.ExpectModRevision <= 0 && (m.ExpectModRevision != -1) {
 			return pb.NewValidationError("invalid ExpectModRevision (%d; expected > 0 or -1)", m.ExpectModRevision)
+		} else if m.PrimaryHints != nil {
+			return pb.NewValidationError("hints may be set only with an upsert, not a delete")
 		}
 	} else {
 		return pb.NewValidationError("neither Upsert nor Delete are set (expected exactly one)")

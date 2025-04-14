@@ -2,6 +2,7 @@ package protocol
 
 import (
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/consumer/recoverylog"
 	gc "gopkg.in/check.v1"
 )
 
@@ -105,11 +106,13 @@ func (s *RPCSuite) TestApplyRequestValidationCases(c *gc.C) {
 					HintPrefix:        "/a/hint/prefix",
 					MaxTxnDuration:    1,
 				},
-				Delete: "another-id",
+				Delete:       "another-id",
+				PrimaryHints: &recoverylog.FSMHints{Log: "valid"},
 			},
 			{
 				ExpectModRevision: 0,
 				Delete:            "another invalid id",
+				PrimaryHints:      &recoverylog.FSMHints{Log: "invalid"},
 			},
 			{
 				ExpectModRevision: 1,
@@ -127,6 +130,8 @@ func (s *RPCSuite) TestApplyRequestValidationCases(c *gc.C) {
 	req.Changes[1].Delete = "other-valid-id"
 	c.Check(req.Validate(), gc.ErrorMatches, `Changes\[1\]: invalid ExpectModRevision \(0; expected > 0 or -1\)`)
 	req.Changes[1].ExpectModRevision = 1
+	c.Check(req.Validate(), gc.ErrorMatches, `Changes\[1\]: hints may be set only with an upsert, not a delete`)
+	req.Changes[1].PrimaryHints = nil
 	c.Check(req.Validate(), gc.ErrorMatches, `Changes\[2\]: neither Upsert nor Delete are set \(expected exactly one\)`)
 	req.Changes[2].Delete = "yet-another-valid-id"
 
