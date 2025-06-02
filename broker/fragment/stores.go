@@ -17,9 +17,9 @@ import (
 	pb "go.gazette.dev/core/broker/protocol"
 )
 
-// DisableStores disables the use of configured journal stores.
-// If true, fragments are not persisted, and stores are not listed for existing fragments.
-var DisableStores bool = false
+// ForceFileStore reinterprets journal stores to use the file:// scheme, ignoring
+// a configured cloud scheme and bucket such as s3:// or gcs://
+var ForceFileStore bool = false
 
 // Whether to return an unsigned URL when a signed URL is requested. Useful when clients do not require the signing.
 var DisableSignedUrls bool = false
@@ -51,6 +51,10 @@ var sharedStores = struct {
 }
 
 func getBackend(scheme string) backend {
+	if ForceFileStore {
+		return sharedStores.fs
+	}
+
 	switch scheme {
 	case "s3":
 		return sharedStores.s3
@@ -92,9 +96,7 @@ func Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
 // present, this is a no-op. If the Spool has not been compressed incrementally,
 // it will be compressed before being persisted.
 func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec) error {
-	if DisableStores {
-		return nil // No-op.
-	} else if len(spec.Fragment.Stores) == 0 {
+	if len(spec.Fragment.Stores) == 0 {
 		return nil // No-op.
 	}
 	spool.BackingStore = spec.Fragment.Stores[0]

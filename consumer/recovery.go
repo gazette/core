@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
@@ -198,9 +198,9 @@ func beginRecovery(s *shard) error {
 	var err error
 	var spec = s.Spec()
 
-	s.recovery.hints, err = s.svc.GetHints(s.ctx, &pc.GetHintsRequest{
-		Shard: spec.Id,
-	})
+	s.recovery.hints, err = s.svc.GetHints(s.ctx,
+		pb.Claims{Capability: pb.Capability_READ},
+		&pc.GetHintsRequest{Shard: spec.Id})
 
 	if err == nil && s.recovery.hints.Status != pc.Status_OK {
 		err = fmt.Errorf(s.recovery.hints.Status.String())
@@ -219,7 +219,7 @@ func beginRecovery(s *shard) error {
 
 	// Create local temporary directory into which we recover.
 	var dir string
-	if dir, err = ioutil.TempDir("", strings.ReplaceAll(spec.Id.String(), "/", "_")+"-"); err != nil {
+	if dir, err = os.MkdirTemp("", strings.ReplaceAll(spec.Id.String(), "/", "_")+"-"); err != nil {
 		return errors.WithMessage(err, "creating shard working directory")
 	}
 
@@ -278,6 +278,12 @@ func completeRecovery(s *shard) (_ pc.Checkpoint, err error) {
 	}
 
 	if s.store, err = s.svc.App.NewStore(s, s.recovery.recorder); err != nil {
+		if s.store == nil {
+			// s.store is nil, ergo its Destroy() will not be invoked by
+			// waitAndTearDown(), and we are responsible for best-effort
+			// cleanup of the playback directory now.
+			_ = os.RemoveAll(s.recovery.recorder.Dir())
+		}
 		return cp, errors.WithMessage(err, "app.NewStore")
 	} else if cp, err = s.store.RestoreCheckpoint(s); err != nil {
 		return cp, errors.WithMessage(err, "store.RestoreCheckpoint")

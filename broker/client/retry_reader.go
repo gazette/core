@@ -53,12 +53,13 @@ func (rr *RetryReader) Offset() int64 {
 
 // Read returns the next bytes of journal content. It will return a non-nil
 // error in the following cases:
-//  * Cancel is called, or the RetryReader context is cancelled.
-//  * The broker returns OFFSET_NOT_YET_AVAILABLE (ErrOffsetNotYetAvailable)
-//    for a non-blocking ReadRequest.
-//  * An offset jump occurred (ErrOffsetJump), in which case the client
-//    should inspect the new Offset and may continue reading if desired.
-//  * The broker returns io.EOF upon reaching the requested EndOffset.
+//   - Cancel is called, or the RetryReader context is cancelled.
+//   - The broker returns OFFSET_NOT_YET_AVAILABLE (ErrOffsetNotYetAvailable)
+//     for a non-blocking ReadRequest.
+//   - An offset jump occurred (ErrOffsetJump), in which case the client
+//     should inspect the new Offset and may continue reading if desired.
+//   - The broker returns io.EOF upon reaching the requested EndOffset.
+//
 // All other errors are retried.
 func (rr *RetryReader) Read(p []byte) (n int, err error) {
 	for attempt := 0; true; attempt++ {
@@ -99,10 +100,27 @@ func (rr *RetryReader) Read(p []byte) (n int, err error) {
 			} else {
 				return // Surface to caller.
 			}
-		case io.EOF, ErrInsufficientJournalBrokers, ErrNotJournalBroker, ErrJournalNotFound:
+		case ErrInsufficientJournalBrokers, ErrNotJournalBroker:
 			// Suppress logging for expected errors on first read attempt.
 			// We may be racing a concurrent Etcd watch and assignment of the broker cluster.
 			squelch = attempt == 0
+		case ErrJournalNotFound:
+			// If a Header was attached to the request, the journal was not found
+			// even after honoring its read-through Etcd revision. If not,
+			// we allow a handful of attempts to work around expected propagation
+			// delays of Etcd revisions if the journal was just created.
+			if rr.Reader.Request.Header != nil || attempt > 3 {
+				return // Surface to caller.
+			}
+		case ErrSuspended:
+			return // Surface to caller.
+		case io.EOF:
+			// EOF means we had an established RPC, but it might not have sent
+			// any data before being closed server-side, so clear `attempts` to
+			// reduce log noise: it's common to next see ErrNotJournalBroker
+			// on broker topology changes or when authorizations are refreshed.
+			attempt = -1
+			squelch = true
 		default:
 		}
 
@@ -206,6 +224,8 @@ func backoff(attempt int) time.Duration {
 	// involves a couple of Nagle-like read delays (~30ms) as Etcd watch
 	// updates are applied by participants.
 	switch attempt {
+	case -1:
+		return 0
 	case 0, 1:
 		return time.Millisecond * 50
 	case 2, 3:

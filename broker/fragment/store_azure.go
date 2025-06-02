@@ -53,10 +53,10 @@ type azureBackend struct {
 	sharedKeyCredentials *sas.SharedKeyCredential
 	// This is a cache of configured Pipelines for each tenant. These do not expire
 	pipelines map[string]pipeline.Pipeline
-	// This is a cache of Azure storage clients for each tenant. These do not expire
+	// This is a cache of Azure storage clients for each tenant + storage account. These do not expire
 	clients map[string]*service.Client
 	mu      sync.Mutex
-	// This is a cache of URL-signing credentials for each tenant. These DO expire
+	// This is a cache of URL-signing credentials for each tenant + storage account. These DO expire
 	udcs map[string]udcAndExp
 }
 
@@ -77,7 +77,7 @@ func (a *azureBackend) SignGet(endpoint *url.URL, fragment pb.Fragment, d time.D
 		return "", err
 	}
 	// this step is needed to set the sharedkeyCredentials
-	_, err = a.getAzureServiceClient(endpoint)
+	_, err = a.getAzureStorageClient(endpoint)
 	if err != nil {
 		return "", err
 	}
@@ -317,7 +317,7 @@ func parseAzureEndpoint(endpoint *url.URL) (cfg azureStoreConfig, err error) {
 	return cfg, nil
 }
 
-func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service.Client, err error) {
+func (a *azureBackend) getAzureStorageClient(endpoint *url.URL) (client *service.Client, err error) {
 	var cfg azureStoreConfig
 
 	if cfg, err = parseAzureEndpoint(endpoint); err != nil {
@@ -329,15 +329,21 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		var accountKey = os.Getenv("AZURE_ACCOUNT_KEY")
 
 		a.mu.Lock()
-		client, ok := a.clients[accountName]
+		client, ok := a.clients[accountName+cfg.storageAccountName]
 		a.mu.Unlock()
 
 		if ok {
 			log.WithFields(log.Fields{
 				"storageAccountName": accountName,
-			}).Info("Re-using cached azure:// service client")
+				"containerName":      cfg.containerName,
+			}).Info("Re-using cached azure:// storage account client")
 			return client, nil
 		}
+
+		log.WithFields(log.Fields{
+			"storageAccountName": accountName,
+			"containerName":      cfg.containerName,
+		}).Info("Building new azure:// storage account client")
 
 		sharedKeyCred, err := service.NewSharedKeyCredential(accountName, accountKey)
 		if err != nil {
@@ -350,7 +356,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		}
 
 		a.mu.Lock()
-		a.clients[accountName] = serviceClient
+		a.clients[accountName+cfg.storageAccountName] = serviceClient
 		a.mu.Unlock()
 		return serviceClient, nil
 	} else if endpoint.Scheme == "azure-ad" {
@@ -360,15 +366,23 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		var clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
 
 		a.mu.Lock()
-		client, ok := a.clients[cfg.accountTenantID]
+		client, ok := a.clients[cfg.accountTenantID+cfg.storageAccountName]
 		a.mu.Unlock()
 
 		if ok {
 			log.WithFields(log.Fields{
-				"accountTenantId": cfg.accountTenantID,
-			}).Info("Re-using cached azure-ad:// service client")
+				"accountTenantId":    cfg.accountTenantID,
+				"storageAccountName": cfg.storageAccountName,
+				"containerName":      cfg.containerName,
+			}).Info("Re-using cached azure-ad:// storage account client")
 			return client, nil
 		}
+
+		log.WithFields(log.Fields{
+			"accountTenantId":    cfg.accountTenantID,
+			"storageAccountName": cfg.storageAccountName,
+			"containerName":      cfg.containerName,
+		}).Info("Building new azure-ad:// storage account client")
 
 		identityCreds, err := azidentity.NewClientSecretCredential(
 			cfg.accountTenantID,
@@ -389,7 +403,7 @@ func (a *azureBackend) getAzureServiceClient(endpoint *url.URL) (client *service
 		}
 
 		a.mu.Lock()
-		a.clients[cfg.accountTenantID] = serviceClient
+		a.clients[cfg.accountTenantID+cfg.storageAccountName] = serviceClient
 		a.mu.Unlock()
 
 		return serviceClient, nil
@@ -452,11 +466,9 @@ func (a *azureBackend) getAzurePipeline(ep *url.URL) (cfg azureStoreConfig, clie
 	a.mu.Unlock()
 
 	log.WithFields(log.Fields{
-		"tenant":               cfg.accountTenantID,
-		"storageAccountName":   cfg.storageAccountName,
-		"blobDomain":           cfg.blobDomain,
-		"storageContainerName": cfg.containerName,
-		"pathPrefix":           cfg.prefix,
+		"tenant":     cfg.accountTenantID,
+		"blobDomain": cfg.blobDomain,
+		"pathPrefix": cfg.prefix,
 	}).Info("constructed new Azure Storage pipeline client")
 
 	return cfg, client, nil
@@ -478,7 +490,7 @@ func (a *azureBackend) getUserDelegationCredential(endpoint *url.URL) (*service.
 		return nil, err
 	}
 	a.mu.Lock()
-	var udc, hasCachedUdc = a.udcs[cfg.accountTenantID]
+	var udc, hasCachedUdc = a.udcs[cfg.accountTenantID+cfg.storageAccountName]
 	a.mu.Unlock()
 
 	// https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blob-user-delegation-sas-create-cli#use-azure-ad-credentials-to-secure-a-sas
@@ -499,21 +511,22 @@ func (a *azureBackend) getUserDelegationCredential(endpoint *url.URL) (*service.
 			Expiry: to.Ptr(expTime.UTC().Format(sas.TimeFormat)),
 		}
 
-		var serviceClient, err = a.getAzureServiceClient(endpoint)
+		var storageClient, err = a.getAzureStorageClient(endpoint)
 		if err != nil {
 			return nil, err
 		}
 
-		cred, err := serviceClient.GetUserDelegationCredential(context.Background(), info, nil)
+		cred, err := storageClient.GetUserDelegationCredential(context.Background(), info, nil)
 		if err != nil {
 			return nil, err
 		}
 
 		log.WithFields(log.Fields{
-			"newExpiration":   expTime,
-			"newStart":        startTime.String(),
-			"service.KeyInfo": info,
-			"tenant":          cfg.accountTenantID,
+			"newExpiration":      expTime,
+			"newStart":           startTime.String(),
+			"service.KeyInfo":    info,
+			"tenant":             cfg.accountTenantID,
+			"storageAccountName": cfg.storageAccountName,
 		}).Info("Refreshing Azure Storage UDC")
 
 		udc = udcAndExp{
@@ -521,7 +534,7 @@ func (a *azureBackend) getUserDelegationCredential(endpoint *url.URL) (*service.
 			exp: &expTime,
 		}
 		a.mu.Lock()
-		a.udcs[cfg.accountTenantID] = udc
+		a.udcs[cfg.accountTenantID+cfg.storageAccountName] = udc
 		a.mu.Unlock()
 	}
 

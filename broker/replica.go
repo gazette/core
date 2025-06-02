@@ -15,6 +15,9 @@ import (
 	"go.gazette.dev/core/keyspace"
 )
 
+// AutoSuspend journals which have no local fragments.
+var AutoSuspend bool = false
+
 // replica is a runtime instance of a journal which is assigned to this broker.
 type replica struct {
 	journal pb.Journal
@@ -64,9 +67,9 @@ func fragmentRefreshDaemon(ks *keyspace.KeySpace, r *replica) {
 
 	for {
 		select {
-		case _ = <-r.ctx.Done():
+		case <-r.ctx.Done():
 			return
-		case _ = <-timer.C:
+		case <-timer.C:
 		}
 
 		var spec *pb.JournalSpec
@@ -103,27 +106,46 @@ func fragmentRefreshDaemon(ks *keyspace.KeySpace, r *replica) {
 // on changes to the replica Route. Additional periodic pulses ensure problems
 // with the peer set (eg, half-broken connections) are detected proactively.
 func pulseDaemon(svc *Service, r *replica) {
-	var timer = time.NewTimer(0) // Fires immediately.
+	var (
+		invalidateCh <-chan struct{}    // Signaled upon routing changes.
+		stableTicks  int                // Number of health checks since the last routing change.
+		timer        = time.NewTimer(0) // Health-check interval timer.
+	)
+	<-timer.C // Dequeue first fire.
 	defer timer.Stop()
 
-	var invalidateCh <-chan struct{}
 	for {
-		select {
-		case _ = <-r.ctx.Done():
-			return
-		case _ = <-timer.C:
-			timer.Reset(healthCheckInterval)
-		case _ = <-invalidateCh:
-			invalidateCh = nil
+		var ctx, cancel = context.WithTimeout(r.ctx, healthCheckInterval)
+
+		// If AutoSuspend is enabled, use the SUSPEND_IF_FLUSHED control flag
+		// only after a number of stable `healthCheckInterval`s have elapsed.
+		// We do this for a few reasons:
+		// * There's a natural startup race with the client(s) which resumed
+		//   and intend to append to the journal.
+		// * We may be both primary and newly-added to the topology.
+		//   There may be fragments which are or have persisted, which we
+		//   haven't yet observed while awaiting the next fragment refresh.
+		// * If journal topologies are changing rapidly for some reason,
+		//   we don't want to compound the problem by suspending journals,
+		//   which changes their effective replication factor.
+		var suspend = pb.AppendRequest_SUSPEND_NO_RESUME
+		if AutoSuspend && stableTicks >= 15 {
+			suspend = pb.AppendRequest_SUSPEND_IF_FLUSHED
 		}
 
-		var ctx, _ = context.WithTimeout(r.ctx, healthCheckInterval)
 		var fsm = appendFSM{
 			svc: svc,
 			ctx: ctx,
+			claims: pb.Claims{
+				Selector: pb.LabelSelector{
+					Include: pb.MustLabelSet("name", r.journal.String()),
+				},
+				Capability: pb.Capability_APPEND,
+			},
 			req: pb.AppendRequest{
 				Journal:    r.journal,
 				DoNotProxy: true,
+				Suspend:    suspend,
 			},
 		}
 		if fsm.runTo(stateStreamContent) {
@@ -140,6 +162,8 @@ func pulseDaemon(svc *Service, r *replica) {
 			// Only the primary pulses the journal. No-op.
 		} else if fsm.resolved.status == pb.Status_JOURNAL_NOT_FOUND {
 			// Journal was deleted while we waited.
+		} else if fsm.resolved.status == pb.Status_SUSPENDED {
+			// Journal was suspended.
 		} else if errors.Cause(fsm.err) == context.Canceled {
 			// Replica is shutting down.
 		} else if errors.Cause(fsm.err) == errResolverStopped {
@@ -151,9 +175,23 @@ func pulseDaemon(svc *Service, r *replica) {
 				"journal": r.journal,
 			}).Warn("journal pulse failed (will retry)")
 		}
+		cancel()
 
+		// Loop again if the current topology changes.
 		if fsm.resolved != nil {
 			invalidateCh = fsm.resolved.invalidateCh
+		}
+		// Or if `healthCheckInterval` elapses.
+		timer.Reset(healthCheckInterval)
+
+		select {
+		case <-r.ctx.Done():
+			return
+		case <-timer.C:
+			stableTicks += 1
+		case <-invalidateCh:
+			invalidateCh = nil
+			stableTicks = 0
 		}
 	}
 }
@@ -214,6 +252,40 @@ func updateAssignments(ctx context.Context, assignments keyspace.KeyValues, etcd
 		// For example, a call to updateAssignments may race against the
 		// allocator's compaction of those assignment slots, and lose.
 		// We expect to converge quickly via another attempt.
+		return resp.Header.Revision, nil
+	}
+}
+
+func updateJournalSpec(
+	ctx context.Context,
+	item keyspace.KeyValue,
+	assignments keyspace.KeyValues,
+	update pb.JournalSpec,
+	etcd clientv3.KV,
+) (int64, error) {
+
+	// Construct an Etcd transaction which asserts `item` and `assignments` are
+	// unchanged, and which updates `item` to have value `update`.
+	var cmp []clientv3.Cmp
+	var ops []clientv3.Op
+	var itemKey = string(item.Raw.Key)
+
+	cmp = append(cmp, clientv3.Compare(clientv3.ModRevision(itemKey), "=", item.Raw.ModRevision))
+	ops = append(ops, clientv3.OpPut(itemKey, update.MarshalString()))
+
+	for _, kv := range assignments {
+		var key = string(kv.Raw.Key)
+		cmp = append(cmp, clientv3.Compare(clientv3.ModRevision(key), "=", kv.Raw.ModRevision))
+	}
+
+	// Attempt a transaction which may win or lose its race.
+	// The caller reads through the returned revision to determine the outcome.
+	if resp, err := etcd.Txn(ctx).If(cmp...).Then(ops...).Commit(); err != nil {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		return 0, err
+	} else {
 		return resp.Header.Revision, nil
 	}
 }

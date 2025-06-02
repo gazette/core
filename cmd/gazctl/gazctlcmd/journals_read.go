@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/client"
@@ -25,12 +24,11 @@ type cmdJournalRead struct {
 	FileRoot       string `long:"file-root" description:"Filesystem path which roots file:// fragment store"`
 	FromUnix       int64  `long:"from" description:"Skip over fragments persisted before this time, in unix seconds since epoch"`
 
-	pumpCh       chan pumpResult                   // Chan into which completed read pumps are sent.
-	beginOffsets map[pb.Journal]int64              // Contents of initial --offsets.
-	endOffsets   map[pb.Journal]int64              // Collected --offsets-out.
-	cancelFns    map[pb.Journal]context.CancelFunc // CancelFuncs of active read pumps.
-	output       *os.File                          // Output to which we're multiplexing reads.
-	buffer       []byte                            // Buffer for copying to |output|
+	pumpCh    chan pumpResult                   // Chan into which completed read pumps are sent.
+	offsets   map[pb.Journal]int64              // Journal read offsets.
+	cancelFns map[pb.Journal]context.CancelFunc // CancelFuncs of active read pumps.
+	output    *os.File                          // Output to which we're multiplexing reads.
+	buffer    []byte                            // Buffer for copying to |output|
 }
 
 func init() {
@@ -100,14 +98,13 @@ func (cmd *cmdJournalRead) Execute([]string) error {
 		client.InstallFileTransport(cmd.FileRoot)
 	}
 	cmd.pumpCh = make(chan pumpResult)
-	cmd.beginOffsets = make(map[pb.Journal]int64)
-	cmd.endOffsets = make(map[pb.Journal]int64)
+	cmd.offsets = make(map[pb.Journal]int64)
 	cmd.buffer = make([]byte, 32*1024)
 
 	if cmd.OffsetsPath != "" {
 		var fin, err = os.Open(cmd.OffsetsPath)
 		mbp.Must(err, "failed to open offsets for reading")
-		mbp.Must(json.NewDecoder(fin).Decode(&cmd.beginOffsets), "failed to decode offsets")
+		mbp.Must(json.NewDecoder(fin).Decode(&cmd.offsets), "failed to decode offsets")
 		mbp.Must(fin.Close(), "failed to close offsets")
 
 		// If we're reading and writing to the same offsets path, move the input
@@ -118,12 +115,6 @@ func (cmd *cmdJournalRead) Execute([]string) error {
 		if cmd.OffsetsPath == cmd.OffsetsOutPath {
 			mbp.Must(os.Rename(cmd.OffsetsPath, cmd.OffsetsPath+".previous"),
 				"failed to rename previous offsets")
-		}
-		// Copy to carry-through any offsets of --offsets which are not matched
-		// to a journal on this invocation. They might match again in the future,
-		// and it would be surprising to the user were we to forget them.
-		for j, o := range cmd.beginOffsets {
-			cmd.endOffsets[j] = o
 		}
 	}
 
@@ -149,11 +140,10 @@ func (cmd *cmdJournalRead) Execute([]string) error {
 		cancel()
 	}()
 
-	// Perform an initial load and thereafter periodically poll for journals
-	// matching the --selector.
+	// List and watch journals matching the --selector.
 	var rjc = JournalsCfg.Broker.MustRoutedJournalClient(ctx)
-	list, err := client.NewPolledList(ctx, rjc, time.Minute, listRequest)
-	mbp.Must(err, "failed to resolve label selector to journals")
+	var list = client.NewWatchedList(ctx, rjc, listRequest, nil)
+	mbp.Must(<-list.UpdateCh(), "failed to resolve label selector to journals")
 
 	if len(list.List().Journals) == 0 {
 		log.Warn("no journals were matched by the selector")
@@ -179,7 +169,7 @@ func (cmd *cmdJournalRead) Execute([]string) error {
 		// Use a temporary to atomically create the offsets.
 		var fout, err = os.Create(cmd.OffsetsOutPath + ".temp")
 		mbp.Must(err, "failed to open offsets for writing")
-		mbp.Must(json.NewEncoder(fout).Encode(cmd.endOffsets), "failed to encode offsets")
+		mbp.Must(json.NewEncoder(fout).Encode(cmd.offsets), "failed to encode offsets")
 		mbp.Must(fout.Sync(), "failed to sync offset file")
 		mbp.Must(fout.Close(), "failed to close offset file")
 		mbp.Must(os.Rename(cmd.OffsetsOutPath+".temp", cmd.OffsetsOutPath),
@@ -189,7 +179,7 @@ func (cmd *cmdJournalRead) Execute([]string) error {
 	return nil
 }
 
-func (cmd *cmdJournalRead) listRefreshed(ctx context.Context, rjc pb.RoutedJournalClient, list *client.PolledList) {
+func (cmd *cmdJournalRead) listRefreshed(ctx context.Context, rjc pb.RoutedJournalClient, list *client.WatchedList) {
 	var (
 		// Construct a new map of CancelFunc, to enable detection of
 		// journals which were but are are no longer in |list|.
@@ -197,6 +187,9 @@ func (cmd *cmdJournalRead) listRefreshed(ctx context.Context, rjc pb.RoutedJourn
 		nextFns = make(map[pb.Journal]context.CancelFunc)
 	)
 	for _, j := range list.List().Journals {
+		if j.Spec.Suspend.GetLevel() == pb.JournalSpec_Suspend_FULL {
+			continue // Filter suspended journals (they have no content).
+		}
 		if fn, ok := prevFns[j.Spec.Name]; ok {
 			// Reader has already been started for this journal.
 			nextFns[j.Spec.Name] = fn
@@ -204,9 +197,9 @@ func (cmd *cmdJournalRead) listRefreshed(ctx context.Context, rjc pb.RoutedJourn
 			continue
 		}
 
-		// If the journal's in |beginOffsets|, use that as our initial offset.
+		// If the journal's in |offsets|, use that as our initial offset.
 		// Otherwise if |Tail|, use -1. Else use zero.
-		var offset, ok = cmd.beginOffsets[j.Spec.Name]
+		var offset, ok = cmd.offsets[j.Spec.Name]
 		if !ok && cmd.Tail {
 			offset = -1
 		}
@@ -247,7 +240,7 @@ func (cmd *cmdJournalRead) pumpFinished(rr *client.RetryReader, err error, nextC
 			"offset":  rr.Offset(),
 		}).Info("read finished")
 
-		cmd.endOffsets[rr.Journal()] = rr.Offset()
+		cmd.offsets[rr.Journal()] = rr.Offset()
 		delete(cmd.cancelFns, rr.Journal())
 		close(nextCh)
 

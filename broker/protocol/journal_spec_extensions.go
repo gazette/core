@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"mime"
 	"strings"
@@ -113,6 +113,8 @@ func (m *JournalSpec) Validate() error {
 		return ExtendContext(err, "Flags")
 	} else if m.MaxAppendRate < 0 {
 		return NewValidationError("invalid MaxAppendRate (%d; expected >= 0)", m.MaxAppendRate)
+	} else if err = m.Suspend.Validate(); err != nil {
+		return ExtendContext(err, "Suspend")
 	}
 	return nil
 }
@@ -148,7 +150,7 @@ func (m *JournalSpec_Fragment) Validate() error {
 	// error over a zero-valued struct having the proper shape.
 	if tpl, err := template.New("postfix").Parse(m.PathPostfixTemplate); err != nil {
 		return ExtendContext(NewValidationError(err.Error()), "PathPostfixTemplate")
-	} else if err = tpl.Execute(ioutil.Discard, struct {
+	} else if err = tpl.Execute(io.Discard, struct {
 		Spool struct {
 			Fragment
 			FirstAppendTime time.Time
@@ -161,6 +163,68 @@ func (m *JournalSpec_Fragment) Validate() error {
 
 	// Retention requires no explicit validation (all values permitted).
 
+	return nil
+}
+
+func (x JournalSpec_Suspend_Level) Validate() error {
+	switch x {
+	case JournalSpec_Suspend_NONE, JournalSpec_Suspend_PARTIAL, JournalSpec_Suspend_FULL:
+		return nil
+	default:
+		return NewValidationError("invalid Level variant (%s)", x)
+	}
+}
+
+func (x JournalSpec_Suspend_Level) MarshalYAML() (interface{}, error) {
+	if s, ok := JournalSpec_Suspend_Level_name[int32(x)]; ok {
+		return s, nil
+	} else {
+		return int(x), nil
+	}
+}
+
+func (x *JournalSpec_Suspend_Level) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Directly map YAML integer to flag.
+	var i int
+	if err := unmarshal(&i); err == nil {
+		*x = JournalSpec_Suspend_Level(i)
+		return nil
+	}
+	// Otherwise, expect a YAML string which matches an enum name.
+	var str string
+	if err := unmarshal(&str); err != nil {
+		return err
+	}
+	if tag, ok := JournalSpec_Suspend_Level_value[str]; !ok {
+		return fmt.Errorf("%q is not a valid JournalSpec_Suspend_Level (options are %v)", str, JournalSpec_Suspend_Level_value)
+	} else {
+		*x = JournalSpec_Suspend_Level(tag)
+		return nil
+	}
+}
+
+func (m *JournalSpec_Suspend) GetLevel() JournalSpec_Suspend_Level {
+	if m == nil {
+		return JournalSpec_Suspend_NONE
+	} else {
+		return m.Level
+	}
+}
+
+func (m *JournalSpec_Suspend) GetOffset() int64 {
+	if m == nil {
+		return 0
+	} else {
+		return m.Offset
+	}
+}
+
+func (m *JournalSpec_Suspend) Validate() error {
+	if err := m.GetLevel().Validate(); err != nil {
+		return ExtendContext(err, "Level")
+	} else if m.GetOffset() < 0 {
+		return ExtendContext(NewValidationError("invalid Offset (%d; expected >= 0)", m.GetOffset()), "Offset")
+	}
 	return nil
 }
 
@@ -237,10 +301,18 @@ func (m *JournalSpec) MarshalString() string {
 // DesiredReplication returns the configured Replication of the spec. It
 // implements allocator.ItemValue.
 func (m *JournalSpec) DesiredReplication() int {
-	if MaxReplication < m.Replication {
-		return int(MaxReplication)
+	var r = m.Replication
+
+	if m.Suspend.GetLevel() == JournalSpec_Suspend_PARTIAL {
+		r = 1 // Journal is suspended down to a single read-only replica.
+	} else if m.Suspend.GetLevel() == JournalSpec_Suspend_FULL {
+		r = 0 // Journal is suspended down to zero replicas.
 	}
-	return int(m.Replication)
+
+	if r > MaxReplication {
+		r = MaxReplication
+	}
+	return int(r)
 }
 
 // UnionJournalSpecs returns a JournalSpec combining all non-zero-valued fields
@@ -317,6 +389,8 @@ func IntersectJournalSpecs(a, b JournalSpec) JournalSpec {
 	if a.MaxAppendRate != b.MaxAppendRate {
 		a.MaxAppendRate = 0
 	}
+	a.Suspend = nil
+
 	return a
 }
 
@@ -358,25 +432,22 @@ func SubtractJournalSpecs(a, b JournalSpec) JournalSpec {
 	return a
 }
 
-// ExtractJournalSpecMetaLabels adds to the LabelSet a singular label "name",
-// with value of the JournalSpec Name, and multi-label "prefix", having a value
-// for each path component prefix of Name.
-func ExtractJournalSpecMetaLabels(spec *JournalSpec, out LabelSet) LabelSet {
-	var name = spec.Name.String()
-	out.Labels = append(out.Labels[:0], Label{Name: "name", Value: name})
-
-	for i, j := 0, strings.IndexByte(name, '/'); j != -1; j = strings.IndexByte(name[i:], '/') {
-		i += j + 1
-		out.Labels = append(out.Labels, Label{Name: "prefix", Value: name[:i]})
-	}
-	return out
+// LabelSetExt adds additional metadata labels to the LabelSet of the JournalSpec,
+// returning the result. The result is built by truncating `buf` and then appending
+// the merged LabelSet.
+func (m *JournalSpec) LabelSetExt(buf LabelSet) LabelSet {
+	return UnionLabelSets(LabelSet{
+		Labels: []Label{
+			{Name: "name", Value: m.Name.String()},
+		},
+	}, m.LabelSet, buf)
 }
 
 // validateJournalLabelConstraints asserts expected invariants of MessageType,
 // MessageSubType, and ContentType labels:
-//  * ContentType must parse as a RFC 1521 MIME / media-type.
-//  * If MessageType is present, so is ContentType.
-//  * If MessageSubType is present, so is MessageType.
+//   - ContentType must parse as a RFC 1521 MIME / media-type.
+//   - If MessageType is present, so is ContentType.
+//   - If MessageSubType is present, so is MessageType.
 func validateJournalLabelConstraints(ls LabelSet) error {
 	if err := ValidateSingleValueLabels(ls); err != nil {
 		return err
