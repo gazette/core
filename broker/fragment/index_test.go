@@ -285,7 +285,8 @@ func (s *IndexSuite) TestWalkStoresAndURLSigning(c *gc.C) {
 	ind.ReplaceRemote(set)
 
 	// Expect first remote load has completed.
-	<-ind.FirstRefreshCh()
+	t, _ := ind.LastRefresh()
+	c.Check(t.IsZero(), gc.Equals, false)
 
 	c.Check(ind.set, gc.HasLen, 3)
 	var bo, eo, _ = ind.Summary()

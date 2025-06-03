@@ -17,20 +17,21 @@ const (
 
 // Index maintains a queryable index of local and remote journal Fragments.
 type Index struct {
-	ctx            context.Context // Context over the lifetime of the Index.
-	set            CoverSet        // All Fragments of the index (local and remote).
-	local          CoverSet        // Local Fragments only (having non-nil File).
-	condCh         chan struct{}   // Condition variable; notifies blocked queries on each |set| update.
-	firstRefreshCh chan struct{}   // Closed when the first remote index load has completed.
-	mu             sync.RWMutex    // Guards |set| and |condCh|.
+	ctx         context.Context // Context over the lifetime of the Index.
+	set         CoverSet        // All Fragments of the index (local and remote).
+	local       CoverSet        // Local Fragments only (having non-nil File).
+	condCh      chan struct{}   // Condition variable; notifies blocked queries on each |set| update.
+	refreshCh   chan struct{}   // Signals when the remote index is refreshed. Closed and replaced on each refresh.
+	lastRefresh time.Time       // Timestamp of the last remote index refresh.
+	mu          sync.RWMutex    // Guards |set| and |condCh|.
 }
 
 // NewIndex returns a new, empty Index.
 func NewIndex(ctx context.Context) *Index {
 	return &Index{
-		ctx:            ctx,
-		condCh:         make(chan struct{}),
-		firstRefreshCh: make(chan struct{}),
+		ctx:       ctx,
+		condCh:    make(chan struct{}),
+		refreshCh: make(chan struct{}),
 	}
 }
 
@@ -174,12 +175,10 @@ func (fi *Index) ReplaceRemote(set CoverSet) {
 	fi.set = set
 	fi.wakeBlockedQueries()
 
-	select {
-	case <-fi.firstRefreshCh:
-		// Already closed.
-	default:
-		close(fi.firstRefreshCh)
-	}
+	// Signal and record this remote refresh.
+	close(fi.refreshCh)
+	fi.refreshCh = make(chan struct{})
+	fi.lastRefresh = timeNow()
 }
 
 // wakeBlockedQueries wakes all queries waiting for an index update.
@@ -192,9 +191,14 @@ func (fi *Index) wakeBlockedQueries() {
 	fi.condCh = make(chan struct{})
 }
 
-// FirstRefreshCh returns a channel which signals if the Index
-// as been refreshed with a remote store(s) listing at least once.
-func (fi *Index) FirstRefreshCh() <-chan struct{} { return fi.firstRefreshCh }
+// LastRefresh returns the time of the last remote index refresh and a channel which signals on each subsequent refresh.
+// The channel is closed and replaced on every refresh, allowing clients to await the next event.
+func (fi *Index) LastRefresh() (time.Time, <-chan struct{}) {
+	fi.mu.RLock()
+	var t, ch = fi.lastRefresh, fi.refreshCh
+	fi.mu.RUnlock()
+	return t, ch
+}
 
 // Inspect invokes the callback with a snapshot of all fragments in the Index.
 // The callback must not modify the CoverSet, and during callback invocation
@@ -202,13 +206,22 @@ func (fi *Index) FirstRefreshCh() <-chan struct{} { return fi.firstRefreshCh }
 // If an initial refresh of remote fragment store(s) hasn't yet been applied,
 // Inspect will first block until it does (or context cancellation).
 func (fi *Index) Inspect(ctx context.Context, callback func(CoverSet) error) error {
-	select {
-	case <-fi.firstRefreshCh:
-		// Pass.
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-fi.ctx.Done():
-		return fi.ctx.Err()
+	// Await initial remote refresh.
+	for {
+		fi.mu.RLock()
+		var done, refreshCh = !fi.lastRefresh.IsZero(), fi.refreshCh
+		fi.mu.RUnlock()
+
+		if done {
+			break
+		}
+		select {
+		case <-refreshCh:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-fi.ctx.Done():
+			return fi.ctx.Err()
+		}
 	}
 
 	fi.mu.RLock()

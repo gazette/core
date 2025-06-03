@@ -411,24 +411,24 @@ func (b *appendFSM) onAwaitDesiredReplicas() {
 func (b *appendFSM) onValidatePreconditions() {
 	b.mustState(stateValidatePreconditions)
 
-	// Ensure an initial refresh of the remote store(s) has completed.
-	select {
-	case <-b.resolved.replica.index.FirstRefreshCh():
-	// Pass.
-	default:
-		addTrace(b.ctx, " ... stalled on first fragment index refresh")
-
+	// Block append if fragment index is stale: older than four times the RefreshInterval.
+	var horizon = time.Now().Add(-4 * b.resolved.journalSpec.Fragment.RefreshInterval)
+	for {
+		var last, refreshCh = b.resolved.replica.index.LastRefresh()
+		if last.After(horizon) {
+			break
+		}
+		addTrace(b.ctx, " ... stalled on stale fragment index refresh (last: %v)", last)
 		select {
-		case <-b.resolved.replica.index.FirstRefreshCh():
-			// Pass.
-		case <-b.ctx.Done(): // Request was cancelled.
+		case <-b.ctx.Done():
 			b.err = errors.WithMessage(b.ctx.Err(), "waiting for index refresh")
 			b.state = stateError
 			return
-		case <-b.resolved.invalidateCh: // Replica assignments changed.
+		case <-b.resolved.invalidateCh:
 			addTrace(b.ctx, " ... resolution was invalidated")
 			b.state = stateResolve
 			return
+		case <-refreshCh:
 		}
 	}
 
