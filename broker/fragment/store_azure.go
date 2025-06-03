@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -213,6 +214,25 @@ func (a *azureBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	}
 	_, err = blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 	return err
+}
+
+func (a *azureBackend) IsAuthError(err error) bool {
+	if storageErr, ok := err.(azblob.StorageError); ok {
+
+		switch storageErr.ServiceCode() {
+		case azblob.ServiceCodeContainerNotFound,
+			azblob.ServiceCodeAccountIsDisabled,
+			azblob.ServiceCodeContainerDisabled:
+			return true
+		}
+
+		if response := storageErr.Response(); response != nil {
+			if response.StatusCode == http.StatusForbidden {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Turns an `azcore.TokenCredential` into an auto-refreshing `azblob.TokenCredential`

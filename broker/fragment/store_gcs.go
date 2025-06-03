@@ -2,8 +2,10 @@ package fragment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
@@ -130,6 +133,20 @@ func (s *gcsBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
 		return err
 	}
 	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).Delete(ctx)
+}
+
+func (s *gcsBackend) IsAuthError(err error) bool {
+	if err == storage.ErrBucketNotExist {
+		return true
+	}
+
+	var gErr *googleapi.Error
+	if ok := errors.As(err, &gErr); ok {
+		if gErr.Code == http.StatusForbidden {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, opts storage.SignedURLOptions, err error) {

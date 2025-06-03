@@ -14,6 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/gorilla/schema"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
 )
 
@@ -29,6 +30,7 @@ type backend interface {
 	Persist(ctx context.Context, ep *url.URL, spool Spool) error
 	List(ctx context.Context, store pb.FragmentStore, ep *url.URL, name pb.Journal, callback func(pb.Fragment)) error
 	Remove(ctx context.Context, fragment pb.Fragment) error
+	IsAuthError(err error) bool
 }
 
 var sharedStores = struct {
@@ -92,29 +94,19 @@ func Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
 // Persist a Spool to the JournalSpec's store. If the Spool Fragment is already
 // present, this is a no-op. If the Spool has not been compressed incrementally,
 // it will be compressed before being persisted.
+//
+// If multiple stores are configured and an authorization error occurs with the first store,
+// Persist will try subsequent stores until one succeeds or all fail.
 func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec) error {
 	if len(spec.Fragment.Stores) == 0 {
 		return nil // No-op.
 	}
-	spool.BackingStore = spec.Fragment.Stores[0]
 
 	if postfix, err := evalPathPostfix(spool, spec); err != nil {
 		return err
 	} else {
 		spool.PathPostfix = postfix
 	}
-
-	var ep = spool.Fragment.BackingStore.URL()
-	var b = getBackend(ep.Scheme)
-
-	var exists, err = b.Exists(ctx, ep, spool.Fragment.Fragment)
-	instrumentStoreOp(b.Provider(), "exist", err)
-	if err != nil {
-		return err
-	} else if exists {
-		return nil // All done.
-	}
-
 	// Ensure |compressedFile| is ready. This is a no-op if compressed incrementally.
 	if spool.CompressionCodec != pb.CompressionCodec_NONE {
 		spool.finishCompression()
@@ -128,10 +120,38 @@ func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec) error {
 	var timeoutCtx, cancel = context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	if err = b.Persist(timeoutCtx, ep, spool); err == nil {
-		storePersistedBytesTotal.WithLabelValues(b.Provider()).Add(float64(spool.ContentLength()))
+	var err error
+
+	// Try each configured store in order
+	for _, store := range spec.Fragment.Stores {
+		spool.BackingStore = store
+
+		var ep = spool.Fragment.BackingStore.URL()
+		var b = getBackend(ep.Scheme)
+		var exists bool
+
+		exists, err = b.Exists(ctx, ep, spool.Fragment.Fragment)
+		instrumentStoreOp(b.Provider(), "exist", err)
+
+		if err == nil && !exists {
+			err = b.Persist(timeoutCtx, ep, spool)
+			instrumentStoreOp(b.Provider(), "persist", err)
+		}
+
+		if err == nil {
+			storePersistedBytesTotal.WithLabelValues(b.Provider()).Add(float64(spool.ContentLength()))
+			return nil // All done. It exists, or was persisted.
+		} else if !b.IsAuthError(err) {
+			return err // Errors _other_ than auth failures are fatal and retried.
+		}
+
+		log.WithFields(log.Fields{
+			"store": store,
+			"path":  spool.Fragment.ContentPath(),
+			"err":   err,
+		}).Warn("fragment store auth failure (falling back to next store)")
 	}
-	instrumentStoreOp(b.Provider(), "persist", err)
+
 	return err
 }
 

@@ -190,6 +190,21 @@ func (s *s3Backend) Remove(ctx context.Context, fragment pb.Fragment) error {
 	return err
 }
 
+func (s *s3Backend) IsAuthError(err error) bool {
+	if awsErr, ok := err.(awserr.RequestFailure); ok {
+
+		switch awsErr.Code() {
+		case s3.ErrCodeNoSuchBucket:
+			return true
+		}
+		switch awsErr.StatusCode() {
+		case http.StatusForbidden:
+			return true
+		}
+	}
+	return false
+}
+
 func (s *s3Backend) s3Client(ep *url.URL) (cfg S3StoreConfig, client *s3.S3, err error) {
 	if err = parseStoreArgs(ep, &cfg); err != nil {
 		return

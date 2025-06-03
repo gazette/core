@@ -2,8 +2,9 @@ package fragment
 
 import (
 	"context"
+	"errors"
 	"io"
-	"io/ioutil"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -80,7 +81,7 @@ func (s fsBackend) Persist(_ context.Context, ep *url.URL, spool Spool) error {
 
 	// Open a temp file under the target path directory.
 	var f *os.File
-	f, err = ioutil.TempFile(filepath.Dir(path), ".partial-"+filepath.Base(path))
+	f, err = os.CreateTemp(filepath.Dir(path), ".partial-"+filepath.Base(path))
 	if err != nil {
 		return err
 	}
@@ -163,6 +164,10 @@ func (s fsBackend) Remove(_ context.Context, fragment pb.Fragment) error {
 
 	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, fragment.ContentPath())))
 	return os.Remove(path)
+}
+
+func (s fsBackend) IsAuthError(err error) bool {
+	return errors.Is(err, fs.ErrPermission)
 }
 
 func (s fsBackend) fsCfg(ep *url.URL) (cfg FileStoreConfig, err error) {
