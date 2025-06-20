@@ -14,9 +14,9 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
-// TestS3BackendIsAuthError tests S3 backend auth error classification
-func TestS3BackendIsAuthError(t *testing.T) {
-	backend := sharedStores.s3
+// TestS3StoreIsAuthError tests S3 store auth error classification
+func TestS3StoreIsAuthError(t *testing.T) {
+	store := &s3Store{}
 
 	// Test cases for S3 auth errors
 	tests := []struct {
@@ -58,15 +58,15 @@ func TestS3BackendIsAuthError(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := backend.IsAuthError(test.err)
+			result := store.IsAuthError(test.err)
 			require.Equal(t, test.expected, result)
 		})
 	}
 }
 
-// TestGCSBackendIsAuthError tests GCS backend auth error classification
-func TestGCSBackendIsAuthError(t *testing.T) {
-	backend := sharedStores.gcs
+// TestGCSStoreIsAuthError tests GCS store auth error classification
+func TestGCSStoreIsAuthError(t *testing.T) {
+	store := &gcsStore{}
 
 	// Test cases for GCS auth errors
 	tests := []struct {
@@ -113,15 +113,15 @@ func TestGCSBackendIsAuthError(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := backend.IsAuthError(test.err)
+			result := store.IsAuthError(test.err)
 			require.Equal(t, test.expected, result)
 		})
 	}
 }
 
-// TestAzureBackendIsAuthError tests Azure backend auth error classification
-func TestAzureBackendIsAuthError(t *testing.T) {
-	backend := sharedStores.azure
+// TestAzureStoreIsAuthError tests Azure store auth error classification
+func TestAzureStoreIsAuthError(t *testing.T) {
+	store := &azureStoreBase{}
 
 	// Test cases for Azure auth errors
 	tests := []struct {
@@ -168,15 +168,15 @@ func TestAzureBackendIsAuthError(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := backend.IsAuthError(test.err)
+			result := store.IsAuthError(test.err)
 			require.Equal(t, test.expected, result)
 		})
 	}
 }
 
-// TestFSBackendIsAuthError tests filesystem backend auth error classification
-func TestFSBackendIsAuthError(t *testing.T) {
-	backend := sharedStores.fs
+// TestFSStoreIsAuthError tests filesystem store auth error classification
+func TestFSStoreIsAuthError(t *testing.T) {
+	store := &fsStore{}
 
 	// Test cases for filesystem auth errors
 	tests := []struct {
@@ -208,7 +208,7 @@ func TestFSBackendIsAuthError(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := backend.IsAuthError(test.err)
+			result := store.IsAuthError(test.err)
 			require.Equal(t, test.expected, result)
 		})
 	}

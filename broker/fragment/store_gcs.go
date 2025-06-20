@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -20,42 +19,83 @@ import (
 	"google.golang.org/api/option"
 )
 
-// GSStoreConfig configures a Fragment store of the "gs://" scheme.
-// It is initialized from parsed URL parameters of the pb.FragmentStore.
-type GSStoreConfig struct {
-	bucket string
-	prefix string
-
+// GCSStoreQueryArgs contains fields that are parsed from the query arguments
+// of a gs:// fragment store URL.
+type GCSStoreQueryArgs struct {
 	RewriterConfig
 }
 
-type gcsBackend struct {
+type gcsStore struct {
+	bucket           string
+	prefix           string
+	args             GCSStoreQueryArgs
 	client           *storage.Client
 	signedURLOptions storage.SignedURLOptions
-	clientMu         sync.Mutex
 }
 
-func (s *gcsBackend) Provider() string {
+func newGCSStore(ep *url.URL) (*gcsStore, error) {
+	var args GCSStoreQueryArgs
+	if err := parseStoreArgs(ep, &args); err != nil {
+		return nil, err
+	}
+	// Omit leading slash from bucket prefix. Note that FragmentStore already
+	// enforces that URL Paths end in '/'.
+	var bucket, prefix = ep.Host, ep.Path[1:]
+
+	var ctx = context.Background()
+
+	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
+	if err != nil {
+		return nil, err
+	} else if creds.JSON == nil {
+		return nil, fmt.Errorf("use of GCS requires that a service-account private key be supplied with application default credentials")
+	}
+	conf, err := google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
+	if err != nil {
+		return nil, err
+	}
+	client, err := storage.NewClient(ctx,
+		option.WithTokenSource(conf.TokenSource(ctx)),
+		option.WithHTTPClient(httpClientDisableCompression))
+	if err != nil {
+		return nil, err
+	}
+	var opts = storage.SignedURLOptions{
+		GoogleAccessID: conf.Email,
+		PrivateKey:     conf.PrivateKey,
+	}
+
+	log.WithFields(log.Fields{
+		"ProjectID":      creds.ProjectID,
+		"GoogleAccessID": conf.Email,
+		"PrivateKeyID":   conf.PrivateKeyID,
+		"Subject":        conf.Subject,
+		"Scopes":         conf.Scopes,
+	}).Info("constructed new GCS client")
+
+	return &gcsStore{
+		bucket:           bucket,
+		prefix:           prefix,
+		args:             args,
+		client:           client,
+		signedURLOptions: opts,
+	}, nil
+}
+
+func (s *gcsStore) Provider() string {
 	return "gcs"
 }
 
-func (s *gcsBackend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error) {
-	cfg, _, opts, err := s.gcsClient(ep)
-	if err != nil {
-		return "", err
-	}
+func (s *gcsStore) SignGet(fragment pb.Fragment, d time.Duration) (string, error) {
+	var opts = s.signedURLOptions
 	opts.Method = "GET"
 	opts.Expires = time.Now().Add(d)
 
-	return storage.SignedURL(cfg.bucket, cfg.rewritePath(cfg.prefix, fragment.ContentPath()), &opts)
+	return storage.SignedURL(s.bucket, s.args.rewritePath(s.prefix, fragment.ContentPath()), &opts)
 }
 
-func (s *gcsBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (exists bool, err error) {
-	cfg, client, _, err := s.gcsClient(ep)
-	if err != nil {
-		return false, err
-	}
-	_, err = client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).Attrs(ctx)
+func (s *gcsStore) Exists(ctx context.Context, fragment pb.Fragment) (exists bool, err error) {
+	_, err = s.client.Bucket(s.bucket).Object(s.args.rewritePath(s.prefix, fragment.ContentPath())).Attrs(ctx)
 	if err == nil {
 		exists = true
 	} else if err == storage.ErrObjectNotExist {
@@ -64,26 +104,19 @@ func (s *gcsBackend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragme
 	return exists, err
 }
 
-func (s *gcsBackend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
-	cfg, client, _, err := s.gcsClient(ep)
-	if err != nil {
-		return nil, err
-	}
-	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).NewReader(ctx)
+func (s *gcsStore) Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
+	return s.client.Bucket(s.bucket).Object(s.args.rewritePath(s.prefix, fragment.ContentPath())).NewReader(ctx)
 }
 
-func (s *gcsBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) error {
-	cfg, client, _, err := s.gcsClient(ep)
-	if err != nil {
-		return err
-	}
+func (s *gcsStore) Persist(ctx context.Context, spool Spool) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var wc = client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, spool.ContentPath())).NewWriter(ctx)
+	var wc = s.client.Bucket(s.bucket).Object(s.args.rewritePath(s.prefix, spool.ContentPath())).NewWriter(ctx)
 
 	if spool.CompressionCodec == pb.CompressionCodec_GZIP_OFFLOAD_DECOMPRESSION {
 		wc.ContentEncoding = "gzip"
 	}
+	var err error
 	if spool.CompressionCodec != pb.CompressionCodec_NONE {
 		_, err = io.Copy(wc, io.NewSectionReader(spool.compressedFile, 0, spool.compressedLength))
 	} else {
@@ -95,28 +128,24 @@ func (s *gcsBackend) Persist(ctx context.Context, ep *url.URL, spool Spool) erro
 	return wc.Close()
 }
 
-func (s *gcsBackend) List(ctx context.Context, store pb.FragmentStore, ep *url.URL, journal pb.Journal, callback func(pb.Fragment)) error {
-	var cfg, client, _, err = s.gcsClient(ep)
-	if err != nil {
-		return err
-	}
+func (s *gcsStore) List(ctx context.Context, journal pb.Journal, callback func(pb.Fragment)) error {
 	var (
 		q = storage.Query{
-			Prefix: cfg.rewritePath(cfg.prefix, journal.String()) + "/",
+			Prefix: s.args.rewritePath(s.prefix, journal.String()) + "/",
 		}
-		it  = client.Bucket(cfg.bucket).Objects(ctx, &q)
+		it  = s.client.Bucket(s.bucket).Objects(ctx, &q)
 		obj *storage.ObjectAttrs
+		err error
 	)
 	for obj, err = it.Next(); err == nil; obj, err = it.Next() {
 		if strings.HasSuffix(obj.Name, "/") {
 			// Ignore directory-like objects, usually created by mounting buckets with a FUSE driver.
 		} else if frag, err := pb.ParseFragmentFromRelativePath(journal, obj.Name[len(q.Prefix):]); err != nil {
-			log.WithFields(log.Fields{"bucket": cfg.bucket, "name": obj.Name, "err": err}).Warning("parsing fragment")
+			log.WithFields(log.Fields{"bucket": s.bucket, "name": obj.Name, "err": err}).Warning("parsing fragment")
 		} else if obj.Size == 0 && frag.ContentLength() > 0 {
-			log.WithFields(log.Fields{"bucket": cfg.bucket, "name": obj.Name}).Warning("zero-length fragment")
+			log.WithFields(log.Fields{"bucket": s.bucket, "name": obj.Name}).Warning("zero-length fragment")
 		} else {
 			frag.ModTime = obj.Updated.Unix()
-			frag.BackingStore = store
 			callback(frag)
 		}
 	}
@@ -126,65 +155,11 @@ func (s *gcsBackend) List(ctx context.Context, store pb.FragmentStore, ep *url.U
 	return err
 }
 
-func (s *gcsBackend) Remove(ctx context.Context, fragment pb.Fragment) error {
-	cfg, client, _, err := s.gcsClient(fragment.BackingStore.URL())
-	if err != nil {
-		return err
-	}
-	return client.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).Delete(ctx)
+func (s *gcsStore) Remove(ctx context.Context, fragment pb.Fragment) error {
+	return s.client.Bucket(s.bucket).Object(s.args.rewritePath(s.prefix, fragment.ContentPath())).Delete(ctx)
 }
 
-func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, opts storage.SignedURLOptions, err error) {
-	if err = parseStoreArgs(ep, &cfg); err != nil {
-		return
-	}
-	// Omit leading slash from bucket prefix. Note that FragmentStore already
-	// enforces that URL Paths end in '/'.
-	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
-
-	s.clientMu.Lock()
-	defer s.clientMu.Unlock()
-
-	if s.client != nil {
-		client = s.client
-		opts = s.signedURLOptions
-		return
-	}
-	var ctx = context.Background()
-
-	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
-	if err != nil {
-		return
-	} else if creds.JSON == nil {
-		err = fmt.Errorf("use of GCS requires that a service-account private key be supplied with application default credentials")
-		return
-	}
-	conf, err := google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
-	if err != nil {
-		return
-	}
-	client, err = storage.NewClient(ctx, option.WithTokenSource(conf.TokenSource(ctx)))
-	if err != nil {
-		return
-	}
-	opts = storage.SignedURLOptions{
-		GoogleAccessID: conf.Email,
-		PrivateKey:     conf.PrivateKey,
-	}
-	s.client, s.signedURLOptions = client, opts
-
-	log.WithFields(log.Fields{
-		"ProjectID":      creds.ProjectID,
-		"GoogleAccessID": conf.Email,
-		"PrivateKeyID":   conf.PrivateKeyID,
-		"Subject":        conf.Subject,
-		"Scopes":         conf.Scopes,
-	}).Info("constructed new GCS client")
-
-	return
-}
-
-func (s *gcsBackend) IsAuthError(err error) bool {
+func (s *gcsStore) IsAuthError(err error) bool {
 	if err == nil {
 		return false
 	}

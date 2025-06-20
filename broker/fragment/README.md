@@ -26,7 +26,7 @@ The package abstracts over multiple storage providers through a common `backend`
 - **File System** (`store_fs.go`): Local filesystem storage
 - **Amazon S3** (`store_s3.go`): AWS S3 compatible storage  
 - **Google Cloud Storage** (`store_gcs.go`): GCS object storage
-- **Azure Blob** (`store_azure.go`): Azure Blob Storage
+- **Azure Blob** (`store_azure_ad.go`, `store_azure_shared_key.go`): Azure Blob Storage with both AD and Shared Key authentication
 
 Each backend implements operations for signing URLs, checking existence, opening, persisting, listing, and removing fragments.
 

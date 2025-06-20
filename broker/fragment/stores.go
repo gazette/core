@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
-	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/gorilla/schema"
 	pkgerrors "github.com/pkg/errors"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -22,60 +22,65 @@ import (
 // a configured cloud scheme and bucket such as s3:// or gcs://
 var ForceFileStore bool = false
 
-type backend interface {
+// Store provides an abstraction over cloud storage systems for journal fragments.
+type Store interface {
+	// Provider returns the name of the storage backend (e.g., "s3", "gcs", "azure", "fs").
 	Provider() string
-	SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) (string, error)
-	Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (bool, error)
-	Open(ctx context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error)
-	Persist(ctx context.Context, ep *url.URL, spool Spool) error
-	List(ctx context.Context, store pb.FragmentStore, ep *url.URL, name pb.Journal, callback func(pb.Fragment)) error
+
+	// SignGet returns a pre-signed URL that authenticates the bearer to perform
+	// a GET operation of the Fragment for the provided Duration from the current time.
+	// This allows clients to directly fetch fragments from the storage backend.
+	SignGet(fragment pb.Fragment, d time.Duration) (string, error)
+
+	// Exists checks if the given Fragment is present in the store.
+	// Returns true if the fragment exists, false otherwise.
+	Exists(ctx context.Context, fragment pb.Fragment) (bool, error)
+
+	// Open returns an io.ReadCloser of the Fragment's content from the store.
+	// The caller is responsible for closing the returned ReadCloser.
+	// The returned reader does not perform client-side decompression, but may
+	// request server-side decompression for GZIP_OFFLOAD_DECOMPRESSION.
+	Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error)
+
+	// Persist durably writes a Spool to the store.
+	// If the Spool has not been compressed incrementally, it will be compressed
+	// before persistence according to the Spool's CompressionCodec.
+	Persist(ctx context.Context, spool Spool) error
+
+	// List enumerates all Fragments of the given Journal in the store.
+	// The callback is invoked for each Fragment found, with listing terminated
+	// early if the callback returns an error.
+	List(ctx context.Context, name pb.Journal, callback func(pb.Fragment)) error
+
+	// Remove deletes the Fragment from the store.
 	Remove(ctx context.Context, fragment pb.Fragment) error
+
+	// IsAuthError returns true if the error represents an authorization failure
+	// (e.g., missing permissions, bucket not found, access denied).
+	// This is used to distinguish authorization errors from authentication or
+	// other transient errors, particularly during graceful shutdown to allow
+	// fallback to alternate stores.
 	IsAuthError(error) bool
 }
 
-var sharedStores = struct {
-	s3    *s3Backend
-	gcs   *gcsBackend
-	azure *azureBackend
-	fs    *fsBackend
-}{
-	s3:  newS3Backend(),
-	gcs: &gcsBackend{},
-	azure: &azureBackend{
-		pipelines: make(map[string]pipeline.Pipeline),
-		clients:   make(map[string]*service.Client),
-		udcs:      make(map[string]udcAndExp),
-	},
-	fs: &fsBackend{},
-}
-
-func getBackend(scheme string) backend {
-	if ForceFileStore {
-		return sharedStores.fs
-	}
-
-	switch scheme {
-	case "s3":
-		return sharedStores.s3
-	case "gs":
-		return sharedStores.gcs
-	case "azure", "azure-ad":
-		return sharedStores.azure
-	case "file":
-		return sharedStores.fs
-	default:
-		panic("unsupported scheme: " + scheme)
-	}
+// BoundStore embeds a Store instance and provides a place for additional
+// metadata such as metrics and health status.
+type BoundStore struct {
+	Store
+	// TODO: Add metrics and health status fields here
 }
 
 // SignGetURL returns a URL authenticating the bearer to perform a GET operation
 // of the Fragment for the provided Duration from the current time.
 func SignGetURL(fragment pb.Fragment, d time.Duration) (string, error) {
-	var ep = fragment.BackingStore.URL()
-	var b = getBackend(ep.Scheme)
+	var s, err = getOrCreateStore(fragment.BackingStore)
+	if err != nil {
+		return "", err
+	}
 
-	var signedURL, err = b.SignGet(ep, fragment, d)
-	instrumentStoreOp(b.Provider(), "get_signed_url", err)
+	var signedURL string
+	signedURL, err = s.SignGet(fragment, d)
+	instrumentStoreOp(s.Provider(), "get_signed_url", err)
 	return signedURL, err
 }
 
@@ -83,11 +88,13 @@ func SignGetURL(fragment pb.Fragment, d time.Duration) (string, error) {
 // perform any applicable client-side decompression, but does request server
 // decompression in the case of GZIP_OFFLOAD_DECOMPRESSION.
 func Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
-	var ep = fragment.BackingStore.URL()
-	var b = getBackend(ep.Scheme)
+	var s, err = getOrCreateStore(fragment.BackingStore)
+	if err != nil {
+		return nil, err
+	}
 
-	var rc, err = b.Open(ctx, ep, fragment)
-	instrumentStoreOp(b.Provider(), "open", err)
+	rc, err := s.Open(ctx, fragment)
+	instrumentStoreOp(s.Provider(), "open", err)
 	return rc, err
 }
 
@@ -107,14 +114,16 @@ func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec, isExiting b
 			spool.PathPostfix = postfix
 		}
 
-		var ep = spool.Fragment.BackingStore.URL()
-		var b = getBackend(ep.Scheme)
+		var s, err = getOrCreateStore(spool.Fragment.BackingStore)
+		if err != nil {
+			return err
+		}
 
-		var exists, err = b.Exists(ctx, ep, spool.Fragment.Fragment)
-		instrumentStoreOp(b.Provider(), "exist", err)
+		exists, err := s.Exists(ctx, spool.Fragment.Fragment)
+		instrumentStoreOp(s.Provider(), "exist", err)
 
 		if err != nil {
-			if b.IsAuthError(err) && isExiting && len(stores) != 0 {
+			if s.IsAuthError(err) && isExiting && len(stores) != 0 {
 				continue // Fall back to the next store.
 			}
 			return err
@@ -135,17 +144,17 @@ func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec, isExiting b
 		var timeoutCtx, cancel = context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 
-		err = b.Persist(timeoutCtx, ep, spool)
-		instrumentStoreOp(b.Provider(), "persist", err)
+		err = s.Persist(timeoutCtx, spool)
+		instrumentStoreOp(s.Provider(), "persist", err)
 
 		if err != nil {
-			if b.IsAuthError(err) && isExiting && len(stores) != 0 {
+			if s.IsAuthError(err) && isExiting && len(stores) != 0 {
 				continue // During shutdown with auth errors, try next store.
 			}
 			return err
 		}
 
-		storePersistedBytesTotal.WithLabelValues(b.Provider()).Add(float64(spool.ContentLength()))
+		storePersistedBytesTotal.WithLabelValues(s.Provider()).Add(float64(spool.ContentLength()))
 		return nil // Success
 	}
 	return nil // No stores.
@@ -154,20 +163,69 @@ func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec, isExiting b
 // List Fragments of the FragmentStore for a given journal. |callback| is
 // invoked with each listed Fragment, and any returned error aborts the listing.
 func List(ctx context.Context, store pb.FragmentStore, name pb.Journal, callback func(pb.Fragment)) error {
-	var ep = store.URL()
-	var b = getBackend(ep.Scheme)
+	var s, err = getOrCreateStore(store)
+	if err != nil {
+		return err
+	}
 
-	var err = b.List(ctx, store, ep, name, callback)
-	instrumentStoreOp(b.Provider(), "list", err)
+	err = s.List(ctx, name, func(f pb.Fragment) { f.BackingStore = store; callback(f) })
+	instrumentStoreOp(s.Provider(), "list", err)
 	return err
 }
 
 // Remove |fragment| from its BackingStore.
 func Remove(ctx context.Context, fragment pb.Fragment) error {
-	var b = getBackend(fragment.BackingStore.URL().Scheme)
-	var err = b.Remove(ctx, fragment)
-	instrumentStoreOp(b.Provider(), "remove", err)
+	var s, err = getOrCreateStore(fragment.BackingStore)
+	if err != nil {
+		return err
+	}
+	err = s.Remove(ctx, fragment)
+	instrumentStoreOp(s.Provider(), "remove", err)
 	return err
+}
+
+// constructStore creates a new Store instance based on the provided URL endpoint.
+// This function is responsible for determining the store type based on the URL scheme
+// and initializing the appropriate backend implementation.
+func constructStore(ep *url.URL) (Store, error) {
+	switch ep.Scheme {
+	case "s3":
+		return newS3Store(ep)
+	case "gs":
+		return newGCSStore(ep)
+	case "azure":
+		return newAzureAccountStore(ep)
+	case "azure-ad":
+		return newAzureADStore(ep)
+	case "file":
+		return newFSStore(ep)
+	default:
+		return nil, fmt.Errorf("unsupported scheme: %s", ep.Scheme)
+	}
+}
+
+func getOrCreateStore(store pb.FragmentStore) (Store, error) {
+	storesMu.Lock()
+	defer storesMu.Unlock()
+
+	if s, ok := stores[store]; ok {
+		return s.Store, nil
+	}
+
+	var ep *url.URL
+	if ForceFileStore {
+		ep = pb.FragmentStore("file://").URL()
+	} else {
+		ep = store.URL()
+	}
+
+	var s, err = constructStore(ep)
+	if err != nil {
+		return nil, err
+	}
+
+	stores[store] = &BoundStore{Store: s}
+	return s, nil
 }
 
 func parseStoreArgs(ep *url.URL, args interface{}) error {
@@ -242,3 +300,12 @@ func (cfg RewriterConfig) rewritePath(s, j string) string {
 	}
 	return s + strings.Replace(j, cfg.Find, cfg.Replace, 1)
 }
+
+var (
+	stores   = make(map[pb.FragmentStore]*BoundStore)
+	storesMu sync.Mutex
+
+	httpClientDisableCompression = &http.Client{
+		Transport: &http.Transport{DisableCompression: true},
+	}
+)

@@ -127,14 +127,14 @@ func TestStoreInteractions(t *testing.T) {
 
 func TestParseStoreArgsS3(t *testing.T) {
 	storeURL, _ := url.Parse("s3://bucket/prefix/?endpoint=https://s3.region.amazonaws.com&SSE=kms&SSEKMSKeyId=123&region=some-region")
-	var s3Cfg S3StoreConfig
-	parseStoreArgs(storeURL, &s3Cfg)
+	var s3Args S3StoreQueryArgs
+	parseStoreArgs(storeURL, &s3Args)
 	require.Equal(t, "bucket", storeURL.Host)
 	require.Equal(t, "prefix/", storeURL.Path[1:])
-	require.Equal(t, "https://s3.region.amazonaws.com", s3Cfg.Endpoint)
-	require.Equal(t, "kms", s3Cfg.SSE)
-	require.Equal(t, "123", s3Cfg.SSEKMSKeyId)
-	require.Equal(t, "some-region", s3Cfg.Region)
+	require.Equal(t, "https://s3.region.amazonaws.com", s3Args.Endpoint)
+	require.Equal(t, "kms", s3Args.SSE)
+	require.Equal(t, "123", s3Args.SSEKMSKeyId)
+	require.Equal(t, "some-region", s3Args.Region)
 }
 
 func readFrag(t *testing.T, f pb.Fragment) string {

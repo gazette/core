@@ -3,8 +3,6 @@
 //
 // It implements file-like operations over the FragmentStore schemes supported
 // by Gazette, such as listing, opening, signing, persisting, and removing fragments.
-// See FileStoreConfig, S3StoreConfig, and GSStoreConfig for further configuration
-// of store operations.
 //
 // The package implements a Fragment wrapper type which composes a protocol.Fragment
 // with an open file descriptor, and an Index over local or remote Fragments which maps

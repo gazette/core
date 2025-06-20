@@ -16,34 +16,33 @@ import (
 // of a file:// fragment store. It must be set at program startup prior to use.
 var FileSystemStoreRoot = "/dev/null/must/configure/file/store/root"
 
-// FileStoreConfig configures a Fragment store of the "file://" scheme.
-// It is initialized from parsed URL parameters of the pb.FragmentStore.
-type FileStoreConfig struct {
+// FileStoreQueryArgs contains fields that are parsed from the query arguments
+// of a file:// fragment store URL.
+type FileStoreQueryArgs struct {
 	RewriterConfig
 }
 
-type fsBackend struct{}
+type fsStore struct {
+	args   FileStoreQueryArgs
+	prefix string
+}
 
-func (s fsBackend) Provider() string {
+func newFSStore(ep *url.URL) (*fsStore, error) {
+	var s = &fsStore{}
+	s.prefix = ep.Path
+	return s, parseStoreArgs(ep, &s.args)
+}
+
+func (s fsStore) Provider() string {
 	return "fs"
 }
 
-func (s fsBackend) SignGet(ep *url.URL, fragment pb.Fragment, _ time.Duration) (string, error) {
-	var cfg, err = s.fsCfg(ep)
-	if err != nil {
-		return "", err
-	}
-
-	return "file://" + cfg.rewritePath(ep.Path, fragment.ContentPath()), nil
+func (s fsStore) SignGet(fragment pb.Fragment, _ time.Duration) (string, error) {
+	return "file://" + s.args.rewritePath(s.prefix, fragment.ContentPath()), nil
 }
 
-func (s fsBackend) Exists(_ context.Context, ep *url.URL, fragment pb.Fragment) (bool, error) {
-	var cfg, err = s.fsCfg(ep)
-	if err != nil {
-		return false, err
-	}
-
-	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, fragment.ContentPath())))
+func (s fsStore) Exists(_ context.Context, fragment pb.Fragment) (bool, error) {
+	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(s.args.rewritePath(s.prefix, fragment.ContentPath())))
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false, nil
@@ -54,31 +53,20 @@ func (s fsBackend) Exists(_ context.Context, ep *url.URL, fragment pb.Fragment) 
 	}
 }
 
-func (s fsBackend) Open(_ context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
-	var cfg, err = s.fsCfg(ep)
-	if err != nil {
-		return nil, err
-	}
-
-	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, fragment.ContentPath())))
+func (s fsStore) Open(_ context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
+	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(s.args.rewritePath(s.prefix, fragment.ContentPath())))
 	return os.Open(path)
 }
 
-func (s fsBackend) Persist(_ context.Context, ep *url.URL, spool Spool) error {
-	var cfg, err = s.fsCfg(ep)
-	if err != nil {
-		return err
-	}
+func (s fsStore) Persist(_ context.Context, spool Spool) error {
+	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(s.args.rewritePath(s.prefix, spool.ContentPath())))
 
-	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, spool.ContentPath())))
-
-	// Create the fragment's directory, if not already present.
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return err
 	}
 
-	// Open a temp file under the target path directory.
 	var f *os.File
+	var err error
 	f, err = os.CreateTemp(filepath.Dir(path), ".partial-"+filepath.Base(path))
 	if err != nil {
 		return err
@@ -107,14 +95,9 @@ func (s fsBackend) Persist(_ context.Context, ep *url.URL, spool Spool) error {
 	return err
 }
 
-func (s fsBackend) List(_ context.Context, store pb.FragmentStore, ep *url.URL, journal pb.Journal, callback func(pb.Fragment)) error {
-	var cfg, err = s.fsCfg(ep)
-	if err != nil {
-		return err
-	}
-
+func (s fsStore) List(_ context.Context, journal pb.Journal, callback func(pb.Fragment)) error {
 	var dir = filepath.Join(FileSystemStoreRoot,
-		filepath.FromSlash(cfg.rewritePath(ep.Path, journal.String()+"/")))
+		filepath.FromSlash(s.args.rewritePath(s.prefix, journal.String()+"/")))
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return nil
@@ -146,29 +129,17 @@ func (s fsBackend) List(_ context.Context, store pb.FragmentStore, ep *url.URL, 
 				}).Warning("zero-length fragment")
 			} else {
 				frag.ModTime = info.ModTime().Unix()
-				frag.BackingStore = store
 				callback(frag)
 			}
 			return nil
 		})
 }
 
-func (s fsBackend) Remove(_ context.Context, fragment pb.Fragment) error {
-	var ep = fragment.BackingStore.URL()
-	var cfg, err = s.fsCfg(ep)
-	if err != nil {
-		return err
-	}
-
-	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(cfg.rewritePath(ep.Path, fragment.ContentPath())))
+func (s fsStore) Remove(_ context.Context, fragment pb.Fragment) error {
+	var path = filepath.Join(FileSystemStoreRoot, filepath.FromSlash(s.args.rewritePath(s.prefix, fragment.ContentPath())))
 	return os.Remove(path)
 }
 
-func (s fsBackend) fsCfg(ep *url.URL) (cfg FileStoreConfig, err error) {
-	err = parseStoreArgs(ep, &cfg)
-	return cfg, err
-}
-
-func (s fsBackend) IsAuthError(err error) bool {
+func (s fsStore) IsAuthError(err error) bool {
 	return os.IsPermission(err)
 }
