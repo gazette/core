@@ -51,6 +51,9 @@ func TestStoreInteractions(t *testing.T) {
 	defer func(s string) { FileSystemStoreRoot = s }(FileSystemStoreRoot)
 	FileSystemStoreRoot = dir
 
+	// Pre-warm the store
+	RegisterStores(map[pb.FragmentStore]*BoundStore{fs: nil})
+
 	// Use a wacky path template which does little more than ensure
 	// that each fragment ends up under a different path partition.
 	var spec = &pb.JournalSpec{

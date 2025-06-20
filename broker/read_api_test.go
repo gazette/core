@@ -13,6 +13,7 @@ import (
 	"go.gazette.dev/core/broker/codecs"
 	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores/fs"
 	"go.gazette.dev/core/etcdtest"
 )
 
@@ -348,6 +349,11 @@ func TestReadRemoteFragmentCases(t *testing.T) {
 
 	// Create a remote fragment fixture with journal content.
 	var frag, tmpDir = buildRemoteFragmentFixture(t)
+
+	// Register the fragment store used in the test.
+	fragment.RegisterStores(map[pb.FragmentStore]*fragment.BoundStore{
+		pb.FragmentStore("file:///"): nil,
+	})
 
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 	defer func(s string) { fragment.FileSystemStoreRoot = s }(fragment.FileSystemStoreRoot)

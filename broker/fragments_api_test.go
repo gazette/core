@@ -99,6 +99,12 @@ func TestFragmentsListCases(t *testing.T) {
 	var broker = newTestBroker(t, etcd, pb.ProcessSpec_ID{Zone: "local", Suffix: "broker"})
 	setTestJournal(broker, pb.JournalSpec{Name: "a/journal", Replication: 1}, broker.id)
 
+	// Register the fragment stores used in test fixtures.
+	fragment.RegisterStores(map[pb.FragmentStore]*fragment.BoundStore{
+		pb.FragmentStore("file:///root/one/"): nil,
+		pb.FragmentStore("file:///root/two/"): nil,
+	})
+
 	var fragments = buildFragmentsFixture()
 	var oneSec = time.Second
 	var expectHeader = *broker.header("a/journal")

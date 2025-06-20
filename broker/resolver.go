@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.gazette.dev/core/allocator"
+	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
 	pbx "go.gazette.dev/core/broker/protocol/ext"
 	"go.gazette.dev/core/keyspace"
@@ -224,12 +225,19 @@ func (r *resolver) updateResolutions() {
 		return // We've stopped serving local replicas.
 	}
 	var next = make(map[pb.Journal]*resolverReplica, len(r.state.LocalItems))
+	var fragmentStores = make(map[pb.FragmentStore]*fragment.BoundStore)
 
 	for _, li := range r.state.LocalItems {
 		var item = li.Item.Decoded.(allocator.Item)
 		var name = pb.Journal(item.ID)
+		var spec = item.ItemValue.(*pb.JournalSpec)
 		var primary = li.Assignments[li.Index].Decoded.(allocator.Assignment).Slot == 0
 		var replica, ok = r.replicas[name]
+
+		// Collect unique fragment stores from journal spec
+		for _, store := range spec.Fragment.Stores {
+			fragmentStores[store] = nil
+		}
 
 		if _, ok := next[name]; ok {
 			// TODO(johnny): This SHOULD not happen, but sometimes does.
@@ -271,6 +279,9 @@ func (r *resolver) updateResolutions() {
 
 	var prev = r.replicas
 	r.replicas = next
+
+	// Refresh fragment stores with all collected stores from locally assigned journals
+	fragment.RegisterStores(fragmentStores)
 
 	// Any remaining replicas in |prev| were not in LocalItems.
 	r.cancelReplicas(prev)

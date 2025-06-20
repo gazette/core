@@ -271,6 +271,13 @@ func (s *IndexSuite) TestWalkStoresAndURLSigning(c *gc.C) {
 	var ind = NewIndex(ctx)
 	var set CoverSet
 
+	// Pre-warm stores before using them
+	RegisterStores(map[pb.FragmentStore]*BoundStore{
+		pb.FragmentStore("file:///path/does/not/exist/"): nil,
+		pb.FragmentStore("file:///root/one/"):            nil,
+		pb.FragmentStore("file:///root/two/"):            nil,
+	})
+
 	set, err = WalkAllStores(ctx, "a/journal", []pb.FragmentStore{
 		pb.FragmentStore("file:///path/does/not/exist/"),
 	})

@@ -67,13 +67,14 @@ type Store interface {
 // metadata such as metrics and health status.
 type BoundStore struct {
 	Store
+	initErr error // Initialization error, if any
 	// TODO: Add metrics and health status fields here
 }
 
 // SignGetURL returns a URL authenticating the bearer to perform a GET operation
 // of the Fragment for the provided Duration from the current time.
 func SignGetURL(fragment pb.Fragment, d time.Duration) (string, error) {
-	var s, err = getOrCreateStore(fragment.BackingStore)
+	var s, err = getStore(fragment.BackingStore)
 	if err != nil {
 		return "", err
 	}
@@ -88,7 +89,7 @@ func SignGetURL(fragment pb.Fragment, d time.Duration) (string, error) {
 // perform any applicable client-side decompression, but does request server
 // decompression in the case of GZIP_OFFLOAD_DECOMPRESSION.
 func Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
-	var s, err = getOrCreateStore(fragment.BackingStore)
+	var s, err = getStore(fragment.BackingStore)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec, isExiting b
 			spool.PathPostfix = postfix
 		}
 
-		var s, err = getOrCreateStore(spool.Fragment.BackingStore)
+		var s, err = getStore(spool.Fragment.BackingStore)
 		if err != nil {
 			return err
 		}
@@ -163,7 +164,7 @@ func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec, isExiting b
 // List Fragments of the FragmentStore for a given journal. |callback| is
 // invoked with each listed Fragment, and any returned error aborts the listing.
 func List(ctx context.Context, store pb.FragmentStore, name pb.Journal, callback func(pb.Fragment)) error {
-	var s, err = getOrCreateStore(store)
+	var s, err = getStore(store)
 	if err != nil {
 		return err
 	}
@@ -175,7 +176,7 @@ func List(ctx context.Context, store pb.FragmentStore, name pb.Journal, callback
 
 // Remove |fragment| from its BackingStore.
 func Remove(ctx context.Context, fragment pb.Fragment) error {
-	var s, err = getOrCreateStore(fragment.BackingStore)
+	var s, err = getStore(fragment.BackingStore)
 	if err != nil {
 		return err
 	}
@@ -184,34 +185,9 @@ func Remove(ctx context.Context, fragment pb.Fragment) error {
 	return err
 }
 
-// constructStore creates a new Store instance based on the provided URL endpoint.
-// This function is responsible for determining the store type based on the URL scheme
-// and initializing the appropriate backend implementation.
-func constructStore(ep *url.URL) (Store, error) {
-	switch ep.Scheme {
-	case "s3":
-		return newS3Store(ep)
-	case "gs":
-		return newGCSStore(ep)
-	case "azure":
-		return newAzureAccountStore(ep)
-	case "azure-ad":
-		return newAzureADStore(ep)
-	case "file":
-		return newFSStore(ep)
-	default:
-		return nil, fmt.Errorf("unsupported scheme: %s", ep.Scheme)
-	}
-}
-
-func getOrCreateStore(store pb.FragmentStore) (Store, error) {
-	storesMu.Lock()
-	defer storesMu.Unlock()
-
-	if s, ok := stores[store]; ok {
-		return s.Store, nil
-	}
-
+// constructStore creates a new BoundStore instance for the provided FragmentStore.
+// Any initialization errors are stored in the returned BoundStore.
+func constructStore(store pb.FragmentStore) (Store, error) {
 	var ep *url.URL
 	if ForceFileStore {
 		ep = pb.FragmentStore("file://").URL()
@@ -219,13 +195,58 @@ func getOrCreateStore(store pb.FragmentStore) (Store, error) {
 		ep = store.URL()
 	}
 
-	var s, err = constructStore(ep)
-	if err != nil {
-		return nil, err
+	var s Store
+	var err error
+
+	switch ep.Scheme {
+	case "s3":
+		s, err = newS3Store(ep)
+	case "gs":
+		s, err = newGCSStore(ep)
+	case "azure":
+		s, err = newAzureAccountStore(ep)
+	case "azure-ad":
+		s, err = newAzureADStore(ep)
+	case "file":
+		s, err = newFSStore(ep)
+	default:
+		err = fmt.Errorf("unsupported scheme: %s", ep.Scheme)
 	}
 
-	stores[store] = &BoundStore{Store: s}
-	return s, nil
+	return s, err
+}
+
+// RegisterStores updates the global BoundStore index with the provided set of stores.
+// It takes ownership of the newStores map, which should have FragmentStore keys with nil values.
+func RegisterStores(newStores map[pb.FragmentStore]*BoundStore) {
+	storesMu.Lock()
+	defer storesMu.Unlock()
+
+	// Copy existing BoundStore values to new map, or construct new ones.
+	for key := range newStores {
+		if existing, ok := stores[key]; ok && existing.initErr == nil {
+			newStores[key] = existing
+			delete(stores, key)
+		} else {
+			var s, initErr = constructStore(key)
+			newStores[key] = &BoundStore{Store: s, initErr: initErr}
+		}
+	}
+
+	// `stores` now holds only dropped FragmentStore keys.
+
+	// Atomic swap
+	stores = newStores
+}
+
+func getStore(store pb.FragmentStore) (Store, error) {
+	storesMu.Lock()
+	defer storesMu.Unlock()
+
+	if bs, ok := stores[store]; ok {
+		return bs.Store, bs.initErr
+	}
+	return nil, fmt.Errorf("store not found: %s", store)
 }
 
 func parseStoreArgs(ep *url.URL, args interface{}) error {
