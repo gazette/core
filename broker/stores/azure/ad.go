@@ -1,4 +1,4 @@
-package fragment
+package azure
 
 import (
 	"context"
@@ -17,12 +17,13 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
 )
 
-// azureADStore implements the Store interface for Azure Blob Storage
+// adStore implements the Store interface for Azure Blob Storage
 // using Azure AD authentication (azure-ad:// scheme)
-type azureADStore struct {
-	azureStoreBase
+type adStore struct {
+	storeBase
 	tenantID string // Tenant that owns the storage account.
 	client   *service.Client
 
@@ -35,8 +36,9 @@ type azureADStore struct {
 	}
 }
 
-func newAzureADStore(ep *url.URL) (*azureADStore, error) {
-	var args AzureQueryArgs
+// NewAD creates a new Azure AD authenticated Store from the provided URL.
+func NewAD(ep *url.URL) (stores.Store, error) {
+	var args StoreQueryArgs
 
 	if err := parseStoreArgs(ep, &args); err != nil {
 		return nil, err
@@ -100,8 +102,8 @@ func newAzureADStore(ep *url.URL) (*azureADStore, error) {
 		return nil, err
 	}
 
-	var store = &azureADStore{
-		azureStoreBase: azureStoreBase{
+	var store = &adStore{
+		storeBase: storeBase{
 			storageAccount: storageAccount,
 			container:      container,
 			prefix:         prefix,
@@ -123,8 +125,8 @@ func newAzureADStore(ep *url.URL) (*azureADStore, error) {
 }
 
 // SignGet returns a signed URL for GET operations using User Delegation Key
-func (a *azureADStore) SignGet(fragment pb.Fragment, d time.Duration) (string, error) {
-	var blob = a.args.rewritePath(a.prefix, fragment.ContentPath())
+func (a *adStore) SignGet(fragment pb.Fragment, d time.Duration) (string, error) {
+	var blob = a.args.RewritePath(a.prefix, fragment.ContentPath())
 
 	var udc, err = a.fetchUserDelegationCredential()
 	if err != nil {
@@ -154,7 +156,7 @@ func (a *azureADStore) SignGet(fragment pb.Fragment, d time.Duration) (string, e
 	return fmt.Sprintf("%s/%s?%s", a.containerURL(), blob, sasQueryParams.Encode()), nil
 }
 
-func (a *azureADStore) fetchUserDelegationCredential() (*service.UserDelegationCredential, error) {
+func (a *adStore) fetchUserDelegationCredential() (*service.UserDelegationCredential, error) {
 	a.udc.mu.Lock()
 	defer a.udc.mu.Unlock()
 

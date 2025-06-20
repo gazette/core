@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"sort"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"go.gazette.dev/core/broker/client"
 	"go.gazette.dev/core/broker/codecs"
 	pb "go.gazette.dev/core/broker/protocol"
+	fsStore "go.gazette.dev/core/broker/stores/fs"
 )
 
 // How to test individual FragmentStore implementations:
@@ -48,8 +48,8 @@ func TestStoreInteractions(t *testing.T) {
 	defer client.InstallFileTransport(dir)()
 	defer os.RemoveAll(dir)
 
-	defer func(s string) { FileSystemStoreRoot = s }(FileSystemStoreRoot)
-	FileSystemStoreRoot = dir
+	defer func(s string) { fsStore.FileSystemStoreRoot = s }(fsStore.FileSystemStoreRoot)
+	fsStore.FileSystemStoreRoot = dir
 
 	// Pre-warm the store
 	RegisterStores(map[pb.FragmentStore]*BoundStore{fs: nil})
@@ -128,17 +128,7 @@ func TestStoreInteractions(t *testing.T) {
 		func(f pb.Fragment) { panic("not called") }))
 }
 
-func TestParseStoreArgsS3(t *testing.T) {
-	storeURL, _ := url.Parse("s3://bucket/prefix/?endpoint=https://s3.region.amazonaws.com&SSE=kms&SSEKMSKeyId=123&region=some-region")
-	var s3Args S3StoreQueryArgs
-	parseStoreArgs(storeURL, &s3Args)
-	require.Equal(t, "bucket", storeURL.Host)
-	require.Equal(t, "prefix/", storeURL.Path[1:])
-	require.Equal(t, "https://s3.region.amazonaws.com", s3Args.Endpoint)
-	require.Equal(t, "kms", s3Args.SSE)
-	require.Equal(t, "123", s3Args.SSEKMSKeyId)
-	require.Equal(t, "some-region", s3Args.Region)
-}
+// TestParseStoreArgsS3 has been moved to broker/stores/s3/store_test.go
 
 func readFrag(t *testing.T, f pb.Fragment) string {
 	var rc, err = Open(context.Background(), f)

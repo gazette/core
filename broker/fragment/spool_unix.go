@@ -4,6 +4,8 @@ package fragment
 
 import (
 	"os"
+
+	"go.gazette.dev/core/broker/stores"
 )
 
 // newSpoolFile creates and returns a temporary file which has already had its
@@ -12,7 +14,7 @@ import (
 // disk resources, but the file becomes unaddressable and its resources released
 // to the OS after an explicit call to Close, or if the os.File is garbage-
 // collected (such that the runtime finalizer calls Close on our behalf).
-var newSpoolFile = func() (File, error) {
+var newSpoolFile = func() (stores.File, error) {
 	if f, err := os.CreateTemp("", "spool"); err != nil {
 		return nil, err
 	} else {

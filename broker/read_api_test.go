@@ -356,8 +356,8 @@ func TestReadRemoteFragmentCases(t *testing.T) {
 	})
 
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-	defer func(s string) { fragment.FileSystemStoreRoot = s }(fragment.FileSystemStoreRoot)
-	fragment.FileSystemStoreRoot = tmpDir
+	defer func(s string) { fs.FileSystemStoreRoot = s }(fs.FileSystemStoreRoot)
+	fs.FileSystemStoreRoot = tmpDir
 
 	// Resolve, and update the replica index to reflect the remote fragment fixture.
 	broker.replica("a/journal").index.ReplaceRemote(fragment.CoverSet{fragment.Fragment{Fragment: frag}})

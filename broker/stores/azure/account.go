@@ -1,4 +1,4 @@
-package fragment
+package azure
 
 import (
 	"fmt"
@@ -12,17 +12,19 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
 )
 
-// azureAccountStore implements the Store interface for Azure Blob Storage
+// accountStore implements the Store interface for Azure Blob Storage
 // using Shared Key authentication (azure:// scheme)
-type azureAccountStore struct {
-	azureStoreBase
+type accountStore struct {
+	storeBase
 	sasKey *service.SharedKeyCredential
 }
 
-func newAzureAccountStore(ep *url.URL) (*azureAccountStore, error) {
-	var args AzureQueryArgs
+// NewAccount creates a new Azure Account authenticated Store from the provided URL.
+func NewAccount(ep *url.URL) (stores.Store, error) {
+	var args StoreQueryArgs
 
 	if err := parseStoreArgs(ep, &args); err != nil {
 		return nil, err
@@ -51,8 +53,8 @@ func newAzureAccountStore(ep *url.URL) (*azureAccountStore, error) {
 		return nil, err
 	}
 
-	var store = &azureAccountStore{
-		azureStoreBase: azureStoreBase{
+	var store = &accountStore{
+		storeBase: storeBase{
 			storageAccount: storageAccount,
 			container:      container,
 			prefix:         prefix,
@@ -72,8 +74,8 @@ func newAzureAccountStore(ep *url.URL) (*azureAccountStore, error) {
 }
 
 // SignGet returns a signed URL for GET operations using Shared Key signing
-func (a *azureAccountStore) SignGet(fragment pb.Fragment, d time.Duration) (string, error) {
-	var blob = a.args.rewritePath(a.prefix, fragment.ContentPath())
+func (a *accountStore) SignGet(fragment pb.Fragment, d time.Duration) (string, error) {
+	var blob = a.args.RewritePath(a.prefix, fragment.ContentPath())
 
 	sasQueryParams, err := sas.BlobSignatureValues{
 		Protocol:      sas.ProtocolHTTPS,

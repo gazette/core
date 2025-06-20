@@ -8,6 +8,7 @@ import (
 
 	"go.gazette.dev/core/broker/codecs"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
 	gc "gopkg.in/check.v1"
 )
 
@@ -334,11 +335,11 @@ func (s *SpoolSuite) TestFileErrorRetries(c *gc.C) {
 	_, err = spool.Apply(&pb.ReplicateRequest{Proposal: &proposal}, true)
 	c.Check(err, gc.IsNil)
 
-	injectFileError(&spool.File) // Next spool WriteAt attempt fails.
+	injectFileError(&spool.Fragment.File) // Next spool WriteAt attempt fails.
 	_, err = spool.Apply(&pb.ReplicateRequest{Content: []byte("bar")}, true)
 	c.Check(err, gc.IsNil)
 
-	injectFileError(&spool.File)           // Next ReadAt attempt fails, forcing rebuild of compressor.
+	injectFileError(&spool.Fragment.File)           // Next ReadAt attempt fails, forcing rebuild of compressor.
 	injectFileError(&spool.compressedFile) // Next Seek-start attempt fails.
 
 	proposal = spool.Next()
@@ -363,13 +364,13 @@ func useShortRetryInterval() func() {
 func injectNewSpoolFileFailure() {
 	var realNewSpoolFile = newSpoolFile
 
-	newSpoolFile = func() (File, error) {
+	newSpoolFile = func() (stores.File, error) {
 		newSpoolFile = realNewSpoolFile
 		return nil, errors.New("spool open error")
 	}
 }
 
-func injectFileError(file *File) {
+func injectFileError(file *stores.File) {
 	var orig = *file
 	*file = errFile{restore: func() { *file = orig }}
 }
@@ -402,7 +403,7 @@ func contentString(c *gc.C, s Spool, codec pb.CompressionCodec) string {
 	var err error
 
 	if s.compressedFile == nil {
-		rc = ioutil.NopCloser(io.NewSectionReader(s.File, 0, s.ContentLength()))
+		rc = ioutil.NopCloser(io.NewSectionReader(s.Fragment.File, 0, s.ContentLength()))
 	} else {
 		rc, err = codecs.NewCodecReader(
 			io.NewSectionReader(s.compressedFile, 0, s.compressedLength), codec)

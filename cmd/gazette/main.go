@@ -19,6 +19,7 @@ import (
 	"go.gazette.dev/core/broker"
 	"go.gazette.dev/core/broker/fragment"
 	"go.gazette.dev/core/broker/http_gateway"
+	"go.gazette.dev/core/broker/stores/fs"
 	pb "go.gazette.dev/core/broker/protocol"
 	mbp "go.gazette.dev/core/mainboilerplate"
 	"go.gazette.dev/core/server"
@@ -104,7 +105,7 @@ func (cmdServe) Execute(args []string) error {
 	if Config.Broker.FileRoot != "" {
 		_, err = os.Stat(Config.Broker.FileRoot)
 		mbp.Must(err, "configured local file:// root failed")
-		fragment.FileSystemStoreRoot = Config.Broker.FileRoot
+		fs.FileSystemStoreRoot = Config.Broker.FileRoot
 	} else if Config.Broker.FileOnly {
 		mbp.Must(fmt.Errorf("--file-root is not configured"), "a file root must be defined when using --file-only")
 	}

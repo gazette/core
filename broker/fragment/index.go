@@ -6,6 +6,7 @@ import (
 	"time"
 
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
 	"golang.org/x/net/trace"
 )
 
@@ -35,7 +36,7 @@ func NewIndex(ctx context.Context) *Index {
 }
 
 // Query the Index for a Fragment matching the ReadRequest.
-func (fi *Index) Query(ctx context.Context, req *pb.ReadRequest) (*pb.ReadResponse, File, error) {
+func (fi *Index) Query(ctx context.Context, req *pb.ReadRequest) (*pb.ReadResponse, stores.File, error) {
 	defer fi.mu.RUnlock()
 	fi.mu.RLock()
 

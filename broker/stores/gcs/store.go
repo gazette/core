@@ -1,4 +1,4 @@
-package fragment
+package gcs
 
 import (
 	"context"
@@ -11,30 +11,34 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/gorilla/schema"
 	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
+	"go.gazette.dev/core/broker/stores/common"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
-// GCSStoreQueryArgs contains fields that are parsed from the query arguments
+// StoreQueryArgs contains fields that are parsed from the query arguments
 // of a gs:// fragment store URL.
-type GCSStoreQueryArgs struct {
-	RewriterConfig
+type StoreQueryArgs struct {
+	common.RewriterConfig
 }
 
-type gcsStore struct {
+type store struct {
 	bucket           string
 	prefix           string
-	args             GCSStoreQueryArgs
+	args             StoreQueryArgs
 	client           *storage.Client
 	signedURLOptions storage.SignedURLOptions
 }
 
-func newGCSStore(ep *url.URL) (*gcsStore, error) {
-	var args GCSStoreQueryArgs
+// New creates a new GCS Store from the provided URL.
+func New(ep *url.URL) (stores.Store, error) {
+	var args StoreQueryArgs
 	if err := parseStoreArgs(ep, &args); err != nil {
 		return nil, err
 	}
@@ -73,7 +77,7 @@ func newGCSStore(ep *url.URL) (*gcsStore, error) {
 		"Scopes":         conf.Scopes,
 	}).Info("constructed new GCS client")
 
-	return &gcsStore{
+	return &store{
 		bucket:           bucket,
 		prefix:           prefix,
 		args:             args,
@@ -82,20 +86,20 @@ func newGCSStore(ep *url.URL) (*gcsStore, error) {
 	}, nil
 }
 
-func (s *gcsStore) Provider() string {
+func (s *store) Provider() string {
 	return "gcs"
 }
 
-func (s *gcsStore) SignGet(fragment pb.Fragment, d time.Duration) (string, error) {
+func (s *store) SignGet(fragment pb.Fragment, d time.Duration) (string, error) {
 	var opts = s.signedURLOptions
 	opts.Method = "GET"
 	opts.Expires = time.Now().Add(d)
 
-	return storage.SignedURL(s.bucket, s.args.rewritePath(s.prefix, fragment.ContentPath()), &opts)
+	return storage.SignedURL(s.bucket, s.args.RewritePath(s.prefix, fragment.ContentPath()), &opts)
 }
 
-func (s *gcsStore) Exists(ctx context.Context, fragment pb.Fragment) (exists bool, err error) {
-	_, err = s.client.Bucket(s.bucket).Object(s.args.rewritePath(s.prefix, fragment.ContentPath())).Attrs(ctx)
+func (s *store) Exists(ctx context.Context, fragment pb.Fragment) (exists bool, err error) {
+	_, err = s.client.Bucket(s.bucket).Object(s.args.RewritePath(s.prefix, fragment.ContentPath())).Attrs(ctx)
 	if err == nil {
 		exists = true
 	} else if err == storage.ErrObjectNotExist {
@@ -104,23 +108,23 @@ func (s *gcsStore) Exists(ctx context.Context, fragment pb.Fragment) (exists boo
 	return exists, err
 }
 
-func (s *gcsStore) Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
-	return s.client.Bucket(s.bucket).Object(s.args.rewritePath(s.prefix, fragment.ContentPath())).NewReader(ctx)
+func (s *store) Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
+	return s.client.Bucket(s.bucket).Object(s.args.RewritePath(s.prefix, fragment.ContentPath())).NewReader(ctx)
 }
 
-func (s *gcsStore) Persist(ctx context.Context, spool Spool) error {
+func (s *store) Persist(ctx context.Context, spool stores.Spool) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var wc = s.client.Bucket(s.bucket).Object(s.args.rewritePath(s.prefix, spool.ContentPath())).NewWriter(ctx)
+	var wc = s.client.Bucket(s.bucket).Object(s.args.RewritePath(s.prefix, spool.GetFragment().ContentPath())).NewWriter(ctx)
 
-	if spool.CompressionCodec == pb.CompressionCodec_GZIP_OFFLOAD_DECOMPRESSION {
+	if spool.GetFragment().CompressionCodec == pb.CompressionCodec_GZIP_OFFLOAD_DECOMPRESSION {
 		wc.ContentEncoding = "gzip"
 	}
 	var err error
-	if spool.CompressionCodec != pb.CompressionCodec_NONE {
-		_, err = io.Copy(wc, io.NewSectionReader(spool.compressedFile, 0, spool.compressedLength))
+	if spool.GetFragment().CompressionCodec != pb.CompressionCodec_NONE {
+		_, err = io.Copy(wc, io.NewSectionReader(spool.CompressedFile(), 0, spool.CompressedLength()))
 	} else {
-		_, err = io.Copy(wc, io.NewSectionReader(spool.File, 0, spool.ContentLength()))
+		_, err = io.Copy(wc, io.NewSectionReader(spool.File(), 0, spool.GetFragment().ContentLength()))
 	}
 	if err != nil {
 		return err
@@ -128,10 +132,10 @@ func (s *gcsStore) Persist(ctx context.Context, spool Spool) error {
 	return wc.Close()
 }
 
-func (s *gcsStore) List(ctx context.Context, journal pb.Journal, callback func(pb.Fragment)) error {
+func (s *store) List(ctx context.Context, journal pb.Journal, callback func(pb.Fragment)) error {
 	var (
 		q = storage.Query{
-			Prefix: s.args.rewritePath(s.prefix, journal.String()) + "/",
+			Prefix: s.args.RewritePath(s.prefix, journal.String()) + "/",
 		}
 		it  = s.client.Bucket(s.bucket).Objects(ctx, &q)
 		obj *storage.ObjectAttrs
@@ -155,11 +159,11 @@ func (s *gcsStore) List(ctx context.Context, journal pb.Journal, callback func(p
 	return err
 }
 
-func (s *gcsStore) Remove(ctx context.Context, fragment pb.Fragment) error {
-	return s.client.Bucket(s.bucket).Object(s.args.rewritePath(s.prefix, fragment.ContentPath())).Delete(ctx)
+func (s *store) Remove(ctx context.Context, fragment pb.Fragment) error {
+	return s.client.Bucket(s.bucket).Object(s.args.RewritePath(s.prefix, fragment.ContentPath())).Delete(ctx)
 }
 
-func (s *gcsStore) IsAuthError(err error) bool {
+func (s *store) IsAuthError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -183,4 +187,20 @@ func (s *gcsStore) IsAuthError(err error) bool {
 	}
 
 	return false
+}
+
+func parseStoreArgs(ep *url.URL, args interface{}) error {
+	var decoder = schema.NewDecoder()
+	decoder.IgnoreUnknownKeys(false)
+
+	if q, err := url.ParseQuery(ep.RawQuery); err != nil {
+		return err
+	} else if err = decoder.Decode(args, q); err != nil {
+		return fmt.Errorf("parsing store URL arguments: %s", err)
+	}
+	return nil
+}
+
+var httpClientDisableCompression = &http.Client{
+	Transport: &http.Transport{DisableCompression: true},
 }

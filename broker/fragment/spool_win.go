@@ -7,13 +7,14 @@ import (
 	"runtime"
 
 	log "github.com/sirupsen/logrus"
+	"go.gazette.dev/core/broker/stores"
 )
 
 // newSpoolFile creates and returns a temporary file which also has a configured
 // runtime finalizer which will remove the file from the file system. This
 // behavior is used because Windows does not support removing the one-and-only
 // hard link of a currently-open file.
-var newSpoolFile = func() (File, error) {
+var newSpoolFile = func() (stores.File, error) {
 	if f, err := os.CreateTemp("", "spool"); err != nil {
 		return nil, err
 	} else {

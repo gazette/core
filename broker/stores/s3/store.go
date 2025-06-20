@@ -1,4 +1,4 @@
-package fragment
+package s3
 
 import (
 	"context"
@@ -13,14 +13,17 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/gorilla/schema"
 	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
+	"go.gazette.dev/core/broker/stores/common"
 )
 
-// S3StoreQueryArgs contains fields that are parsed from the query arguments
+// StoreQueryArgs contains fields that are parsed from the query arguments
 // of an s3:// fragment store URL.
-type S3StoreQueryArgs struct {
-	RewriterConfig
+type StoreQueryArgs struct {
+	common.RewriterConfig
 	// AWS Profile to extract credentials from the shared credentials file.
 	// For details, see:
 	//   https://aws.amazon.com/blogs/security/a-new-and-standardized-way-to-manage-credentials-in-the-aws-sdks/
@@ -45,15 +48,16 @@ type S3StoreQueryArgs struct {
 	Region string
 }
 
-type s3Store struct {
+type store struct {
 	bucket string
 	prefix string
-	args   S3StoreQueryArgs
+	args   StoreQueryArgs
 	client *s3.S3
 }
 
-func newS3Store(ep *url.URL) (*s3Store, error) {
-	var args S3StoreQueryArgs
+// New creates a new S3 Store from the provided URL.
+func New(ep *url.URL) (stores.Store, error) {
+	var args StoreQueryArgs
 	if err := parseStoreArgs(ep, &args); err != nil {
 		return nil, err
 	}
@@ -106,7 +110,7 @@ func newS3Store(ep *url.URL) (*s3Store, error) {
 
 	var client = s3.New(awsSession)
 
-	return &s3Store{
+	return &store{
 		bucket: bucket,
 		prefix: prefix,
 		args:   args,
@@ -114,23 +118,23 @@ func newS3Store(ep *url.URL) (*s3Store, error) {
 	}, nil
 }
 
-func (s *s3Store) Provider() string {
+func (s *store) Provider() string {
 	return "s3"
 }
 
-func (s *s3Store) SignGet(fragment pb.Fragment, d time.Duration) (string, error) {
+func (s *store) SignGet(fragment pb.Fragment, d time.Duration) (string, error) {
 	var getObj = s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(s.args.rewritePath(s.prefix, fragment.ContentPath())),
+		Key:    aws.String(s.args.RewritePath(s.prefix, fragment.ContentPath())),
 	}
 	var req, _ = s.client.GetObjectRequest(&getObj)
 	return req.Presign(d)
 }
 
-func (s *s3Store) Exists(ctx context.Context, fragment pb.Fragment) (bool, error) {
+func (s *store) Exists(ctx context.Context, fragment pb.Fragment) (bool, error) {
 	var headObj = s3.HeadObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(s.args.rewritePath(s.prefix, fragment.ContentPath())),
+		Key:    aws.String(s.args.RewritePath(s.prefix, fragment.ContentPath())),
 	}
 	if _, err := s.client.HeadObjectWithContext(ctx, &headObj); err == nil {
 		return true, nil
@@ -141,10 +145,10 @@ func (s *s3Store) Exists(ctx context.Context, fragment pb.Fragment) (bool, error
 	}
 }
 
-func (s *s3Store) Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
+func (s *store) Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
 	var getObj = s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(s.args.rewritePath(s.prefix, fragment.ContentPath())),
+		Key:    aws.String(s.args.RewritePath(s.prefix, fragment.ContentPath())),
 	}
 	var resp *s3.GetObjectOutput
 	var err error
@@ -154,10 +158,10 @@ func (s *s3Store) Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser
 	return resp.Body, err
 }
 
-func (s *s3Store) Persist(ctx context.Context, spool Spool) error {
+func (s *store) Persist(ctx context.Context, spool stores.Spool) error {
 	var putObj = s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(s.args.rewritePath(s.prefix, spool.ContentPath())),
+		Key:    aws.String(s.args.RewritePath(s.prefix, spool.GetFragment().ContentPath())),
 	}
 
 	if s.args.ACL != "" {
@@ -172,22 +176,22 @@ func (s *s3Store) Persist(ctx context.Context, spool Spool) error {
 	if s.args.SSEKMSKeyId != "" {
 		putObj.SSEKMSKeyId = aws.String(s.args.SSEKMSKeyId)
 	}
-	if spool.CompressionCodec == pb.CompressionCodec_GZIP_OFFLOAD_DECOMPRESSION {
+	if spool.GetFragment().CompressionCodec == pb.CompressionCodec_GZIP_OFFLOAD_DECOMPRESSION {
 		putObj.ContentEncoding = aws.String("gzip")
 	}
-	if spool.CompressionCodec != pb.CompressionCodec_NONE {
-		putObj.Body = io.NewSectionReader(spool.compressedFile, 0, spool.compressedLength)
+	if spool.GetFragment().CompressionCodec != pb.CompressionCodec_NONE {
+		putObj.Body = io.NewSectionReader(spool.CompressedFile(), 0, spool.CompressedLength())
 	} else {
-		putObj.Body = io.NewSectionReader(spool.File, 0, spool.ContentLength())
+		putObj.Body = io.NewSectionReader(spool.File(), 0, spool.GetFragment().ContentLength())
 	}
 	_, err := s.client.PutObjectWithContext(ctx, &putObj)
 	return err
 }
 
-func (s *s3Store) List(ctx context.Context, journal pb.Journal, callback func(pb.Fragment)) error {
+func (s *store) List(ctx context.Context, journal pb.Journal, callback func(pb.Fragment)) error {
 	var q = s3.ListObjectsV2Input{
 		Bucket: aws.String(s.bucket),
-		Prefix: aws.String(s.args.rewritePath(s.prefix, journal.String()) + "/"),
+		Prefix: aws.String(s.args.RewritePath(s.prefix, journal.String()) + "/"),
 	}
 	return s.client.ListObjectsV2PagesWithContext(ctx, &q, func(objs *s3.ListObjectsV2Output, _ bool) bool {
 		for _, obj := range objs.Contents {
@@ -206,17 +210,17 @@ func (s *s3Store) List(ctx context.Context, journal pb.Journal, callback func(pb
 	})
 }
 
-func (s *s3Store) Remove(ctx context.Context, fragment pb.Fragment) error {
+func (s *store) Remove(ctx context.Context, fragment pb.Fragment) error {
 	var deleteObj = s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(s.args.rewritePath(s.prefix, fragment.ContentPath())),
+		Key:    aws.String(s.args.RewritePath(s.prefix, fragment.ContentPath())),
 	}
 
 	_, err := s.client.DeleteObjectWithContext(ctx, &deleteObj)
 	return err
 }
 
-func (s *s3Store) IsAuthError(err error) bool {
+func (s *store) IsAuthError(err error) bool {
 	if awsErr, ok := err.(awserr.Error); ok {
 		switch awsErr.Code() {
 		case s3.ErrCodeNoSuchBucket:
@@ -233,7 +237,23 @@ func (s *s3Store) IsAuthError(err error) bool {
 	return false
 }
 
+func parseStoreArgs(ep *url.URL, args interface{}) error {
+	var decoder = schema.NewDecoder()
+	decoder.IgnoreUnknownKeys(false)
+
+	if q, err := url.ParseQuery(ep.RawQuery); err != nil {
+		return err
+	} else if err = decoder.Decode(args, q); err != nil {
+		return fmt.Errorf("parsing store URL arguments: %s", err)
+	}
+	return nil
+}
+
 const (
 	// AWS S3 error codes not defined as constants in the SDK
 	s3ErrCodeAccessDenied = "AccessDenied"
 )
+
+var httpClientDisableCompression = &http.Client{
+	Transport: &http.Transport{DisableCompression: true},
+}

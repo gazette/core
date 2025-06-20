@@ -8,6 +8,7 @@ import (
 	"time"
 
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores/fs"
 	gc "gopkg.in/check.v1"
 )
 
@@ -250,8 +251,8 @@ func (s *IndexSuite) TestWalkStoresAndURLSigning(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	defer func() { os.RemoveAll(tmpdir) }()
-	defer func(s string) { FileSystemStoreRoot = s }(FileSystemStoreRoot)
-	FileSystemStoreRoot = tmpdir
+	defer func(s string) { fs.FileSystemStoreRoot = s }(fs.FileSystemStoreRoot)
+	fs.FileSystemStoreRoot = tmpdir
 
 	var paths = []string{
 		"root/one/a/journal/0000000000000000-0000000000000111-0000000000000000000000000000000000000111",

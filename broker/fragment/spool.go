@@ -12,10 +12,11 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/codecs"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
 )
 
 // Spool is a Fragment which is in the process of being created, backed by a
-// local *os.File. As commits occur and the file extent is updated, the Spool
+// local stores.File. As commits occur and the file extent is updated, the Spool
 // Fragment is also updated to reflect the new committed extent. At all
 // times, the Spool Fragment is a consistent, valid Fragment.
 type Spool struct {
@@ -27,7 +28,7 @@ type Spool struct {
 	Registers pb.LabelSet
 
 	// Compressed form of the Fragment, compressed under Fragment.CompressionCodec.
-	compressedFile File
+	compressedFile stores.File
 	// Length of compressed content written to |compressedFile|. Set only after
 	// the compressor is finalized.
 	compressedLength int64
@@ -95,6 +96,27 @@ func (s *Spool) Next() pb.Fragment {
 	}
 	return f
 }
+
+// GetFragment returns the embedded Fragment metadata.
+func (s *Spool) GetFragment() *pb.Fragment {
+	return &s.Fragment.Fragment
+}
+
+// File returns the uncompressed file handle.
+func (s *Spool) File() stores.File {
+	return s.Fragment.File
+}
+
+// CompressedFile returns the compressed file handle if compression is enabled.
+func (s *Spool) CompressedFile() stores.File {
+	return s.compressedFile
+}
+
+// CompressedLength returns the length of compressed content.
+func (s *Spool) CompressedLength() int64 {
+	return s.compressedLength
+}
+
 
 // String returns a debugging representation of the Spool.
 func (s Spool) String() string {
@@ -166,7 +188,7 @@ func (s *Spool) applyCommit(r *pb.ReplicateRequest, primary bool) pb.ReplicateRe
 		spoolCommitsTotal.Inc()
 		spoolCommitBytesTotal.Add(float64(s.delta))
 
-		if primary && s.CompressionCodec != pb.CompressionCodec_NONE {
+		if primary && s.Fragment.CompressionCodec != pb.CompressionCodec_NONE {
 			s.compressThrough(r.Proposal.End)
 		}
 		s.Fragment.Fragment = *r.Proposal
@@ -235,7 +257,7 @@ func (s *Spool) applyContent(r *pb.ReplicateRequest) error {
 }
 
 func (s *Spool) compressThrough(end int64) {
-	if s.CompressionCodec == pb.CompressionCodec_NONE {
+	if s.Fragment.CompressionCodec == pb.CompressionCodec_NONE {
 		panic("expected CompressionCodec != NONE")
 	}
 	var err error
@@ -248,7 +270,7 @@ func (s *Spool) compressThrough(end int64) {
 	if s.compressor != nil {
 		var offset, delta = s.Fragment.ContentLength(), end - s.Fragment.End
 
-		if _, err = io.CopyBuffer(s.compressor, io.NewSectionReader(s.File, offset, delta), buf); err == nil {
+		if _, err = io.CopyBuffer(s.compressor, io.NewSectionReader(s.Fragment.File, offset, delta), buf); err == nil {
 			return // Done.
 		}
 		err = fmt.Errorf("while incrementally compressing: %s", err)
@@ -275,11 +297,11 @@ func (s *Spool) compressThrough(end int64) {
 			err = fmt.Errorf("seeking compressedFile to start: %s", err)
 			continue
 		}
-		if s.compressor, err = codecs.NewCodecWriter(s.compressedFile, s.CompressionCodec); err != nil {
+		if s.compressor, err = codecs.NewCodecWriter(s.compressedFile, s.Fragment.CompressionCodec); err != nil {
 			err = fmt.Errorf("initializing compressor: %s", err)
 			continue
 		}
-		if _, err = io.CopyBuffer(s.compressor, io.NewSectionReader(s.File, 0, end-s.Fragment.Begin), buf); err != nil {
+		if _, err = io.CopyBuffer(s.compressor, io.NewSectionReader(s.Fragment.File, 0, end-s.Fragment.Begin), buf); err != nil {
 			err = fmt.Errorf("while compressing: %s", err)
 
 			_ = s.compressor.Close()
@@ -292,7 +314,7 @@ func (s *Spool) compressThrough(end int64) {
 }
 
 func (s *Spool) finishCompression() {
-	if s.CompressionCodec == pb.CompressionCodec_NONE {
+	if s.Fragment.CompressionCodec == pb.CompressionCodec_NONE {
 		panic("expected CompressionCodec != NONE")
 	} else if s.compressedLength != 0 {
 		return // Already finalized.
