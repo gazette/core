@@ -15,10 +15,7 @@ import (
 // SignGetURL returns a URL authenticating the bearer to perform a GET operation
 // of the Fragment for the provided Duration from the current time.
 func SignGetURL(fragment pb.Fragment, d time.Duration) (string, error) {
-	var store, err = stores.Get(fragment.BackingStore)
-	if err != nil {
-		return "", err
-	}
+	var store = stores.Get(fragment.BackingStore)
 	store.Mark.Store(true)
 
 	return store.SignGet(fragment.ContentPath(), d)
@@ -28,10 +25,7 @@ func SignGetURL(fragment pb.Fragment, d time.Duration) (string, error) {
 // perform any applicable client-side decompression, but does request server
 // decompression in the case of GZIP_OFFLOAD_DECOMPRESSION.
 func Open(ctx context.Context, fragment pb.Fragment) (io.ReadCloser, error) {
-	var store, err = stores.Get(fragment.BackingStore)
-	if err != nil {
-		return nil, err
-	}
+	var store = stores.Get(fragment.BackingStore)
 	store.Mark.Store(true)
 
 	return store.Get(ctx, fragment.ContentPath())
@@ -53,10 +47,7 @@ func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec, isExiting b
 			spool.PathPostfix = postfix
 		}
 
-		var store, err = stores.Get(spool.Fragment.BackingStore)
-		if err != nil {
-			return err
-		}
+		var store = stores.Get(spool.Fragment.BackingStore)
 		store.Mark.Store(true)
 
 		exists, err := store.Exists(ctx, spool.ContentPath())
@@ -114,10 +105,7 @@ func Persist(ctx context.Context, spool Spool, spec *pb.JournalSpec, isExiting b
 
 // Remove `fragment` from its BackingStore.
 func Remove(ctx context.Context, fragment pb.Fragment) error {
-	var store, err = stores.Get(fragment.BackingStore)
-	if err != nil {
-		return err
-	}
+	var store = stores.Get(fragment.BackingStore)
 	store.Mark.Store(true)
 
 	return store.Remove(ctx, fragment.ContentPath())

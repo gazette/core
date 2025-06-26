@@ -1,7 +1,6 @@
 package stores
 
 import (
-	"context"
 	"fmt"
 	"sync"
 
@@ -42,12 +41,13 @@ func GetProviders() map[string]Constructor {
 
 // Get returns an ActiveStore for the given FragmentStore configuration.
 // It will attempt to initialize the store if not already cached.
-func Get(fs pb.FragmentStore) (*ActiveStore, error) {
+// If initialization fails, it returns an ActiveStore with initErr set.
+func Get(fs pb.FragmentStore) *ActiveStore {
 	// Fast path: check if store already exists
 	storesMu.RLock()
-	if activeStore, ok := stores[fs]; ok {
+	if active, ok := stores[fs]; ok {
 		storesMu.RUnlock()
-		return activeStore, nil
+		return active
 	}
 	storesMu.RUnlock()
 
@@ -56,34 +56,31 @@ func Get(fs pb.FragmentStore) (*ActiveStore, error) {
 	defer storesMu.Unlock()
 
 	// Double-check after acquiring write lock
-	if activeStore, ok := stores[fs]; ok {
-		return activeStore, nil
+	if active, ok := stores[fs]; ok {
+		return active
 	}
 
 	// Attempt to construct the store
-	var ep = fs.URL()
-	constructor, ok := constructors[ep.Scheme]
-	if !ok {
-		return nil, fmt.Errorf("unsupported fragment store scheme: %s", ep.Scheme)
+	var (
+		ep    = fs.URL()
+		err   error
+		store Store
+	)
+	if constructor, ok := constructors[ep.Scheme]; !ok {
+		err = fmt.Errorf("unsupported fragment store scheme: %s", ep.Scheme)
+	} else {
+		store, err = constructor(ep)
 	}
 
-	store, err := constructor(ep)
-	if err != nil {
-		// Return error but don't cache - will retry on next call
-		return nil, err
+	var active = NewActiveStore(fs, store, err)
+
+	if err == nil {
+		stores[fs] = active
+		activeStoresGauge.Set(float64(len(stores)))
+		go checkLoop(stores, fs, 0) // Start health checks.
 	}
 
-	// Success - wrap in ActiveStore and cache
-	var activeStore = &ActiveStore{
-		Store: store,
-		label: string(fs),
-	}
-	stores[fs] = activeStore
-
-	// Update active stores metric
-	activeStores.Set(float64(len(stores)))
-
-	return activeStore, nil
+	return active
 }
 
 // Sweep removes any stores that haven't been marked since the last sweep.
@@ -93,25 +90,30 @@ func Sweep() int {
 	defer storesMu.Unlock()
 
 	var removed int
-	for fs, activeStore := range stores {
-		if !activeStore.Mark.Load() {
-			// Store hasn't been accessed since last sweep
-			delete(stores, fs)
+	for fs, active := range stores {
+		if !active.Mark.Load() {
+			delete(stores, fs) // Not marked since last sweep.
+
+			// Configure to return errLastHealthCheck repeatedly.
+			active.health.mu.Lock()
+			active.health.err = ErrLastHealthCheck
+			close(active.health.nextCh)
+			active.health.mu.Unlock()
+
 			removed++
 		} else {
-			// Clear mark for next sweep cycle
-			activeStore.Mark.Store(false)
+			active.Mark.Store(false) // Clear for next sweep cycle.
 		}
 	}
 
 	// Update active stores metric
-	activeStores.Set(float64(len(stores)))
+	activeStoresGauge.Set(float64(len(stores)))
 
 	return removed
 }
 
 var (
-	activeStores = promauto.NewGauge(prometheus.GaugeOpts{
+	activeStoresGauge = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "gazette_store_active",
 		Help: "Number of active fragment stores",
 	})
@@ -138,4 +140,9 @@ var (
 		Help:    "Number of items returned by list operations",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 15), // 1 to ~32k items
 	}, []string{"store"})
+
+	storeHealthCheckTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "gazette_store_health_check_total",
+		Help: "Total number of health checks performed",
+	}, []string{"store", "status"})
 )

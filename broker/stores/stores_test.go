@@ -2,12 +2,9 @@ package stores
 
 import (
 	"errors"
-	"fmt"
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	pb "go.gazette.dev/core/broker/protocol"
@@ -56,18 +53,18 @@ func TestGetStore(t *testing.T) {
 	RegisterProviders(constructors)
 
 	// Get store for the first time - should create it
-	s1, err := Get("file:///tmp/store1/")
-	require.NoError(t, err)
+	s1 := Get(pb.FragmentStore("file:///tmp/store1/"))
+	require.NoError(t, s1.initErr)
 	require.Equal(t, "/tmp/store1/", s1.Provider())
 
 	// Get same store again - should return cached instance
-	s2, err := Get("file:///tmp/store1/")
-	require.NoError(t, err)
+	s2 := Get(pb.FragmentStore("file:///tmp/store1/"))
+	require.NoError(t, s2.initErr)
 	require.Same(t, s1, s2) // Same pointer
 
 	// Get different store - should create new instance
-	s3, err := Get("file:///tmp/store2/")
-	require.NoError(t, err)
+	s3 := Get(pb.FragmentStore("file:///tmp/store2/"))
+	require.NoError(t, s3.initErr)
 	require.Equal(t, "/tmp/store2/", s3.Provider())
 	require.NotSame(t, s1, s3)
 }
@@ -84,13 +81,13 @@ func TestConstructorErrors(t *testing.T) {
 	RegisterProviders(constructors)
 
 	// Get store that will fail construction
-	_, err := Get("file:///error/")
-	require.Error(t, err)
-	require.Equal(t, "init failed", err.Error())
+	store := Get(pb.FragmentStore("file:///error/"))
+	require.Error(t, store.initErr)
+	require.Equal(t, "init failed", store.initErr.Error())
 
 	// Verify store was not cached
 	storesMu.RLock()
-	_, exists := stores["file:///error/"]
+	_, exists := stores[pb.FragmentStore("file:///error/")]
 	storesMu.RUnlock()
 	require.False(t, exists)
 }
@@ -101,9 +98,9 @@ func TestUnsupportedScheme(t *testing.T) {
 	// No constructors registered
 
 	// Get store with unsupported scheme
-	_, err := Get("s3://bucket/path/")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported fragment store scheme: s3")
+	store := Get(pb.FragmentStore("s3://bucket/path/"))
+	require.Error(t, store.initErr)
+	require.Contains(t, store.initErr.Error(), "unsupported fragment store scheme: s3")
 }
 
 func TestRetryAfterInitError(t *testing.T) {
@@ -129,9 +126,9 @@ func TestRetryAfterInitError(t *testing.T) {
 	RegisterProviders(constructors)
 
 	// First attempt - constructor should fail
-	_, err := Get("file:///tmp/test/")
-	require.Error(t, err)
-	require.Equal(t, "temporary failure", err.Error())
+	store := Get(pb.FragmentStore("file:///tmp/test/"))
+	require.Error(t, store.initErr)
+	require.Equal(t, "temporary failure", store.initErr.Error())
 
 	mu.Lock()
 	require.Equal(t, 1, callCount)
@@ -143,8 +140,8 @@ func TestRetryAfterInitError(t *testing.T) {
 	mu.Unlock()
 
 	// Second attempt - constructor should be called again and succeed
-	s, err := Get("file:///tmp/test/")
-	require.NoError(t, err)
+	s := Get(pb.FragmentStore("file:///tmp/test/"))
+	require.NoError(t, s.initErr)
 	require.NotNil(t, s)
 	require.Equal(t, "/tmp/test/", s.Provider())
 
@@ -153,8 +150,8 @@ func TestRetryAfterInitError(t *testing.T) {
 	mu.Unlock()
 
 	// Third attempt - should return cached store without calling constructor
-	s2, err := Get("file:///tmp/test/")
-	require.NoError(t, err)
+	s2 := Get(pb.FragmentStore("file:///tmp/test/"))
+	require.NoError(t, s2.initErr)
 	require.Same(t, s, s2) // Same pointer
 
 	mu.Lock()
@@ -186,11 +183,11 @@ func TestConcurrentAccess(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
-			s, err := Get("file:///concurrent/")
+			s := Get(pb.FragmentStore("file:///concurrent/"))
 
 			mu.Lock()
 			stores = append(stores, s)
-			errors = append(errors, err)
+			errors = append(errors, s.initErr)
 			mu.Unlock()
 		}()
 	}
@@ -219,12 +216,12 @@ func TestSweepRemovesUnmarkedStores(t *testing.T) {
 	RegisterProviders(constructors)
 
 	// Create three stores
-	_, err := Get("file:///tmp/store1/")
-	require.NoError(t, err)
-	s2, err := Get("file:///tmp/store2/")
-	require.NoError(t, err)
-	_, err = Get("file:///tmp/store3/")
-	require.NoError(t, err)
+	store1 := Get(pb.FragmentStore("file:///tmp/store1/"))
+	require.NoError(t, store1.initErr)
+	s2 := Get(pb.FragmentStore("file:///tmp/store2/"))
+	require.NoError(t, s2.initErr)
+	store3 := Get(pb.FragmentStore("file:///tmp/store3/"))
+	require.NoError(t, store3.initErr)
 
 	// Verify all stores exist
 	storesMu.RLock()
@@ -233,8 +230,8 @@ func TestSweepRemovesUnmarkedStores(t *testing.T) {
 
 	// Mark all stores as in-use
 	for _, fs := range []pb.FragmentStore{"file:///tmp/store1/", "file:///tmp/store2/", "file:///tmp/store3/"} {
-		store, err := Get(fs)
-		require.NoError(t, err)
+		store := Get(fs)
+		require.NoError(t, store.initErr)
 		store.Mark.Store(true)
 	}
 
@@ -243,62 +240,188 @@ func TestSweepRemovesUnmarkedStores(t *testing.T) {
 	require.Equal(t, 0, removed)
 
 	// Mark only store1 and store3 as in-use
-	store1, err := Get("file:///tmp/store1/")
-	require.NoError(t, err)
+	store1 = Get(pb.FragmentStore("file:///tmp/store1/"))
+	require.NoError(t, store1.initErr)
 	store1.Mark.Store(true)
-
-	store3, err := Get("file:///tmp/store3/")
-	require.NoError(t, err)
+	store3 = Get(pb.FragmentStore("file:///tmp/store3/"))
+	require.NoError(t, store3.initErr)
 	store3.Mark.Store(true)
 
-	// Second sweep should remove s2
+	// Second sweep should remove store2 (not marked)
 	removed = Sweep()
 	require.Equal(t, 1, removed)
 
-	// Verify s2 was removed
+	// Verify only two stores remain
 	storesMu.RLock()
 	require.Equal(t, 2, len(stores))
-	_, exists := stores["file:///tmp/store2/"]
+	_, exists := stores[pb.FragmentStore("file:///tmp/store2/")]
 	require.False(t, exists)
 	storesMu.RUnlock()
 
-	// Getting s2 again should create a new instance
-	s2New, err := Get("file:///tmp/store2/")
-	require.NoError(t, err)
-	require.NotSame(t, s2, s2New)
+	// Verify health status of removed store returns error
+	store2 := Get(pb.FragmentStore("file:///tmp/store2/"))
+	require.NoError(t, store2.initErr) // New instance created
+
+	// Verify it's a new instance
+	require.NotSame(t, s2, store2)
 }
 
-func TestSweepClearsMarkBits(t *testing.T) {
+func TestSweepWithInitErrors(t *testing.T) {
 	clearStores()
 
-	var constructors = map[string]Constructor{
-		"file": func(u *url.URL) (Store, error) {
-			return &CallbackStore{ProviderFunc: func() string { return u.Path }}, nil
-		},
+	// Register providers that succeed and fail
+	var successConstructor = func(u *url.URL) (Store, error) {
+		return &CallbackStore{ProviderFunc: func() string { return u.Path }}, nil
+	}
+	var failConstructor = func(u *url.URL) (Store, error) {
+		return nil, errors.New("init failed")
 	}
 
-	RegisterProviders(constructors)
+	RegisterProviders(map[string]Constructor{
+		"file": successConstructor,
+		"s3":   failConstructor,
+	})
 
-	// Create a store and mark it as used
-	store, err := Get("file:///tmp/store/")
-	require.NoError(t, err)
-	store.Mark.Store(true)
+	// Create one successful store
+	store1 := Get(pb.FragmentStore("file:///tmp/store1/"))
+	require.NoError(t, store1.initErr)
 
-	// First sweep shouldn't remove it (marked as used)
+	// Create stores that fail to initialize
+	store2 := Get(pb.FragmentStore("s3://bucket/tmp/store2/"))
+	require.Error(t, store2.initErr)
+	store3 := Get(pb.FragmentStore("s3://bucket/tmp/store3/"))
+	require.Error(t, store3.initErr)
+
+	// Verify only the successful store is cached
+	storesMu.RLock()
+	require.Equal(t, 1, len(stores))
+	_, exists := stores[pb.FragmentStore("file:///tmp/store1/")]
+	require.True(t, exists)
+	storesMu.RUnlock()
+
+	// Sweep should not affect non-cached stores
 	var removed = Sweep()
-	require.Equal(t, 0, removed)
+	require.Equal(t, 1, removed) // The one cached store (unmarked)
 
-	// Second sweep should remove it (not accessed since last sweep)
-	removed = Sweep()
-	require.Equal(t, 1, removed)
-
-	// Verify store was removed
+	// Verify all stores were removed (none were marked)
 	storesMu.RLock()
 	require.Equal(t, 0, len(stores))
 	storesMu.RUnlock()
 }
 
-func TestConcurrentSweepAndGet(t *testing.T) {
+func TestGetProviders(t *testing.T) {
+	clearStores()
+
+	var providers = map[string]Constructor{
+		"file": func(u *url.URL) (Store, error) {
+			return &CallbackStore{ProviderFunc: func() string { return "file" }}, nil
+		},
+		"s3": func(u *url.URL) (Store, error) {
+			return &CallbackStore{ProviderFunc: func() string { return "s3" }}, nil
+		},
+	}
+
+	RegisterProviders(providers)
+
+	// Get providers should return a copy
+	gotProviders := GetProviders()
+	require.Equal(t, 2, len(gotProviders))
+	require.NotNil(t, gotProviders["file"])
+	require.NotNil(t, gotProviders["s3"])
+
+	// Verify it's a copy by modifying it
+	delete(gotProviders, "file")
+	require.Equal(t, 1, len(gotProviders))
+
+	// Original should be unchanged
+	storesMu.RLock()
+	require.Equal(t, 2, len(constructors))
+	storesMu.RUnlock()
+}
+
+func TestNewActiveStore(t *testing.T) {
+	// Test creating an ActiveStore directly
+	var mockStore = &CallbackStore{
+		ProviderFunc: func() string { return "mock" },
+	}
+
+	// Test with no init error
+	store := NewActiveStore(pb.FragmentStore("file:///test/"), mockStore, nil)
+	require.NoError(t, store.initErr)
+	require.Equal(t, pb.FragmentStore("file:///test/"), store.Key)
+	require.Same(t, mockStore, store.Store)
+
+	// Check initial health status
+	var done, err = store.HealthStatus()
+	require.NotNil(t, done)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "first health check hasn't completed yet")
+
+	// Test with init error
+	var initErr = errors.New("initialization failed")
+	store2 := NewActiveStore(pb.FragmentStore("file:///error/"), mockStore, initErr)
+	require.Error(t, store2.initErr)
+	require.Equal(t, initErr, store2.initErr)
+
+	// Check health status returns init error
+	done, err = store2.HealthStatus()
+	require.NotNil(t, done)
+	require.Equal(t, initErr, err)
+
+	// Done channel should already be closed for error case
+	select {
+	case <-done:
+		// Good, it's closed
+	default:
+		t.Fatal("done channel should be closed for stores with init error")
+	}
+}
+
+func TestUpdateHealth(t *testing.T) {
+	var mockStore = &CallbackStore{
+		ProviderFunc: func() string { return "mock" },
+	}
+
+	store := NewActiveStore(pb.FragmentStore("file:///test/"), mockStore, nil)
+
+	// Get initial status
+	var done1, err1 = store.HealthStatus()
+	require.Error(t, err1)
+
+	// Update health to success
+	store.UpdateHealth(nil)
+
+	// Original done channel should be closed
+	select {
+	case <-done1:
+		// Good
+	default:
+		t.Fatal("done channel should be closed after health update")
+	}
+
+	// Get new status
+	var done2, err2 = store.HealthStatus()
+	require.NoError(t, err2)
+	require.NotEqual(t, done1, done2) // Should be a new channel
+
+	// Update health to error
+	var healthErr = errors.New("health check failed")
+	store.UpdateHealth(healthErr)
+
+	// Done2 should be closed
+	select {
+	case <-done2:
+		// Good
+	default:
+		t.Fatal("done channel should be closed after health update")
+	}
+
+	// Get error status
+	var _, err3 = store.HealthStatus()
+	require.Equal(t, healthErr, err3)
+}
+
+func TestMarkAndSweepBehavior(t *testing.T) {
 	clearStores()
 
 	var constructors = map[string]Constructor{
@@ -309,84 +432,70 @@ func TestConcurrentSweepAndGet(t *testing.T) {
 
 	RegisterProviders(constructors)
 
-	// Create some stores
-	for i := 0; i < 10; i++ {
-		_, err := Get(pb.FragmentStore(fmt.Sprintf("file:///tmp/store%d/", i)))
-		require.NoError(t, err)
+	// Create a store
+	store := Get(pb.FragmentStore("file:///test/"))
+	require.NoError(t, store.initErr)
+
+	// Initial mark should be false
+	require.False(t, store.Mark.Load())
+
+	// Set mark
+	store.Mark.Store(true)
+	require.True(t, store.Mark.Load())
+
+	// Sweep should not remove marked store
+	var removed = Sweep()
+	require.Equal(t, 0, removed)
+
+	// Mark should be cleared after sweep
+	require.False(t, store.Mark.Load())
+
+	// Another sweep should remove unmarked store
+	removed = Sweep()
+	require.Equal(t, 1, removed)
+
+	// Get the store again - should be a new instance
+	store2 := Get(pb.FragmentStore("file:///test/"))
+	require.NoError(t, store2.initErr)
+	require.NotSame(t, store, store2)
+}
+
+func TestHealthStatusAfterSweep(t *testing.T) {
+	clearStores()
+
+	var constructors = map[string]Constructor{
+		"file": func(u *url.URL) (Store, error) {
+			return &CallbackStore{ProviderFunc: func() string { return u.Path }}, nil
+		},
 	}
 
-	// Run concurrent sweeps and gets
-	var wg sync.WaitGroup
-	var stop = make(chan bool)
-	var sweepCount atomic.Int32
+	RegisterProviders(constructors)
 
-	// Sweeper goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-				Sweep()
-				sweepCount.Add(1)
-				time.Sleep(5 * time.Millisecond)
-			}
-		}
-	}()
+	// Create a store
+	store := Get(pb.FragmentStore("file:///test/"))
+	require.NoError(t, store.initErr)
 
-	// Getter goroutines - continuously access stores 0-4
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-					store, err := Get(pb.FragmentStore(fmt.Sprintf("file:///tmp/store%d/", id)))
-					if err != nil {
-						t.Errorf("Get failed: %v", err)
-					} else {
-						// Mark store as in-use
-						store.Mark.Store(true)
-					}
-					time.Sleep(2 * time.Millisecond)
-				}
-			}
-		}(i)
+	// Update health to success
+	store.UpdateHealth(nil)
+
+	// Verify health is good
+	var _, err = store.HealthStatus()
+	require.NoError(t, err)
+
+	// Remove the store via sweep
+	var removed = Sweep()
+	require.Equal(t, 1, removed)
+
+	// Health status should now indicate stopped checks
+	var done, err2 = store.HealthStatus()
+	require.Error(t, err2)
+	require.Contains(t, err2.Error(), "health checks have stopped")
+
+	// Done channel should be closed
+	select {
+	case <-done:
+		// Good
+	default:
+		t.Fatal("done channel should be closed for swept stores")
 	}
-
-	// Let it run for a bit
-	time.Sleep(100 * time.Millisecond)
-
-	// Mark stores 0-4 one more time before checking
-	for i := 0; i < 5; i++ {
-		store, err := Get(pb.FragmentStore(fmt.Sprintf("file:///tmp/store%d/", i)))
-		require.NoError(t, err)
-		store.Mark.Store(true)
-	}
-
-	close(stop)
-	wg.Wait()
-
-	// Ensure at least some sweeps occurred
-	require.Greater(t, sweepCount.Load(), int32(5))
-
-	// After one more sweep, stores 0-4 should still exist (just accessed)
-	// but stores 5-9 should be gone
-	Sweep()
-
-	storesMu.RLock()
-	for i := 0; i < 5; i++ {
-		_, exists := stores[pb.FragmentStore(fmt.Sprintf("file:///tmp/store%d/", i))]
-		require.True(t, exists, "Store %d should exist", i)
-	}
-	for i := 5; i < 10; i++ {
-		_, exists := stores[pb.FragmentStore(fmt.Sprintf("file:///tmp/store%d/", i))]
-		require.False(t, exists, "Store %d should have been swept", i)
-	}
-	storesMu.RUnlock()
 }

@@ -225,13 +225,10 @@ func WalkAllStores(ctx context.Context, name pb.Journal, allStores []pb.Fragment
 	var set CoverSet
 
 	for _, fs := range allStores {
-		var store, err = stores.Get(fs)
-		if err != nil {
-			return CoverSet{}, err
-		}
+		var store = stores.Get(fs)
 		store.Mark.Store(true)
 
-		err = store.List(ctx, string(name)+"/", func(path string, modTime time.Time) error {
+		var err = store.List(ctx, string(name)+"/", func(path string, modTime time.Time) error {
 			// The path returned by List is already relative to the prefix
 			if frag, err := pb.ParseFragmentFromRelativePath(name, path); err != nil {
 				// It's not uncommon for extra files to live under a journal.
