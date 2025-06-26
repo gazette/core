@@ -112,6 +112,12 @@ func (a *Appender) Close() (err error) {
 			err = ErrSuspended
 		case pb.Status_WRONG_APPEND_OFFSET:
 			err = ErrWrongAppendOffset
+		case pb.Status_INDEX_HAS_GREATER_OFFSET:
+			err = ErrIndexHasGreaterOffset
+		case pb.Status_NOT_ALLOWED:
+			err = ErrNotAllowed
+		case pb.Status_FRAGMENT_STORE_UNHEALTHY:
+			err = errors.WithMessage(ErrFragmentStoreUnhealthy, a.Response.StoreHealthError)
 		default:
 			err = errors.New(a.Response.Status.String())
 		}
