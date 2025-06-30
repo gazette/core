@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
+	"go.gazette.dev/core/broker/stores/fs"
 	"go.gazette.dev/core/etcdtest"
 )
 
@@ -95,6 +97,13 @@ func TestFragmentsResolutionCases(t *testing.T) {
 func TestFragmentsListCases(t *testing.T) {
 	var ctx, etcd = pb.WithDispatchDefault(context.Background()), etcdtest.TestClient()
 	defer etcdtest.Cleanup()
+
+	// Register the file store provider for this test
+	var prevProviders = stores.GetProviders()
+	defer stores.RegisterProviders(prevProviders)
+	stores.RegisterProviders(map[string]stores.Constructor{
+		"file": fs.New,
+	})
 
 	var broker = newTestBroker(t, etcd, pb.ProcessSpec_ID{Zone: "local", Suffix: "broker"})
 	setTestJournal(broker, pb.JournalSpec{Name: "a/journal", Replication: 1}, broker.id)

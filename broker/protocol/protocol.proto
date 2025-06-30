@@ -63,6 +63,9 @@ enum Status {
   // An Append will resume the journal, or the client may want to filter
   // further requests directed to suspended journals.
   SUSPENDED = 14;
+  // The Append is refused because a fragment store is unhealthy.
+  // The store has failed its health check for an extended period.
+  FRAGMENT_STORE_UNHEALTHY = 15;
 }
 
 // CompressionCode defines codecs known to Gazette.
@@ -584,6 +587,8 @@ message AppendResponse {
   int64 total_chunks = 5;
   // Number of content chunks which were delayed by journal flow control.
   int64 delayed_chunks = 6;
+  // Error message from unhealthy fragment store (when status is FRAGMENT_STORE_UNHEALTHY).
+  string store_health_error = 7;
 }
 
 // ReplicateRequest is the streamed request message of the broker's internal
@@ -798,6 +803,22 @@ message Header {
   Etcd etcd = 3 [ (gogoproto.nullable) = false ];
 }
 
+// FragmentStoreHealthRequest is the unary request message of the broker FragmentStoreHealth RPC.
+message FragmentStoreHealthRequest {
+  // Fragment store to check the health of.
+  string fragment_store = 1 [ (gogoproto.casttype) = "FragmentStore" ];
+}
+
+// FragmentStoreHealthResponse is the unary response message of the broker FragmentStoreHealth RPC.
+message FragmentStoreHealthResponse {
+  // Status of the HealthCheck RPC.
+  Status status = 1;
+  // Header of the response.
+  Header header = 2 [ (gogoproto.nullable) = false ];
+  // Error message from unhealthy fragment store (when status is FRAGMENT_STORE_UNHEALTHY).
+  string store_health_error = 3;
+}
+
 // Journal is the Gazette broker service API for interacting with Journals.
 service Journal {
   // List Journals, their JournalSpecs and current Routes.
@@ -814,4 +835,6 @@ service Journal {
   rpc Replicate(stream ReplicateRequest) returns (stream ReplicateResponse);
   // List Fragments of a Journal.
   rpc ListFragments(FragmentsRequest) returns (FragmentsResponse);
+  // Check the health of a fragment store.
+  rpc FragmentStoreHealth(FragmentStoreHealthRequest) returns (FragmentStoreHealthResponse);
 }

@@ -13,6 +13,8 @@ import (
 	"go.gazette.dev/core/broker/codecs"
 	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
+	"go.gazette.dev/core/broker/stores/fs"
 	"go.gazette.dev/core/etcdtest"
 )
 
@@ -350,8 +352,15 @@ func TestReadRemoteFragmentCases(t *testing.T) {
 	var frag, tmpDir = buildRemoteFragmentFixture(t)
 
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-	defer func(s string) { fragment.FileSystemStoreRoot = s }(fragment.FileSystemStoreRoot)
-	fragment.FileSystemStoreRoot = tmpDir
+	defer func(s string) { fs.FileSystemStoreRoot = s }(fs.FileSystemStoreRoot)
+	fs.FileSystemStoreRoot = tmpDir
+
+	// Register the file store provider for this test
+	var prevProviders = stores.GetProviders()
+	defer stores.RegisterProviders(prevProviders)
+	stores.RegisterProviders(map[string]stores.Constructor{
+		"file": fs.New,
+	})
 
 	// Resolve, and update the replica index to reflect the remote fragment fixture.
 	broker.replica("a/journal").index.ReplaceRemote(fragment.CoverSet{fragment.Fragment{Fragment: frag}})
