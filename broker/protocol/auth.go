@@ -153,6 +153,20 @@ func (a *AuthJournalClient) ListFragments(ctx context.Context, in *FragmentsRequ
 	}
 }
 
+func (a *AuthJournalClient) FragmentStoreHealth(ctx context.Context, in *FragmentStoreHealthRequest, opts ...grpc.CallOption) (*FragmentStoreHealthResponse, error) {
+	var claims, ok = GetClaims(ctx)
+	if !ok {
+		claims = Claims{
+			Capability: Capability_READ, // Store health requires read access
+		}
+	}
+	if ctx, err := a.Authorizer.Authorize(ctx, claims, withExp(false)); err != nil {
+		return nil, err
+	} else {
+		return a.Inner.FragmentStoreHealth(ctx, in, opts...)
+	}
+}
+
 func withExp(blocking bool) time.Duration {
 	if blocking {
 		return time.Hour
@@ -172,6 +186,7 @@ type AuthJournalServer interface {
 	Append(Claims, Journal_AppendServer) error
 	Replicate(Claims, Journal_ReplicateServer) error
 	ListFragments(context.Context, Claims, *FragmentsRequest) (*FragmentsResponse, error)
+	FragmentStoreHealth(context.Context, Claims, *FragmentStoreHealthRequest) (*FragmentStoreHealthResponse, error)
 }
 
 // NewVerifiedJournalServer adapts an AuthJournalServer into a JournalServer by
@@ -239,6 +254,15 @@ func (s *VerifiedJournalServer) ListFragments(ctx context.Context, req *Fragment
 	} else {
 		defer cancel()
 		return s.Inner.ListFragments(ctx, claims, req)
+	}
+}
+
+func (s *VerifiedJournalServer) FragmentStoreHealth(ctx context.Context, req *FragmentStoreHealthRequest) (*FragmentStoreHealthResponse, error) {
+	if ctx, cancel, claims, err := s.Verifier.Verify(ctx, Capability_READ); err != nil {
+		return nil, err
+	} else {
+		defer cancel()
+		return s.Inner.FragmentStoreHealth(ctx, claims, req)
 	}
 }
 

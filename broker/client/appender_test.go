@@ -158,6 +158,40 @@ func (s *AppenderSuite) TestBrokerCommitError(c *gc.C) {
 			errVal:      ErrWrongAppendOffset,
 			cachedRoute: 1,
 		},
+		// Case: fragment store unhealthy.
+		{
+			finish: func() {
+				broker.AppendRespCh <- pb.AppendResponse{
+					Status:           pb.Status_FRAGMENT_STORE_UNHEALTHY,
+					Header:           *buildHeaderFixture(broker),
+					StoreHealthError: "s3: connection timeout",
+				}
+			},
+			errRe:       `s3: connection timeout: FRAGMENT_STORE_UNHEALTHY`,
+			cachedRoute: 1,
+		},
+		// Case: index has greater offset.
+		{
+			finish: func() {
+				broker.AppendRespCh <- pb.AppendResponse{
+					Status: pb.Status_INDEX_HAS_GREATER_OFFSET,
+					Header: *buildHeaderFixture(broker),
+				}
+			},
+			errVal:      ErrIndexHasGreaterOffset,
+			cachedRoute: 1,
+		},
+		// Case: not allowed.
+		{
+			finish: func() {
+				broker.AppendRespCh <- pb.AppendResponse{
+					Status: pb.Status_NOT_ALLOWED,
+					Header: *buildHeaderFixture(broker),
+				}
+			},
+			errVal:      ErrNotAllowed,
+			cachedRoute: 1,
+		},
 		// Case: other error status.
 		{
 			finish: func() {
@@ -299,7 +333,8 @@ func (s *AppenderSuite) TestContextErrorCases(c *gc.C) {
 	c.Check(err, gc.Equals, context.Canceled)
 
 	// Case 2: context reaches deadline.
-	caseCtx, _ = context.WithTimeout(context.Background(), time.Microsecond)
+	caseCtx, caseCancel = context.WithTimeout(context.Background(), time.Microsecond)
+	defer caseCancel()
 	<-caseCtx.Done() // Block until deadline.
 
 	_, err = Append(caseCtx, rjc, pb.AppendRequest{Journal: "a/journal"}, content)
