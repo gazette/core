@@ -6,6 +6,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
 )
 
@@ -18,25 +19,18 @@ var (
 // RegisterProviders registers store constructors for different storage schemes.
 // This should be called during initialization to register all available store types.
 func RegisterProviders(providers map[string]Constructor) {
+	Sweep() // Mark.
+	Sweep() // Sweep.
+
 	storesMu.Lock()
 	defer storesMu.Unlock()
+
+	constructors = make(map[string]Constructor, len(providers))
+	stores = make(map[pb.FragmentStore]*ActiveStore)
 
 	for scheme, constructor := range providers {
 		constructors[scheme] = constructor
 	}
-}
-
-// GetProviders returns a copy of the currently registered store constructors.
-// This is useful for tests that need to preserve and restore providers.
-func GetProviders() map[string]Constructor {
-	storesMu.RLock()
-	defer storesMu.RUnlock()
-
-	var copy = make(map[string]Constructor, len(constructors))
-	for scheme, constructor := range constructors {
-		copy[scheme] = constructor
-	}
-	return copy
 }
 
 // Get returns an ActiveStore for the given FragmentStore configuration.
@@ -78,6 +72,7 @@ func Get(fs pb.FragmentStore) *ActiveStore {
 		stores[fs] = active
 		activeStoresGauge.Set(float64(len(stores)))
 		go checkLoop(stores, fs, 0) // Start health checks.
+		log.WithFields(log.Fields{"store": fs, "n": len(stores)}).Info("started fragment store")
 	}
 
 	return active
@@ -100,6 +95,7 @@ func Sweep() int {
 			close(active.health.nextCh)
 			active.health.mu.Unlock()
 
+			log.WithFields(log.Fields{"store": fs, "n": len(stores)}).Info("stopped fragment store")
 			removed++
 		} else {
 			active.Mark.Store(false) // Clear for next sweep cycle.
@@ -121,7 +117,7 @@ var (
 	storeOperationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "gazette_store_operation_duration_seconds",
 		Help:    "Duration of store operations in seconds",
-		Buckets: prometheus.ExponentialBuckets(0.001, 2, 15), // 1ms to ~32s
+		Buckets: prometheus.ExponentialBuckets(0.01, 4, 6), // 10ms to ~41s
 	}, []string{"store", "operation", "status"})
 
 	storeOperationTotal = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -129,16 +125,15 @@ var (
 		Help: "Total number of store operations",
 	}, []string{"store", "operation", "status"})
 
-	storePutContentSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "gazette_store_put_content_bytes",
-		Help:    "Size of content written to stores in bytes",
-		Buckets: prometheus.ExponentialBuckets(1024, 4, 10), // 1KB to ~1GB
+	storePutBytesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "gazette_store_put_bytes_total",
+		Help: "Total number of bytes put to the store",
 	}, []string{"store", "encoding"})
 
 	storeListItems = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "gazette_store_list_items_count",
 		Help:    "Number of items returned by list operations",
-		Buckets: prometheus.ExponentialBuckets(1, 2, 15), // 1 to ~32k items
+		Buckets: prometheus.ExponentialBuckets(10, 4, 6), // 10 to ~41k items
 	}, []string{"store"})
 
 	storeHealthCheckTotal = promauto.NewCounterVec(prometheus.CounterOpts{

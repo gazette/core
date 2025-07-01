@@ -299,16 +299,9 @@ func TestResolverStoresHandling(t *testing.T) {
 	var ctx, etcd = context.Background(), etcdtest.TestClient()
 	defer etcdtest.Cleanup()
 
-	// Save existing providers and restore them after test
-	var existingProviders = stores.GetProviders()
-	defer stores.RegisterProviders(existingProviders)
-
-	// Register file store provider using CallbackStore
 	stores.RegisterProviders(map[string]stores.Constructor{
-		"file": func(ep *url.URL) (stores.Store, error) {
-			return &stores.CallbackStore{
-				ProviderFunc: func() string { return "file" },
-			}, nil
+		"s3": func(ep *url.URL) (stores.Store, error) {
+			return stores.NewMemoryStore(ep), nil
 		},
 	})
 
@@ -322,7 +315,7 @@ func TestResolverStoresHandling(t *testing.T) {
 		Fragment: pb.JournalSpec_Fragment{
 			Length:          1024,
 			RefreshInterval: time.Second,
-			Stores:          []pb.FragmentStore{"file:///tmp/store1/", "file:///tmp/store2/"},
+			Stores:          []pb.FragmentStore{"s3://store1/", "s3://store2/"},
 		},
 	}
 	setTestJournal(broker, spec, broker.id, peer.id)
@@ -331,28 +324,28 @@ func TestResolverStoresHandling(t *testing.T) {
 	var replica = broker.svc.resolver.replicas["stores/journal"]
 	require.NotNil(t, replica)
 	require.Len(t, replica.stores, 2)
-	require.Equal(t, pb.FragmentStore("file:///tmp/store1/"), replica.stores[0].Key)
-	require.Equal(t, pb.FragmentStore("file:///tmp/store2/"), replica.stores[1].Key)
+	require.Equal(t, pb.FragmentStore("s3://store1/"), replica.stores[0].Key)
+	require.Equal(t, pb.FragmentStore("s3://store2/"), replica.stores[1].Key)
 
 	// Case 2: Resolve journal and verify stores are copied to resolution
 	var r, _ = broker.svc.resolver.resolve(ctx, allClaims, "stores/journal", resolveOpts{})
 	require.Equal(t, pb.Status_OK, r.status)
 	require.Len(t, r.stores, 2)
-	require.Equal(t, pb.FragmentStore("file:///tmp/store1/"), r.stores[0].Key)
-	require.Equal(t, pb.FragmentStore("file:///tmp/store2/"), r.stores[1].Key)
+	require.Equal(t, pb.FragmentStore("s3://store1/"), r.stores[0].Key)
+	require.Equal(t, pb.FragmentStore("s3://store2/"), r.stores[1].Key)
 
 	// Case 3: Update journal to change fragment stores
 	// First capture the current signalCh to verify it gets closed
 	var origSignalCh = replica.signalCh
 
-	spec.Fragment.Stores = []pb.FragmentStore{"file:///tmp/store3/"}
+	spec.Fragment.Stores = []pb.FragmentStore{"s3://store3/"}
 	setTestJournal(broker, spec, broker.id, peer.id)
 
 	// Verify stores were updated
 	replica = broker.svc.resolver.replicas["stores/journal"]
 	require.NotNil(t, replica)
 	require.Len(t, replica.stores, 1)
-	require.Equal(t, pb.FragmentStore("file:///tmp/store3/"), replica.stores[0].Key)
+	require.Equal(t, pb.FragmentStore("s3://store3/"), replica.stores[0].Key)
 
 	// Verify signalCh was closed when stores changed
 	select {
@@ -363,15 +356,15 @@ func TestResolverStoresHandling(t *testing.T) {
 	}
 
 	// Case 4: Update journal to add more stores
-	spec.Fragment.Stores = []pb.FragmentStore{"file:///tmp/store3/", "file:///tmp/store4/", "file:///tmp/store5/"}
+	spec.Fragment.Stores = []pb.FragmentStore{"s3://store3/", "s3://store4/", "s3://store5/"}
 	setTestJournal(broker, spec, broker.id, peer.id)
 
 	replica = broker.svc.resolver.replicas["stores/journal"]
 	require.NotNil(t, replica)
 	require.Len(t, replica.stores, 3)
-	require.Equal(t, pb.FragmentStore("file:///tmp/store3/"), replica.stores[0].Key)
-	require.Equal(t, pb.FragmentStore("file:///tmp/store4/"), replica.stores[1].Key)
-	require.Equal(t, pb.FragmentStore("file:///tmp/store5/"), replica.stores[2].Key)
+	require.Equal(t, pb.FragmentStore("s3://store3/"), replica.stores[0].Key)
+	require.Equal(t, pb.FragmentStore("s3://store4/"), replica.stores[1].Key)
+	require.Equal(t, pb.FragmentStore("s3://store5/"), replica.stores[2].Key)
 
 	// Case 5: Update journal to clear stores
 	spec.Fragment.Stores = nil
@@ -398,7 +391,7 @@ func TestResolverStoresHandling(t *testing.T) {
 	require.Len(t, r.stores, 0)
 
 	// Case 8: Verify stores are not updated when they haven't changed
-	spec.Fragment.Stores = []pb.FragmentStore{"file:///tmp/final/"}
+	spec.Fragment.Stores = []pb.FragmentStore{"s3://final/"}
 	setTestJournal(broker, spec, broker.id, peer.id)
 
 	replica = broker.svc.resolver.replicas["stores/journal"]

@@ -37,6 +37,7 @@ func NewActiveStore(fs pb.FragmentStore, store Store, initErr error) *ActiveStor
 		Store:   store,
 		initErr: initErr,
 	}
+	s.Mark.Store(true) // Marked active on creation.
 	s.health.err = ErrFirstHealthCheck
 	s.health.nextCh = make(chan struct{})
 
@@ -161,7 +162,7 @@ func (s *ActiveStore) Put(ctx context.Context, path string, content io.ReaderAt,
 		if encoding == "" {
 			encoding = "none"
 		}
-		storePutContentSize.WithLabelValues(string(s.Key), encoding).Observe(float64(contentLength))
+		storePutBytesTotal.WithLabelValues(string(s.Key), encoding).Add(float64(contentLength))
 	}
 
 	return err
@@ -222,5 +223,5 @@ var (
 	// ErrFirstHealthCheck indicates the first health check hasn't completed yet.
 	ErrFirstHealthCheck = fmt.Errorf("first health check hasn't completed yet")
 	// ErrLastHealthCheck indicates health checks have stopped for this store.
-	ErrLastHealthCheck  = fmt.Errorf("health checks have stopped")
+	ErrLastHealthCheck = fmt.Errorf("health checks have stopped")
 )

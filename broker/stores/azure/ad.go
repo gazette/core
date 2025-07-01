@@ -179,9 +179,10 @@ func (a *adStore) fetchUserDelegationCredential() (*service.UserDelegationCreden
 	}
 
 	log.WithFields(log.Fields{
-		"keyInfo":        keyInfo,
 		"storageAccount": a.storageAccount,
 		"tenant":         a.tenantID,
+		"start":          *keyInfo.Start,
+		"expiry":         *keyInfo.Expiry,
 	}).Info("refreshed Azure Storage User Delegation Credential")
 
 	a.udc.exp = exp

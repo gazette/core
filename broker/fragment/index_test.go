@@ -2,15 +2,14 @@ package fragment
 
 import (
 	"context"
+	"net/url"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/broker/stores"
-	"go.gazette.dev/core/broker/stores/fs"
 )
 
 func TestSimpleRemoteAndLocalQueries(t *testing.T) {
@@ -246,31 +245,27 @@ func TestBlockedContextCancelled(t *testing.T) {
 }
 
 func TestWalkStoresAndURLSigning(t *testing.T) {
-	// Save and restore existing providers
-	defer stores.RegisterProviders(stores.GetProviders())
-
-	// Register the file store provider for this test
 	stores.RegisterProviders(map[string]stores.Constructor{
-		"file": fs.New,
+		"s3": func(ep *url.URL) (stores.Store, error) {
+
+			var ms = stores.NewMemoryStore(ep)
+
+			switch ep.Host {
+			case "one":
+				ms.Content = map[string][]byte{
+					"a/journal/0000000000000000-0000000000000111-0000000000000000000000000000000000000111":     {},
+					"a/journal/0000000000000111-0000000000000222-0000000000000000000000000000000000000222.raw": {},
+					"a/journal/0000000000000222-0000000000000255-0000000000000000000000000000000000000333.sz":  {}, // Covered.
+				}
+			case "two":
+				ms.Content = map[string][]byte{
+					"a/journal/0000000000000222-0000000000000333-0000000000000000000000000000000000000444.gz": {},
+					"a/journal/0000000000000444-0000000000000555-0000000000000000000000000000000000000555.gz": {},
+				}
+			}
+			return ms, nil
+		},
 	})
-
-	var tmpdir = t.TempDir()
-	defer func(s string) { fs.FileSystemStoreRoot = s }(fs.FileSystemStoreRoot)
-	fs.FileSystemStoreRoot = tmpdir
-
-	var paths = []string{
-		"root/one/a/journal/0000000000000000-0000000000000111-0000000000000000000000000000000000000111",
-		"root/one/a/journal/0000000000000111-0000000000000222-0000000000000000000000000000000000000222.raw",
-		"root/one/a/journal/0000000000000222-0000000000000255-0000000000000000000000000000000000000333.sz", // Covered.
-		"root/two/a/journal/0000000000000222-0000000000000333-0000000000000000000000000000000000000444.gz",
-		"root/two/a/journal/0000000000000444-0000000000000555-0000000000000000000000000000000000000555.gz",
-	}
-
-	for _, path := range paths {
-		path = filepath.Join(tmpdir, filepath.FromSlash(path))
-		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
-		require.NoError(t, os.WriteFile(path, []byte("data"), 0600))
-	}
 
 	var ctx = context.Background()
 	var ind = NewIndex(ctx)
@@ -278,14 +273,14 @@ func TestWalkStoresAndURLSigning(t *testing.T) {
 	var err error
 
 	set, err = WalkAllStores(ctx, "a/journal", []pb.FragmentStore{
-		pb.FragmentStore("file:///path/does/not/exist/"),
+		pb.FragmentStore("s3://empty/"),
 	})
 	require.NoError(t, err)
 	require.Equal(t, CoverSet(nil), set)
 
-	// Gather fixture Fragments from "/root/one/" store.
+	// Gather fixture Fragments from "one" store.
 	set, err = WalkAllStores(ctx, "a/journal", []pb.FragmentStore{
-		pb.FragmentStore("file:///root/one/"),
+		pb.FragmentStore("s3://one/"),
 	})
 	require.NoError(t, err)
 	ind.ReplaceRemote(set)
@@ -298,16 +293,16 @@ func TestWalkStoresAndURLSigning(t *testing.T) {
 	require.Equal(t, int64(0x0), bo)
 	require.Equal(t, int64(0x255), eo)
 
-	// Expect root/one provides Fragment 222-255.
+	// Expect "one" provides Fragment 222-255.
 	var resp, _, _ = ind.Query(context.Background(), &pb.ReadRequest{Offset: 0x223})
 	require.Equal(t, pb.Status_OK, resp.Status)
 	require.Equal(t,
-		"file:///root/one/a/journal/0000000000000222-0000000000000255-0000000000000000000000000000000000000333.sz",
+		"memory://one/a/journal/0000000000000222-0000000000000255-0000000000000000000000000000000000000333.sz",
 		resp.FragmentUrl)
 
 	set, err = WalkAllStores(ctx, "a/journal", []pb.FragmentStore{
-		pb.FragmentStore("file:///root/one/"),
-		pb.FragmentStore("file:///root/two/"),
+		pb.FragmentStore("s3://one/"),
+		pb.FragmentStore("s3://two/"),
 	})
 	require.NoError(t, err)
 	ind.ReplaceRemote(set)
@@ -317,11 +312,11 @@ func TestWalkStoresAndURLSigning(t *testing.T) {
 	require.Equal(t, int64(0x0), bo)
 	require.Equal(t, int64(0x555), eo)
 
-	// Expect root/two now provides Fragment 222-333.
+	// Expect "two" now provides Fragment 222-333.
 	resp, _, _ = ind.Query(context.Background(), &pb.ReadRequest{Offset: 0x223})
 	require.Equal(t, pb.Status_OK, resp.Status)
 	require.Equal(t,
-		"file:///root/two/a/journal/0000000000000222-0000000000000333-0000000000000000000000000000000000000444.gz",
+		"memory://two/a/journal/0000000000000222-0000000000000333-0000000000000000000000000000000000000444.gz",
 		resp.FragmentUrl)
 }
 

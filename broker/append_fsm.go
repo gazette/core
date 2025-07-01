@@ -437,7 +437,7 @@ func (b *appendFSM) onValidatePreconditions() {
 				b.state = stateError
 				return
 			} else {
-				addTrace(b.ctx, " ... fragment store %s unhealthy (%d): %s", store.Key, err, i)
+				addTrace(b.ctx, " ... fragment store %s unhealthy (%s): %d", store.Key, err, i)
 				healthCh = nextCh // Try again.
 			}
 		case <-b.ctx.Done(): // Request was cancelled.

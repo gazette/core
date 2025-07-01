@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"net/url"
 	"testing"
 	"time"
 
@@ -9,7 +10,6 @@ import (
 	"go.gazette.dev/core/broker/fragment"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/broker/stores"
-	"go.gazette.dev/core/broker/stores/fs"
 	"go.gazette.dev/core/etcdtest"
 )
 
@@ -98,11 +98,10 @@ func TestFragmentsListCases(t *testing.T) {
 	var ctx, etcd = pb.WithDispatchDefault(context.Background()), etcdtest.TestClient()
 	defer etcdtest.Cleanup()
 
-	// Register the file store provider for this test
-	var prevProviders = stores.GetProviders()
-	defer stores.RegisterProviders(prevProviders)
 	stores.RegisterProviders(map[string]stores.Constructor{
-		"file": fs.New,
+		"s3": func(u *url.URL) (stores.Store, error) {
+			return stores.NewMemoryStore(u), nil
+		},
 	})
 
 	var broker = newTestBroker(t, etcd, pb.ProcessSpec_ID{Zone: "local", Suffix: "broker"})
@@ -250,10 +249,10 @@ var buildFragmentsFixture = func() []pb.FragmentsResponse__Fragment {
 				Begin:            0,
 				End:              40,
 				ModTime:          90,
-				BackingStore:     pb.FragmentStore("file:///root/one/"),
+				BackingStore:     pb.FragmentStore("s3://one/"),
 				CompressionCodec: pb.CompressionCodec_NONE,
 			},
-			SignedUrl: "file:///root/one/a/journal/0000000000000000-0000000000000028-0000000000000000000000000000000000000000.raw",
+			SignedUrl: "memory://one/a/journal/0000000000000000-0000000000000028-0000000000000000000000000000000000000000.raw",
 		},
 		{
 			Spec: pb.Fragment{
@@ -261,10 +260,10 @@ var buildFragmentsFixture = func() []pb.FragmentsResponse__Fragment {
 				Begin:            40,
 				End:              110,
 				ModTime:          101,
-				BackingStore:     pb.FragmentStore("file:///root/one/"),
+				BackingStore:     pb.FragmentStore("s3://one/"),
 				CompressionCodec: pb.CompressionCodec_NONE,
 			},
-			SignedUrl: "file:///root/one/a/journal/0000000000000028-000000000000006e-0000000000000000000000000000000000000000.raw",
+			SignedUrl: "memory://one/a/journal/0000000000000028-000000000000006e-0000000000000000000000000000000000000000.raw",
 		},
 		{
 			Spec: pb.Fragment{
@@ -272,10 +271,10 @@ var buildFragmentsFixture = func() []pb.FragmentsResponse__Fragment {
 				Begin:            99,
 				End:              130,
 				ModTime:          200,
-				BackingStore:     pb.FragmentStore("file:///root/one/"),
+				BackingStore:     pb.FragmentStore("s3://one/"),
 				CompressionCodec: pb.CompressionCodec_NONE,
 			},
-			SignedUrl: "file:///root/one/a/journal/0000000000000063-0000000000000082-0000000000000000000000000000000000000000.raw",
+			SignedUrl: "memory://one/a/journal/0000000000000063-0000000000000082-0000000000000000000000000000000000000000.raw",
 		},
 		{
 			Spec: pb.Fragment{
@@ -283,10 +282,10 @@ var buildFragmentsFixture = func() []pb.FragmentsResponse__Fragment {
 				Begin:            131,
 				End:              318,
 				ModTime:          150,
-				BackingStore:     pb.FragmentStore("file:///root/one/"),
+				BackingStore:     pb.FragmentStore("s3://one/"),
 				CompressionCodec: pb.CompressionCodec_NONE,
 			},
-			SignedUrl: "file:///root/one/a/journal/0000000000000083-000000000000013e-0000000000000000000000000000000000000000.raw",
+			SignedUrl: "memory://one/a/journal/0000000000000083-000000000000013e-0000000000000000000000000000000000000000.raw",
 		},
 		{
 			Spec: pb.Fragment{
@@ -294,10 +293,10 @@ var buildFragmentsFixture = func() []pb.FragmentsResponse__Fragment {
 				Begin:            319,
 				End:              400,
 				ModTime:          290,
-				BackingStore:     pb.FragmentStore("file:///root/one/"),
+				BackingStore:     pb.FragmentStore("s3://one/"),
 				CompressionCodec: pb.CompressionCodec_NONE,
 			},
-			SignedUrl: "file:///root/one/a/journal/000000000000013f-0000000000000190-0000000000000000000000000000000000000000.raw",
+			SignedUrl: "memory://one/a/journal/000000000000013f-0000000000000190-0000000000000000000000000000000000000000.raw",
 		},
 		{
 			Spec: pb.Fragment{

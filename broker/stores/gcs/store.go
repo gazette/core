@@ -59,7 +59,7 @@ func New(ep *url.URL) (stores.Store, error) {
 	}
 	client, err := storage.NewClient(ctx,
 		option.WithTokenSource(conf.TokenSource(ctx)),
-		option.WithHTTPClient(httpClientDisableCompression))
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -83,10 +83,6 @@ func New(ep *url.URL) (stores.Store, error) {
 		client:           client,
 		signedURLOptions: opts,
 	}, nil
-}
-
-func (s *store) Provider() string {
-	return "gcs"
 }
 
 func (s *store) SignGet(path string, d time.Duration) (string, error) {
@@ -193,8 +189,4 @@ func parseStoreArgs(ep *url.URL, args interface{}) error {
 		return fmt.Errorf("parsing store URL arguments: %s", err)
 	}
 	return nil
-}
-
-var httpClientDisableCompression = &http.Client{
-	Transport: &http.Transport{DisableCompression: true},
 }

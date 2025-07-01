@@ -35,20 +35,15 @@ func checkLoop(stores map[pb.FragmentStore]*ActiveStore, fs pb.FragmentStore, at
 	var checkInterval time.Duration
 
 	if err == nil {
-		log.WithFields(log.Fields{
-			"store":   fs,
-			"attempt": attempt,
-		}).Info("store health check succeeded")
-
 		checkInterval = 5 * time.Minute
+
+		log.WithFields(log.Fields{
+			"store":    fs,
+			"attempt":  attempt,
+			"interval": checkInterval,
+		}).Info("store health check succeeded")
 		attempt = 0
 	} else {
-		log.WithFields(log.Fields{
-			"store":   fs,
-			"error":   err,
-			"attempt": attempt,
-		}).Warn("store health check failed")
-
 		switch attempt {
 		case 0:
 			checkInterval = 0
@@ -61,6 +56,13 @@ func checkLoop(stores map[pb.FragmentStore]*ActiveStore, fs pb.FragmentStore, at
 		default:
 			checkInterval = time.Second * 100
 		}
+
+		log.WithFields(log.Fields{
+			"store":    fs,
+			"error":    err,
+			"attempt":  attempt,
+			"interval": checkInterval,
+		}).Warn("store health check failed")
 		attempt += 1
 	}
 
@@ -68,7 +70,7 @@ func checkLoop(stores map[pb.FragmentStore]*ActiveStore, fs pb.FragmentStore, at
 	checkInterval += time.Duration((rand.Float64() - 0.5) * 0.1 * float64(checkInterval))
 
 	storesMu.RLock()
-	if active, ok = stores[fs]; ok {
+	if a, ok := stores[fs]; ok && a == active {
 		active.UpdateHealth(err)
 		_ = time.AfterFunc(checkInterval, func() { checkLoop(stores, fs, attempt) })
 	} else {
@@ -134,8 +136,8 @@ func runCheck(ctx context.Context, s *ActiveStore) error {
 		return fmt.Errorf("health check SignGet failed: %w", err)
 	}
 
-	if strings.HasPrefix(signedURL, "file://") {
-		return nil // Skip SignedURL fetch for file:// stores.
+	if !strings.HasPrefix(signedURL, "http") {
+		return nil // Skip fetches of non-HTTPS (HTTP when testing) signed URLs.
 	}
 
 	// 5. Fetch signed URL and verify content

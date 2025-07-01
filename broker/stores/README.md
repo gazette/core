@@ -17,7 +17,6 @@ The stores package manages access to fragment storage across multiple cloud prov
 
 ```go
 type Store interface {
-    Provider() string // "file", "s3", "gcs"
     SignGet(path string, d time.Duration) (string, error)  // Pre-signed URLs to BLOBs
     Exists(ctx context.Context, path string) (bool, error)
     Get(ctx context.Context, path string) (io.ReadCloser, error)

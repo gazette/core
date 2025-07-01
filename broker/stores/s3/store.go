@@ -76,8 +76,13 @@ func New(ep *url.URL) (stores.Store, error) {
 		// We must force path style because bucket-named virtual hosts
 		// are not compatible with explicit endpoints.
 		awsConfig.WithS3ForcePathStyle(true)
+	} else {
+		// Real S3. Override the default http.Transport's behavior of inserting
+		// "Accept-Encoding: gzip" and transparently decompressing client-side.
+		awsConfig.WithHTTPClient(&http.Client{
+			Transport: &http.Transport{DisableCompression: true},
+		})
 	}
-	awsConfig.WithHTTPClient(httpClientDisableCompression)
 
 	awsSession, err := session.NewSessionWithOptions(session.Options{
 		Config:  *awsConfig,
@@ -93,8 +98,7 @@ func New(ep *url.URL) (stores.Store, error) {
 	}
 
 	// The aws sdk will always just return an error if this Region is not set, even if
-	// the Endpoint was provided explicitly. It's important to return an error here
-	// in that case, before adding this client to the `clients` map.
+	// the Endpoint was provided explicitly. It's important to fail-fast in this case.
 	if awsSession.Config.Region == nil || *awsSession.Config.Region == "" {
 		return nil, fmt.Errorf("missing AWS region configuration for profile %q", args.Profile)
 	}
@@ -115,10 +119,6 @@ func New(ep *url.URL) (stores.Store, error) {
 		args:   args,
 		client: client,
 	}, nil
-}
-
-func (s *store) Provider() string {
-	return "s3"
 }
 
 func (s *store) SignGet(path string, d time.Duration) (string, error) {
@@ -255,7 +255,3 @@ const (
 	// AWS S3 error codes not defined as constants in the SDK
 	s3ErrCodeAccessDenied = "AccessDenied"
 )
-
-var httpClientDisableCompression = &http.Client{
-	Transport: &http.Transport{DisableCompression: true},
-}

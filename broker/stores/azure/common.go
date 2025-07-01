@@ -30,10 +30,6 @@ type storeBase struct {
 	pipeline       pipeline.Pipeline
 }
 
-func (a *storeBase) Provider() string {
-	return "azure"
-}
-
 func (a *storeBase) Exists(ctx context.Context, path string) (bool, error) {
 	var blobURL, err = a.buildBlobURL(path)
 	if err != nil {

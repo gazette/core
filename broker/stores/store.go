@@ -10,9 +10,6 @@ import (
 
 // Store provides an abstraction over cloud storage systems for journal fragments.
 type Store interface {
-	// Provider returns the name of the storage backend (e.g., "s3", "gcs", "azure", "fs").
-	Provider() string
-
 	// SignGet returns a pre-signed URL for GET operations with the given duration.
 	SignGet(path string, d time.Duration) (string, error)
 

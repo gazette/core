@@ -25,6 +25,9 @@ func (errorReader) Read([]byte) (int, error) {
 func TestHealthChecks(t *testing.T) {
 	const testContent = "health-check\n"
 
+	// Channel to coordinate the "Failure Then Success" test
+	var failureThenSuccessCh = make(chan struct{})
+
 	tests := []struct {
 		name          string
 		expectedError string
@@ -35,8 +38,7 @@ func TestHealthChecks(t *testing.T) {
 			setupStore: func(server *httptest.Server) Constructor {
 				return func(u *url.URL) (Store, error) {
 					return &CallbackStore{
-						ProviderFunc: func() string { return "file" },
-						PutFunc: func(ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
+						PutFunc: func(_ Store, ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
 							// Verify correct path and content
 							require.Equal(t, ".test/health-check", path)
 							require.Equal(t, int64(len(testContent)), contentLength)
@@ -47,15 +49,15 @@ func TestHealthChecks(t *testing.T) {
 							require.Equal(t, testContent, string(buf))
 							return nil
 						},
-						GetFunc: func(ctx context.Context, path string) (io.ReadCloser, error) {
+						GetFunc: func(_ Store, ctx context.Context, path string) (io.ReadCloser, error) {
 							require.Equal(t, ".test/health-check", path)
 							return io.NopCloser(strings.NewReader(testContent)), nil
 						},
-						ListFunc: func(ctx context.Context, prefix string, callback func(path string, modTime time.Time) error) error {
+						ListFunc: func(_ Store, ctx context.Context, prefix string, callback func(path string, modTime time.Time) error) error {
 							require.Equal(t, ".test/", prefix)
 							return callback("health-check", time.Now())
 						},
-						SignGetFunc: func(path string, d time.Duration) (string, error) {
+						SignGetFunc: func(_ Store, path string, d time.Duration) (string, error) {
 							require.Equal(t, ".test/health-check", path)
 							return server.URL + "/signed/test", nil
 						},
@@ -69,11 +71,10 @@ func TestHealthChecks(t *testing.T) {
 			setupStore: func(server *httptest.Server) Constructor {
 				return func(u *url.URL) (Store, error) {
 					return &CallbackStore{
-						ProviderFunc: func() string { return "file" },
-						PutFunc: func(ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
+						PutFunc: func(_ Store, ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
 							return nil
 						},
-						GetFunc: func(ctx context.Context, path string) (io.ReadCloser, error) {
+						GetFunc: func(_ Store, ctx context.Context, path string) (io.ReadCloser, error) {
 							return nil, errors.New("simulated GET failure")
 						},
 					}, nil
@@ -86,17 +87,16 @@ func TestHealthChecks(t *testing.T) {
 			setupStore: func(server *httptest.Server) Constructor {
 				return func(u *url.URL) (Store, error) {
 					return &CallbackStore{
-						ProviderFunc: func() string { return "file" },
-						PutFunc: func(ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
+						PutFunc: func(_ Store, ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
 							return nil
 						},
-						GetFunc: func(ctx context.Context, path string) (io.ReadCloser, error) {
+						GetFunc: func(_ Store, ctx context.Context, path string) (io.ReadCloser, error) {
 							return io.NopCloser(strings.NewReader("wrong content")), nil
 						},
-						ListFunc: func(ctx context.Context, prefix string, callback func(path string, modTime time.Time) error) error {
+						ListFunc: func(_ Store, ctx context.Context, prefix string, callback func(path string, modTime time.Time) error) error {
 							return callback("health-check", time.Now())
 						},
-						SignGetFunc: func(path string, d time.Duration) (string, error) {
+						SignGetFunc: func(_ Store, path string, d time.Duration) (string, error) {
 							return server.URL + "/wrong", nil
 						},
 					}, nil
@@ -109,11 +109,10 @@ func TestHealthChecks(t *testing.T) {
 			setupStore: func(server *httptest.Server) Constructor {
 				return func(u *url.URL) (Store, error) {
 					return &CallbackStore{
-						ProviderFunc: func() string { return "file" },
-						PutFunc: func(ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
+						PutFunc: func(_ Store, ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
 							return nil
 						},
-						GetFunc: func(ctx context.Context, path string) (io.ReadCloser, error) {
+						GetFunc: func(_ Store, ctx context.Context, path string) (io.ReadCloser, error) {
 							return nil, nil // Return nil reader without error
 						},
 					}, nil
@@ -126,11 +125,10 @@ func TestHealthChecks(t *testing.T) {
 			setupStore: func(server *httptest.Server) Constructor {
 				return func(u *url.URL) (Store, error) {
 					return &CallbackStore{
-						ProviderFunc: func() string { return "file" },
-						PutFunc: func(ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
+						PutFunc: func(_ Store, ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
 							return nil
 						},
-						GetFunc: func(ctx context.Context, path string) (io.ReadCloser, error) {
+						GetFunc: func(_ Store, ctx context.Context, path string) (io.ReadCloser, error) {
 							// Return a reader that fails on Read
 							return io.NopCloser(errorReader{}), nil
 						},
@@ -145,21 +143,21 @@ func TestHealthChecks(t *testing.T) {
 				return func(u *url.URL) (Store, error) {
 					var attempt int
 					return &CallbackStore{
-						ProviderFunc: func() string { return "file" },
-						PutFunc: func(ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
+						PutFunc: func(_ Store, ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
 							return nil
 						},
-						GetFunc: func(ctx context.Context, path string) (io.ReadCloser, error) {
+						GetFunc: func(_ Store, ctx context.Context, path string) (io.ReadCloser, error) {
 							attempt++
 							if attempt == 1 {
 								return nil, errors.New("simulated transient failure")
 							}
+							<-failureThenSuccessCh // Wait for the test to signal it's ready.
 							return io.NopCloser(strings.NewReader(testContent)), nil
 						},
-						ListFunc: func(ctx context.Context, prefix string, callback func(path string, modTime time.Time) error) error {
+						ListFunc: func(_ Store, ctx context.Context, prefix string, callback func(path string, modTime time.Time) error) error {
 							return callback("health-check", time.Now())
 						},
-						SignGetFunc: func(path string, d time.Duration) (string, error) {
+						SignGetFunc: func(_ Store, path string, d time.Duration) (string, error) {
 							return server.URL + "/signed/test", nil
 						},
 					}, nil
@@ -168,26 +166,23 @@ func TestHealthChecks(t *testing.T) {
 		},
 	}
 
+	var server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/signed/test" {
+			w.Write([]byte(testContent))
+		} else {
+			w.Write([]byte("wrong content"))
+		}
+	}))
+	defer server.Close()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clearStores()
-
-			// Create test HTTP server
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/signed/test" {
-					w.Write([]byte(testContent))
-				} else {
-					w.Write([]byte("wrong content"))
-				}
-			}))
-			defer server.Close()
-
 			RegisterProviders(map[string]Constructor{
-				"file": tt.setupStore(server),
+				"s3": tt.setupStore(server),
 			})
 
 			// Get store - this starts health check
-			store := Get(pb.FragmentStore("file:///test/"))
+			store := Get(pb.FragmentStore("s3://test/"))
 			require.NoError(t, store.initErr)
 
 			// Wait for first health check if needed.
@@ -207,6 +202,7 @@ func TestHealthChecks(t *testing.T) {
 
 			// For "Failure Then Success", wait for the retry to succeed
 			if tt.name == "Failure Then Success" {
+				close(failureThenSuccessCh)
 				<-done // Wait for next health check.
 				_, err = store.HealthStatus()
 				require.NoError(t, err)

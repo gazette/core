@@ -20,35 +20,31 @@ func TestActiveStore(t *testing.T) {
 	// Test all operations in a single comprehensive test
 	var calls []string
 	var mockStore = &CallbackStore{
-		ProviderFunc: func() string {
-			calls = append(calls, "Provider")
-			return "mock-provider"
-		},
-		ListFunc: func(ctx context.Context, prefix string, callback func(path string, modTime time.Time) error) error {
+		ListFunc: func(_ Store, ctx context.Context, prefix string, callback func(path string, modTime time.Time) error) error {
 			calls = append(calls, "List")
 			require.Equal(t, "test/prefix/", prefix)
 			callback("file1", time.Now())
 			return callback("file2", time.Now())
 		},
-		ExistsFunc: func(ctx context.Context, path string) (bool, error) {
+		ExistsFunc: func(_ Store, ctx context.Context, path string) (bool, error) {
 			calls = append(calls, "Exists")
 			return true, nil
 		},
-		GetFunc: func(ctx context.Context, path string) (io.ReadCloser, error) {
+		GetFunc: func(_ Store, ctx context.Context, path string) (io.ReadCloser, error) {
 			calls = append(calls, "Get")
 			return io.NopCloser(strings.NewReader("content")), nil
 		},
-		PutFunc: func(ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
+		PutFunc: func(_ Store, ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
 			calls = append(calls, "Put")
 			require.Equal(t, int64(7), contentLength)
 			require.Equal(t, "gzip", contentEncoding)
 			return nil
 		},
-		RemoveFunc: func(ctx context.Context, path string) error {
+		RemoveFunc: func(_ Store, ctx context.Context, path string) error {
 			calls = append(calls, "Remove")
 			return nil
 		},
-		SignGetFunc: func(path string, duration time.Duration) (string, error) {
+		SignGetFunc: func(_ Store, path string, duration time.Duration) (string, error) {
 			calls = append(calls, "SignGet")
 			require.Equal(t, time.Hour, duration)
 			return "https://signed.url", nil
@@ -57,9 +53,6 @@ func TestActiveStore(t *testing.T) {
 
 	as := NewActiveStore(pb.FragmentStore("file:///test/"), mockStore, nil)
 	require.Equal(t, pb.FragmentStore("file:///test/"), as.Key)
-
-	// Test successful operations
-	require.Equal(t, "mock-provider", as.Provider())
 
 	var paths []string
 	err := as.List(ctx, "test/prefix/", func(path string, modTime time.Time) error {
@@ -94,7 +87,6 @@ func TestActiveStore(t *testing.T) {
 
 	// Verify all operations were called in the expected order
 	require.Equal(t, []string{
-		"Provider",
 		"List",
 		"Exists",
 		"Get",
@@ -122,12 +114,16 @@ func TestActiveStore(t *testing.T) {
 
 		// Test operation errors
 		var errorStore = &CallbackStore{
-			ListFunc:    func(context.Context, string, func(string, time.Time) error) error { return testErr },
-			ExistsFunc:  func(context.Context, string) (bool, error) { return false, testErr },
-			GetFunc:     func(context.Context, string) (io.ReadCloser, error) { return nil, testErr },
-			PutFunc:     func(context.Context, string, io.ReaderAt, int64, string) error { return testErr },
-			RemoveFunc:  func(context.Context, string) error { return testErr },
-			SignGetFunc: func(string, time.Duration) (string, error) { return "", testErr },
+			ListFunc: func(_ Store, ctx context.Context, prefix string, callback func(string, time.Time) error) error {
+				return testErr
+			},
+			ExistsFunc: func(_ Store, ctx context.Context, path string) (bool, error) { return false, testErr },
+			GetFunc:    func(_ Store, ctx context.Context, path string) (io.ReadCloser, error) { return nil, testErr },
+			PutFunc: func(_ Store, ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
+				return testErr
+			},
+			RemoveFunc:  func(_ Store, ctx context.Context, path string) error { return testErr },
+			SignGetFunc: func(_ Store, path string, duration time.Duration) (string, error) { return "", testErr },
 		}
 
 		asErr := NewActiveStore(pb.FragmentStore("file:///test/"), errorStore, nil)
@@ -150,10 +146,10 @@ func TestActiveStore(t *testing.T) {
 		cancel()
 
 		var ctxStore = &CallbackStore{
-			ListFunc: func(ctx context.Context, prefix string, callback func(string, time.Time) error) error {
+			ListFunc: func(_ Store, ctx context.Context, prefix string, callback func(string, time.Time) error) error {
 				return ctx.Err()
 			},
-			GetFunc: func(ctx context.Context, path string) (io.ReadCloser, error) {
+			GetFunc: func(_ Store, ctx context.Context, path string) (io.ReadCloser, error) {
 				return nil, ctx.Err()
 			},
 		}
@@ -163,34 +159,4 @@ func TestActiveStore(t *testing.T) {
 		_, err := asCtx.Get(ctx, "test/file")
 		require.Equal(t, context.Canceled, err)
 	})
-}
-
-func TestCallbackStoreDefaults(t *testing.T) {
-	// Test CallbackStore methods when callbacks are nil
-	var store = &CallbackStore{}
-
-	// Provider defaults to "callback"
-	require.Equal(t, "callback", store.Provider())
-
-	// SignGet with nil func
-	url, err := store.SignGet("path", time.Hour)
-	require.NoError(t, err)
-	require.Empty(t, url)
-
-	// Exists with nil func
-	exists, err := store.Exists(context.Background(), "path")
-	require.NoError(t, err)
-	require.False(t, exists)
-
-	// List with nil func
-	err = store.List(context.Background(), "prefix", func(string, time.Time) error { return nil })
-	require.NoError(t, err)
-
-	// Remove with nil func
-	err = store.Remove(context.Background(), "path")
-	require.NoError(t, err)
-
-	// IsAuthError always returns false
-	require.False(t, store.IsAuthError(nil))
-	require.False(t, store.IsAuthError(errors.New("some error")))
 }

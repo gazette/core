@@ -38,10 +38,6 @@ func New(ep *url.URL) (stores.Store, error) {
 	return s, parseStoreArgs(ep, &s.args)
 }
 
-func (s store) Provider() string {
-	return "fs"
-}
-
 func (s store) SignGet(path string, _ time.Duration) (string, error) {
 	return "file://" + s.args.RewritePath(s.prefix, path), nil
 }
@@ -83,7 +79,7 @@ func (s store) Put(_ context.Context, path string, content io.ReaderAt, contentL
 	}
 
 	defer func(name string) {
-		if rmErr := os.Remove(f.Name()); rmErr != nil {
+		if rmErr := os.Remove(f.Name()); rmErr != nil && !os.IsNotExist(rmErr) {
 			log.WithFields(log.Fields{"err": rmErr, "path": fsPath}).
 				Warn("failed to cleanup temp file")
 		}
@@ -96,7 +92,7 @@ func (s store) Put(_ context.Context, path string, content io.ReaderAt, contentL
 		err = f.Close()
 	}
 	if err == nil {
-		err = os.Link(f.Name(), fsPath)
+		err = os.Rename(f.Name(), fsPath)
 	}
 	return err
 }
