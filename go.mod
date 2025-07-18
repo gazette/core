@@ -12,7 +12,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.0.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/DataDog/zstd v1.4.8
-	github.com/aws/aws-sdk-go v1.40.35
+	github.com/aws/aws-sdk-go v1.55.7
 	github.com/dustin/go-humanize v1.0.0
 	github.com/dustinkirkland/golang-petname v0.0.0-20191129215211-8e5a1ed0cff0
 	github.com/gogo/gateway v1.1.0
