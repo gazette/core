@@ -62,10 +62,10 @@ may have been made in the meantime.
     fragment:
         ... etc ...
 
-A applied revision value ``-1`` can be used to explicitly signal that the Etcd
-store revision should be ignored. This is helpful when the desired source-of-truth
-for a set of JournalSpecs is versioned source control, and where an apply
-of those specs should always overwrite any existing Etcd versions.
+An applied revision value ``-1`` can be used to explicitly signal that the Etcd
+stored revision should be ignored. This is helpful when the desired source-of-truth
+for a set of JournalSpecs is versioned source control, and applying those specs 
+should always overwrite any existing Etcd versions.
 
 Deleting JournalSpecs
 ----------------------
