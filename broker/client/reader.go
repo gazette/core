@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -381,6 +382,7 @@ func (fr *FragmentReader) Read(p []byte) (n int, err error) {
 		err = ErrDidNotReadExpectedEOF
 	} else if err == io.EOF && fr.Offset != fr.Fragment.End {
 		// Did we read EOF before the reaching Fragment.End?
+		log.WithFields(log.Fields{"stack": string(debug.Stack())}).Warn("unexpected EOF being set #5")
 		err = io.ErrUnexpectedEOF
 	}
 	fr.counter.Add(float64(n))

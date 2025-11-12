@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -162,6 +163,7 @@ func ReadListResponse(stream pb.Journal_ListClient, req pb.ListRequest) (*pb.Lis
 	for {
 		if next, err := stream.Recv(); err == io.EOF {
 			if req.Watch {
+				log.WithFields(log.Fields{"stack": string(debug.Stack())}).Warn("unexpected EOF being set #4")
 				return nil, io.ErrUnexpectedEOF // Unexpected EOF of long-lived watch.
 			} else {
 				return resp, nil // Expected EOF of unary listing.

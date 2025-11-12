@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime/debug"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -105,11 +106,12 @@ func (pln *pipeline) sendErr() error {
 }
 
 // barrier installs a new barrier in the pipeline. Clients should:
-//   * Invoke barrier after issuing all sent writes, and release the
+//   - Invoke barrier after issuing all sent writes, and release the
 //     pipeline for other clients.
-//   * Block until |waitFor| is selectable.
-//   * Read expected responses from the pipeline.
-//   * Close |closeAfter|.
+//   - Block until |waitFor| is selectable.
+//   - Read expected responses from the pipeline.
+//   - Close |closeAfter|.
+//
 // By following this convention a pipeline can safely be passed among multiple
 // clients, each performing writes followed by reads, while allowing for those
 // writes and reads to happen concurrently.
@@ -128,6 +130,7 @@ func (pln *pipeline) gather() {
 			// Map EOF to ErrUnexpectedEOF, as EOFs should only be
 			// read by gatherEOF().
 			if pln.recvErrs[i] == io.EOF {
+				log.WithFields(log.Fields{"stack": string(debug.Stack())}).Warn("unexpected EOF being set #2")
 				pln.recvErrs[i] = io.ErrUnexpectedEOF
 			}
 		}

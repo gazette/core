@@ -6,9 +6,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"sync"
 
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/labels"
 )
 
@@ -38,6 +40,7 @@ func UnpackFixedFrame(r *bufio.Reader) ([]byte, error) {
 		// a buffer which contains exactly one newline.
 		// TODO(johnny): Can we remove newline handling? Helped with Hadoop streaming IIRC.
 		if l := len(b); err == io.EOF && l != 0 && (l != 1 || b[0] != 0x0a) {
+			log.WithFields(log.Fields{"stack": string(debug.Stack())}).Warn("unexpected EOF being set #6")
 			err = io.ErrUnexpectedEOF
 		}
 		if err != io.EOF {
@@ -78,6 +81,7 @@ func UnpackFixedFrame(r *bufio.Reader) ([]byte, error) {
 	if _, err = io.ReadFull(r, b); err == nil {
 		return b, nil
 	} else if err == io.EOF {
+		log.WithFields(log.Fields{"stack": string(debug.Stack())}).Warn("unexpected EOF being set #7")
 		err = io.ErrUnexpectedEOF // Always unexpected (having read a header).
 	}
 	return b, errors.Wrapf(err, "reading frame (size %d)", size)
