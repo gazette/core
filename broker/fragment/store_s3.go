@@ -75,7 +75,7 @@ func (s *s3Backend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) 
 		Key:    aws.String(cfg.rewritePath(cfg.prefix, fragment.ContentPath())),
 	}
 	var req, _ = client.GetObjectRequest(&getObj)
-	log.Info("store_s3.SignGet getting object request")
+	log.WithFields(log.Fields{"url": ep.String()}).Info("store_s3.SignGet getting object request")
 	return req.Presign(d)
 }
 
