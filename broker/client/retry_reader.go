@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime/debug"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -130,6 +131,7 @@ func (rr *RetryReader) Read(p []byte) (n int, err error) {
 				"offset":  rr.Offset(),
 				"err":     err,
 				"attempt": attempt,
+				"stack":   string(debug.Stack()),
 			}).Warn("read failure (will retry)")
 		}
 
