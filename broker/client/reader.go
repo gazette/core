@@ -190,7 +190,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	if !r.Request.MetadataOnly && r.Response.Status == pb.Status_OK && r.Response.FragmentUrl != "" {
 		if SkipSignedURLs {
 			fragURL := r.Response.Fragment.BackingStore.URL()
-			if fragURL.Scheme != "gs" || fragURL.Scheme != "s3" {
+			if fragURL.Scheme != "gs" && fragURL.Scheme != "s3" {
 				return 0, fmt.Errorf("SkipSignedURL unsupported scheme: %s", fragURL.Scheme)
 			}
 			if r.direct, err = OpenUnsignedFragmentURL(r.ctx, fragURL.Scheme, *r.Response.Fragment,
