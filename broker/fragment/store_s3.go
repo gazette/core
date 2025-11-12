@@ -75,7 +75,7 @@ func (s *s3Backend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) 
 		Key:    aws.String(cfg.rewritePath(cfg.prefix, fragment.ContentPath())),
 	}
 	var req, _ = client.GetObjectRequest(&getObj)
-	log.WithFields(log.Fields{"store_s3.SignGet GetObjectRequest req": req}).Info("getting object request")
+	log.Info("store_s3.SignGet getting object request")
 	return req.Presign(d)
 }
 
@@ -112,7 +112,7 @@ func (s *s3Backend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment)
 	if resp, err = client.GetObjectWithContext(ctx, &getObj); err != nil {
 		return nil, err
 	}
-	log.WithFields(log.Fields{"store_s3.Open GetObjectWithContext resp": resp}).Info("getting object")
+	log.Info("store_s3.Open getting object")
 	return resp.Body, err
 }
 
