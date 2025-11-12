@@ -111,6 +111,7 @@ func (s *s3Backend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment)
 	if resp, err = client.GetObjectWithContext(ctx, &getObj); err != nil {
 		return nil, err
 	}
+	resp.ContentLength = nil
 	return resp.Body, err
 }
 
