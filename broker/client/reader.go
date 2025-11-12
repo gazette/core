@@ -18,6 +18,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gorilla/schema"
@@ -515,9 +516,12 @@ var (
 // to avoid a cycle. Instead we will repeat a subset of store_gcs.go and store_s3.go.
 // This makes the use support of unsigned URLs very gcs and s3 specific.
 
-var SkipSignedURLs = false
-var gcsAccess = &gcsBackend{}
-var s3Access = newS3Backend()
+var (
+	SkipSignedURLs = false
+	gcsAccess      = &gcsBackend{}
+	s3Access       = newS3Backend()
+	S3Creds        *credentials.Credentials
+)
 
 // ////////////
 // GCS backend for use with consumers and unsigned URLs.
@@ -668,6 +672,7 @@ func (s *s3Backend) s3Client(ep *url.URL) (cfg S3StoreConfig, client *s3.S3, err
 
 	var awsConfig = aws.NewConfig()
 	awsConfig.WithCredentialsChainVerboseErrors(true)
+	awsConfig.WithCredentials(S3Creds)
 
 	if cfg.Region != "" {
 		awsConfig.WithRegion(cfg.Region)
