@@ -699,9 +699,9 @@ func (s *s3Backend) s3Client(ep *url.URL) (cfg S3StoreConfig, client *s3.S3, err
 		return
 	}
 
-	creds, err := awsSession.Config.Credentials.Get()
+	creds, err := S3Creds.Get()
 	if err != nil {
-		err = fmt.Errorf("fetching AWS credentials for profile %q: %s", cfg.Profile, err)
+		err = fmt.Errorf("fetching AWS credentials: %s", err)
 		return
 	}
 

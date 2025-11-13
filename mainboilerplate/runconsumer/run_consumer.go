@@ -177,6 +177,7 @@ func (sc Cmd) Execute(args []string) error {
 
 	// If AWS credentials are provided, set them in the client.
 	if bc.Consumer.AWSAccessKeyIDPath != "" {
+		log.Info("reading AWS credentials from files")
 		AWSAccessKeyID, err := os.ReadFile(bc.Consumer.AWSAccessKeyIDPath)
 		if err != nil {
 			log.Fatalf("could not read aws access key ID secret from file: %v", err)
