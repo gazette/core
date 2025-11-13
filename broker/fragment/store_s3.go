@@ -76,7 +76,6 @@ func (s *s3Backend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) 
 	}
 
 	var req, _ = client.GetObjectRequest(&getObj)
-	log.WithFields(log.Fields{"url": ep.String()}).Info("store_s3.SignGet getting object request")
 
 	if DisableSignedUrls {
 		return req.HTTPRequest.URL.String(), nil
@@ -118,9 +117,6 @@ func (s *s3Backend) Open(ctx context.Context, ep *url.URL, fragment pb.Fragment)
 	if resp, err = client.GetObjectWithContext(ctx, &getObj); err != nil {
 		return nil, err
 	}
-	log.WithFields(log.Fields{"contentLength": resp.ContentLength}).Info("store_s3.Open getting object")
-	resp.ContentLength = nil
-	log.Info("store_s3.Open set content length to nil")
 	return resp.Body, err
 }
 
