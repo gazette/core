@@ -687,19 +687,20 @@ func (s *s3Backend) s3Client(ep *url.URL) (cfg S3StoreConfig, client *s3.S3, err
 		// Real S3. Override the default http.Transport's behavior of inserting
 		// "Accept-Encoding: gzip" and transparently decompressing client-side.
 		awsConfig.WithHTTPClient(&http.Client{
+
 			Transport: &http.Transport{DisableCompression: true},
 		})
 	}
 
 	awsSession, err := session.NewSessionWithOptions(session.Options{
-		Profile: cfg.Profile,
+		Config: *awsConfig,
 	})
 	if err != nil {
 		err = fmt.Errorf("constructing S3 session: %s", err)
 		return
 	}
 
-	creds, err := S3Creds.Get()
+	creds, err := awsSession.Config.Credentials.Get()
 	if err != nil {
 		err = fmt.Errorf("fetching AWS credentials: %s", err)
 		return
