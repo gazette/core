@@ -74,8 +74,14 @@ func (s *s3Backend) SignGet(ep *url.URL, fragment pb.Fragment, d time.Duration) 
 		Bucket: aws.String(cfg.bucket),
 		Key:    aws.String(cfg.rewritePath(cfg.prefix, fragment.ContentPath())),
 	}
+
 	var req, _ = client.GetObjectRequest(&getObj)
-	return req.Presign(d)
+
+	if DisableSignedUrls {
+		return req.HTTPRequest.URL.String(), nil
+	} else {
+		return req.Presign(d)
+	}
 }
 
 func (s *s3Backend) Exists(ctx context.Context, ep *url.URL, fragment pb.Fragment) (bool, error) {
