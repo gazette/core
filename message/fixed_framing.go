@@ -6,11 +6,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"runtime/debug"
 	"sync"
 
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/labels"
 )
 

@@ -6,10 +6,8 @@ import (
 	"hash/fnv"
 	"io"
 	"math/rand"
-	"runtime/debug"
 	"sync"
 
-	log "github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/labels"
 )

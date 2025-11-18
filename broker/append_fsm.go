@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"runtime/debug"
 	"time"
 
 	"github.com/pkg/errors"

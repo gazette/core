@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"runtime/debug"
 	"time"
 
 	log "github.com/sirupsen/logrus"

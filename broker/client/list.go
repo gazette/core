@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"runtime/debug"
 	"sync/atomic"
 	"time"
 

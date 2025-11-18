@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"runtime/debug"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
