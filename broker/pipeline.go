@@ -130,7 +130,6 @@ func (pln *pipeline) gather() {
 			// Map EOF to ErrUnexpectedEOF, as EOFs should only be
 			// read by gatherEOF().
 			if pln.recvErrs[i] == io.EOF {
-				log.WithFields(log.Fields{"stack": string(debug.Stack())}).Warn("unexpected EOF being set #2")
 				pln.recvErrs[i] = io.ErrUnexpectedEOF
 			}
 		}

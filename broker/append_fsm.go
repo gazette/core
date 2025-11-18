@@ -641,7 +641,6 @@ func (b *appendFSM) onStreamContent(req *pb.AppendRequest, err error) {
 		// EOF without first receiving an empty chunk is unexpected,
 		// and we treat it as a roll-back.
 		err = io.ErrUnexpectedEOF
-		log.WithFields(log.Fields{"stack": string(debug.Stack())}).Warn("unexpected EOF being set #1")
 	} else if err == nil && b.clientCommit {
 		// *Not* reading an EOF after reading an empty chunk is also unexpected.
 		err = errExpectedEOF

@@ -54,7 +54,6 @@ func UnpackLine(r *bufio.Reader) ([]byte, error) {
 	if err == io.EOF && len(line) != 0 {
 		// If we read at least one byte, then an EOF is unexpected (it should
 		// occur only on whole-message boundaries).
-		log.WithFields(log.Fields{"stack": string(debug.Stack())}).Warn("unexpected EOF being set #8")
 		err = io.ErrUnexpectedEOF
 	}
 	return line, err
