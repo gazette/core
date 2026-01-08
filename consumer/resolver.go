@@ -421,17 +421,34 @@ func (r *Resolver) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector
 func (r *Resolver) Collect(ch chan<- prometheus.Metric) {
+	for _, m := range r.collectShardMetrics() {
+		ch <- m
+	}
+}
+
+func (r *Resolver) collectShardMetrics() []prometheus.Metric {
 	r.state.KS.Mu.RLock()
 	defer r.state.KS.Mu.RUnlock()
+	metrics := make([]prometheus.Metric, 0)
 	for shardID, shard := range r.shards {
-		status := shard.resolved.assignment.Decoded.(allocator.Assignment).AssignmentValue.(*pc.ReplicaStatus)
-		ch <- prometheus.MustNewConstMetric(
+		shardStatus := shard.resolved.assignment.Decoded.(allocator.Assignment).AssignmentValue.(*pc.ReplicaStatus)
+		metrics = append(metrics, prometheus.MustNewConstMetric(
 			shardUpDesc,
 			prometheus.GaugeValue,
 			1,
 			shardID.String(),
-			status.Code.String())
+			shardStatus.Code.String()))
+		readThrough, _ := shard.Progress()
+		for j, o := range readThrough {
+			metrics = append(metrics, prometheus.MustNewConstMetric(
+				shardReadHeadDesc,
+				prometheus.GaugeValue,
+				float64(o),
+				shardID.String(),
+				j.String()))
+		}
 	}
+	return metrics
 }
 
 // ErrResolverStopped is returned by Resolver if a ShardID resolves to a local
