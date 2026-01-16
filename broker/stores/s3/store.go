@@ -85,7 +85,6 @@ func New(ep *url.URL) (stores.Store, error) {
 	}
 
 	awsSession, err := session.NewSessionWithOptions(session.Options{
-		Config:  *awsConfig,
 		Profile: args.Profile,
 	})
 	if err != nil {
@@ -111,7 +110,8 @@ func New(ep *url.URL) (stores.Store, error) {
 		"providerName": creds.ProviderName,
 	}).Info("constructed new aws.Session")
 
-	var client = s3.New(awsSession)
+	// arize fix for sts:AssumeRoleWithWebIdentity, #16048
+	var client = s3.New(awsSession, awsConfig)
 
 	return &store{
 		bucket: bucket,
@@ -127,7 +127,12 @@ func (s *store) SignGet(path string, d time.Duration) (string, error) {
 		Key:    aws.String(s.args.RewritePath(s.prefix, path)),
 	}
 	var req, _ = s.client.GetObjectRequest(&getObj)
-	return req.Presign(d)
+
+	if stores.DisableSignedUrls {
+		return req.HTTPRequest.URL.String(), nil
+	} else {
+		return req.Presign(d)
+	}
 }
 
 func (s *store) Exists(ctx context.Context, path string) (bool, error) {

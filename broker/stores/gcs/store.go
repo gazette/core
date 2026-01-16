@@ -2,6 +2,7 @@ package gcs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"go.gazette.dev/core/broker/stores"
 	"go.gazette.dev/core/broker/stores/common"
 	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/jwt"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -35,9 +37,19 @@ type store struct {
 	signedURLOptions storage.SignedURLOptions
 }
 
+// to help identify when JSON credentials are an external account used by workload identity
+type credentialsFile struct {
+	Type string `json:"type"`
+}
+
 // New creates a new GCS Store from the provided URL.
 func New(ep *url.URL) (stores.Store, error) {
-	var args StoreQueryArgs
+	var (
+		conf   *jwt.Config
+		client *storage.Client
+		opts   storage.SignedURLOptions
+		args   StoreQueryArgs
+	)
 	if err := parseStoreArgs(ep, &args); err != nil {
 		return nil, err
 	}
@@ -50,31 +62,53 @@ func New(ep *url.URL) (stores.Store, error) {
 	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
 	if err != nil {
 		return nil, err
-	} else if creds.JSON == nil {
-		return nil, fmt.Errorf("use of GCS requires that a service-account private key be supplied with application default credentials")
 	}
-	conf, err := google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
-	if err != nil {
-		return nil, err
-	}
-	client, err := storage.NewClient(ctx,
-		option.WithTokenSource(conf.TokenSource(ctx)),
-	)
-	if err != nil {
-		return nil, err
-	}
-	var opts = storage.SignedURLOptions{
-		GoogleAccessID: conf.Email,
-		PrivateKey:     conf.PrivateKey,
+	// best effort to determine if JWT credentials are for external account
+	externalAccount := false
+	if creds.JSON != nil {
+		var f credentialsFile
+		if err := json.Unmarshal(creds.JSON, &f); err == nil {
+			externalAccount = f.Type == "external_account"
+		}
 	}
 
-	log.WithFields(log.Fields{
-		"ProjectID":      creds.ProjectID,
-		"GoogleAccessID": conf.Email,
-		"PrivateKeyID":   conf.PrivateKeyID,
-		"Subject":        conf.Subject,
-		"Scopes":         conf.Scopes,
-	}).Info("constructed new GCS client")
+	if creds.JSON != nil && !externalAccount {
+		// upstream code
+		conf, err = google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
+		if err != nil {
+			return nil, err
+		}
+		client, err = storage.NewClient(ctx, option.WithTokenSource(conf.TokenSource(ctx)))
+		if err != nil {
+			return nil, err
+		}
+		opts = storage.SignedURLOptions{
+			GoogleAccessID: conf.Email,
+			PrivateKey:     conf.PrivateKey,
+		}
+
+		log.WithFields(log.Fields{
+			"ProjectID":      creds.ProjectID,
+			"GoogleAccessID": conf.Email,
+			"PrivateKeyID":   conf.PrivateKeyID,
+			"Subject":        conf.Subject,
+			"Scopes":         conf.Scopes,
+		}).Info("constructed new GCS client")
+	} else {
+		// Possible to use GCS without a service account (e.g. with a GCE instance and workload identity).
+		client, err = storage.NewClient(ctx, option.WithTokenSource(creds.TokenSource))
+		if err != nil {
+			return nil, err
+		}
+
+		// workload identity approach which SignGet() method accepts if you have
+		// "iam.serviceAccounts.signBlob" permissions against your service account.
+		opts = storage.SignedURLOptions{}
+
+		log.WithFields(log.Fields{
+			"ProjectID": creds.ProjectID,
+		}).Info("constructed new GCS client without JWT")
+	}
 
 	return &store{
 		bucket:           bucket,
@@ -86,11 +120,21 @@ func New(ep *url.URL) (stores.Store, error) {
 }
 
 func (s *store) SignGet(path string, d time.Duration) (string, error) {
-	var opts = s.signedURLOptions
-	opts.Method = "GET"
-	opts.Expires = time.Now().Add(d)
+	if stores.DisableSignedUrls {
+		u := &url.URL{
+			Path: fmt.Sprintf("/%s/%s", s.bucket, s.args.RewritePath(s.prefix, path)),
+		}
+		u.Scheme = "https"
+		u.Host = "storage.googleapis.com"
+		return u.String(), nil
+	} else {
+		// upstream code
+		var opts = s.signedURLOptions
+		opts.Method = "GET"
+		opts.Expires = time.Now().Add(d)
 
-	return storage.SignedURL(s.bucket, s.args.RewritePath(s.prefix, path), &opts)
+		return storage.SignedURL(s.bucket, s.args.RewritePath(s.prefix, path), &opts)
+	}
 }
 
 func (s *store) Exists(ctx context.Context, path string) (exists bool, err error) {

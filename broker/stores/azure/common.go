@@ -25,6 +25,7 @@ type StoreQueryArgs struct {
 type storeBase struct {
 	args           StoreQueryArgs
 	storageAccount string // Storage accounts in Azure are the equivalent to a "bucket" in S3
+	blobDomain     string // The domain of the blob storage account (e.g. blob.core.windows.net)
 	container      string // In azure, blobs are stored inside of containers, which live inside accounts
 	prefix         string // This is the path prefix for the blobs inside the container
 	pipeline       pipeline.Pipeline
@@ -142,12 +143,12 @@ func (a *storeBase) buildBlobURL(path string) (*azblob.BlockBlobURL, error) {
 	return &blobURL, nil
 }
 
-func azureStorageURL(storageAccount string) string {
-	return fmt.Sprintf("https://%s.blob.core.windows.net", storageAccount)
+func azureStorageURL(storageAccount string, blobDomain string) string {
+	return fmt.Sprintf("https://%s.%s", storageAccount, blobDomain)
 }
 
 func (a *storeBase) containerURL() string {
-	return fmt.Sprintf("%s/%s", azureStorageURL(a.storageAccount), a.container)
+	return fmt.Sprintf("%s/%s", azureStorageURL(a.storageAccount, a.blobDomain), a.container)
 }
 
 func parseStoreArgs(ep *url.URL, args interface{}) error {

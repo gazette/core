@@ -60,6 +60,12 @@ func NewAD(ep *url.URL) (stores.Store, error) {
 		return nil, fmt.Errorf("AZURE_CLIENT_ID and AZURE_CLIENT_SECRET must be set for azure-ad:// URLs")
 	}
 
+	// arize change to support china cloud
+	blobDomain := os.Getenv("AZURE_BLOB_DOMAIN")
+	if blobDomain == "" {
+		blobDomain = "blob.core.windows.net"
+	}
+
 	var credentials, err = azidentity.NewClientSecretCredential(
 		tenantID,
 		clientID,
@@ -93,7 +99,7 @@ func NewAD(ep *url.URL) (stores.Store, error) {
 	var accessKey = azblob.NewTokenCredential("", refreshFn)
 
 	client, err := service.NewClient(
-		azureStorageURL(storageAccount),
+		azureStorageURL(storageAccount, blobDomain),
 		credentials,
 		&service.ClientOptions{},
 	)
@@ -104,6 +110,7 @@ func NewAD(ep *url.URL) (stores.Store, error) {
 	var store = &adStore{
 		storeBase: storeBase{
 			storageAccount: storageAccount,
+			blobDomain:     blobDomain,
 			container:      container,
 			prefix:         prefix,
 			args:           args,
@@ -116,6 +123,7 @@ func NewAD(ep *url.URL) (stores.Store, error) {
 	log.WithFields(log.Fields{
 		"tenant":         tenantID,
 		"storageAccount": storageAccount,
+		"blobDomain":     blobDomain,
 		"container":      container,
 		"prefix":         prefix,
 	}).Info("constructed new Azure AD storage client")
@@ -147,6 +155,7 @@ func (a *adStore) SignGet(path string, d time.Duration) (string, error) {
 	log.WithFields(log.Fields{
 		"tenant":         a.tenantID,
 		"storageAccount": a.storageAccount,
+		"blobDomain":     a.blobDomain,
 		"container":      a.container,
 		"blob":           blob,
 		"expires":        sasQueryParams.ExpiryTime(),
@@ -180,6 +189,7 @@ func (a *adStore) fetchUserDelegationCredential() (*service.UserDelegationCreden
 
 	log.WithFields(log.Fields{
 		"storageAccount": a.storageAccount,
+		"blobDomain":     a.blobDomain,
 		"tenant":         a.tenantID,
 		"start":          *keyInfo.Start,
 		"expiry":         *keyInfo.Expiry,

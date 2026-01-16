@@ -2,9 +2,14 @@ name: Gazette Continuous Integration
 
 on:
   push:
-    branches: [master]
+    branches: [arize, arize-dev/*]
   pull_request:
-    branches: [master]
+    branches: [arize]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   build:
@@ -16,32 +21,44 @@ jobs:
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - name: Login to GitHub container registry
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            docker login --username ${{ github.actor }} --password-stdin ghcr.io
+
+      - uses: 'google-github-actions/auth@v1'
+        with:
+          token_format: "access_token"
+          project_id: ${{ secrets.PROJECT_ID }}
+          workload_identity_provider: projects/${{ secrets.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v1'
+
+      - name: 'Use gcloud CLI'
+        run: gcloud info
 
       - uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
       - run: sudo apt install -y protobuf-compiler librocksdb-dev libsqlite3-dev etcd-server
-      - run: echo "VERSION=$(git describe --dirty --tags)" >> "$GITHUB_ENV"
+      - run: |
+          sha=${{ github.sha }}
+          if [[ '${{ github.ref }}' == 'refs/heads/arize' ]]; then
+                version="arize-${sha:0:7}"
+          else
+                version="dev-${sha:0:7}"
+          fi
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
 
       - run: make go-test-ci
-      - run: make go-build go-build-arm64
+      - run: make go-build
 
+      - run: gcloud auth configure-docker ${{ secrets.REGISTRY }}
       - uses: docker/build-push-action@v5
         with:
           context: .build
           file: Dockerfile
           target: broker
-          platforms: linux/amd64,linux/arm64
-          tags: "ghcr.io/gazette/broker:${{ env.VERSION }}"
-          push: true
-
-      - uses: docker/build-push-action@v5
-        with:
-          context: .build
-          file: Dockerfile
-          target: examples
           platforms: linux/amd64
-          tags: "ghcr.io/gazette/examples:${{ env.VERSION }}"
+          provenance: false
+          sbom: false
+          tags: "${{ secrets.REGISTRY_PATH }}/gazette/broker:${{ env.VERSION }}"
           push: true

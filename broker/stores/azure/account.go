@@ -39,6 +39,12 @@ func NewAccount(ep *url.URL) (stores.Store, error) {
 		return nil, fmt.Errorf("AZURE_ACCOUNT_NAME and AZURE_ACCOUNT_KEY must be set for azure:// URLs")
 	}
 
+	// arize change to support china cloud
+	blobDomain := os.Getenv("AZURE_BLOB_DOMAIN")
+	if blobDomain == "" {
+		blobDomain = "blob.core.windows.net"
+	}
+
 	credentials, err := azblob.NewSharedKeyCredential(storageAccount, accountKey)
 	if err != nil {
 		return nil, err
@@ -55,6 +61,7 @@ func NewAccount(ep *url.URL) (stores.Store, error) {
 	var store = &accountStore{
 		storeBase: storeBase{
 			storageAccount: storageAccount,
+			blobDomain:     blobDomain,
 			container:      container,
 			prefix:         prefix,
 			args:           args,
@@ -65,6 +72,7 @@ func NewAccount(ep *url.URL) (stores.Store, error) {
 
 	log.WithFields(log.Fields{
 		"storageAccount": storageAccount,
+		"blobDomain":     blobDomain,
 		"container":      container,
 		"prefix":         prefix,
 	}).Info("constructed new Azure Shared Key storage client")
@@ -90,6 +98,7 @@ func (a *accountStore) SignGet(path string, d time.Duration) (string, error) {
 
 	log.WithFields(log.Fields{
 		"storageAccount": a.storageAccount,
+		"blobDomain":     a.blobDomain,
 		"container":      a.container,
 		"blob":           blob,
 		"expires":        sasQueryParams.ExpiryTime(),
