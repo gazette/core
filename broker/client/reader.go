@@ -4,32 +4,23 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
-	"strings"
-	"sync"
 	"time"
 
-	"cloud.google.com/go/storage"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/gorilla/schema"
 	"github.com/prometheus/client_golang/prometheus"
-	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/codecs"
 	pb "go.gazette.dev/core/broker/protocol"
-	"golang.org/x/oauth2/google"
-	"golang.org/x/oauth2/jwt"
-	"google.golang.org/api/option"
+	"go.gazette.dev/core/broker/stores"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+var (
+	SkipSignedURLs = false // capability to avoid use of signed URLs.
 )
 
 // Reader adapts a Read RPC to the io.Reader interface. The first byte read from
@@ -189,12 +180,8 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	// If the frame preceding EOF provided a fragment URL, open it directly.
 	if !r.Request.MetadataOnly && r.Response.Status == pb.Status_OK && r.Response.FragmentUrl != "" {
 		if SkipSignedURLs {
-			fragURL := r.Response.Fragment.BackingStore.URL()
-			if fragURL.Scheme != "gs" && fragURL.Scheme != "s3" {
-				return 0, fmt.Errorf("SkipSignedURL unsupported scheme: %s", fragURL.Scheme)
-			}
-			if r.direct, err = OpenUnsignedFragmentURL(r.ctx, fragURL.Scheme, *r.Response.Fragment,
-				r.Request.Offset, fragURL); err == nil {
+			if r.direct, err = OpenUnsignedFragmentURL(r.ctx, *r.Response.Fragment,
+				r.Request.Offset); err == nil {
 				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
 			}
 		} else {
@@ -314,22 +301,13 @@ func OpenFragmentURL(ctx context.Context, fragment pb.Fragment, offset int64, ur
 	return NewFragmentReader(resp.Body, fragment, offset)
 }
 
-func OpenUnsignedFragmentURL(ctx context.Context, scheme string, fragment pb.Fragment, offset int64, url *url.URL) (*FragmentReader, error) {
-	var (
-		rdr io.ReadCloser
-		err error
-	)
+func OpenUnsignedFragmentURL(ctx context.Context, fragment pb.Fragment, offset int64) (*FragmentReader, error) {
+	var activeStore = stores.Get(fragment.BackingStore)
+	activeStore.Mark.Store(true)
 
-	if scheme == "gs" {
-		if rdr, err = gcsAccess.open(ctx, url, fragment); err != nil {
-			return nil, err
-		}
-	} else if scheme == "s3" {
-		if rdr, err = s3Access.open(ctx, url, fragment); err != nil {
-			return nil, err
-		}
-	} else {
-		return nil, fmt.Errorf("unsupported scheme: %s", scheme)
+	var rdr, err = activeStore.Get(ctx, fragment.ContentPath())
+	if err != nil {
+		return nil, err
 	}
 
 	// Record metrics related to opening the fragment.
@@ -509,281 +487,3 @@ var (
 	// httpClient is the http.Client used by OpenFragmentURL
 	httpClient = newHttpClient()
 )
-
-// ARIZE specific code to end of file.
-//
-// To support unsigned URLs we need to be able to deal with buckets directly as a consumer and not via the signed URL.
-// In OpenUnsignedFragmentURL we need to be able to open the fragment directly from the bucket. It would have
-// been nice to use the backend interface in stores.go which the broker uses to access buckets. Unfortunately
-// stores_test.go, which is in broker/fragment, imports broker/client so we cannot import broker/fragment here
-// to avoid a cycle. Instead we will repeat a subset of the old store_gcs.go and store_s3.go (which has since been restructured
-// into stores/gcs/store.go and stores/s3/store.go). This makes the use support of unsigned URLs very gcs and s3 specific.
-
-var (
-	SkipSignedURLs = false
-	gcsAccess      = &gcsBackend{}
-	s3Access       = newS3Backend()
-	S3Creds        *credentials.Credentials
-)
-
-// ////////////
-// GCS backend for use with consumers and unsigned URLs.
-// ////////////
-type gcsBackend struct {
-	client   *storage.Client
-	clientMu sync.Mutex
-}
-
-// Arize Open routine for use with consumers and signed URLs.
-func (s *gcsBackend) open(ctx context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
-	cfg, gClient, err := s.gcsClient(ep)
-	if err != nil {
-		return nil, err
-	}
-	return gClient.Bucket(cfg.bucket).Object(cfg.rewritePath(cfg.prefix, fragment.ContentPath())).NewReader(ctx)
-}
-
-// to help identify when JSON credentials are an external account used by workload identity
-type credentialsFile struct {
-	Type string `json:"type"`
-}
-
-func (s *gcsBackend) gcsClient(ep *url.URL) (cfg GSStoreConfig, client *storage.Client, err error) {
-	var conf *jwt.Config
-
-	if err = parseStoreArgs(ep, &cfg); err != nil {
-		return
-	}
-	// Omit leading slash from bucket prefix. Note that FragmentStore already
-	// enforces that URL Paths end in '/'.
-	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
-
-	s.clientMu.Lock()
-	defer s.clientMu.Unlock()
-
-	if s.client != nil {
-		client = s.client
-		return
-	}
-	var ctx = context.Background()
-
-	creds, err := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
-	if err != nil {
-		return
-	}
-
-	// best effort to determine if JWT credentials are for external account
-	externalAccount := false
-	if creds.JSON != nil {
-		var f credentialsFile
-		if err := json.Unmarshal(creds.JSON, &f); err == nil {
-			externalAccount = f.Type == "external_account"
-		}
-	}
-
-	if creds.JSON != nil && !externalAccount {
-		conf, err = google.JWTConfigFromJSON(creds.JSON, storage.ScopeFullControl)
-		if err != nil {
-			return
-		}
-		client, err = storage.NewClient(ctx, option.WithTokenSource(conf.TokenSource(ctx)))
-		if err != nil {
-			return
-		}
-		s.client = client
-
-		log.WithFields(log.Fields{
-			"ProjectID":      creds.ProjectID,
-			"GoogleAccessID": conf.Email,
-			"PrivateKeyID":   conf.PrivateKeyID,
-			"Subject":        conf.Subject,
-			"Scopes":         conf.Scopes,
-		}).Info("reader constructed new GCS client")
-	} else {
-		// Possible to use GCS without a service account (e.g. with a GCE instance and workload identity).
-		client, err = storage.NewClient(ctx, option.WithTokenSource(creds.TokenSource))
-		if err != nil {
-			return
-		}
-
-		// workload identity approach which SignGet() method accepts if you have
-		// "iam.serviceAccounts.signBlob" permissions against your service account.
-		s.client = client
-
-		log.WithFields(log.Fields{
-			"ProjectID": creds.ProjectID,
-		}).Info("reader constructed new GCS client without JWT")
-	}
-
-	return
-}
-
-type GSStoreConfig struct {
-	bucket string
-	prefix string
-
-	RewriterConfig
-}
-
-// ////////////
-// S3 backend for use with consumers and unsigned URLs.
-// ////////////
-type s3Backend struct {
-	clients   map[[3]string]*s3.S3
-	clientsMu sync.Mutex
-}
-
-func newS3Backend() *s3Backend {
-	return &s3Backend{
-		clients: make(map[[3]string]*s3.S3),
-	}
-}
-
-func (s *s3Backend) open(ctx context.Context, ep *url.URL, fragment pb.Fragment) (io.ReadCloser, error) {
-	cfg, client, err := s.s3Client(ep)
-	if err != nil {
-		return nil, err
-	}
-
-	var getObj = s3.GetObjectInput{
-		Bucket: aws.String(cfg.bucket),
-		Key:    aws.String(cfg.rewritePath(cfg.prefix, fragment.ContentPath())),
-	}
-	var resp *s3.GetObjectOutput
-	if resp, err = client.GetObjectWithContext(ctx, &getObj); err != nil {
-		return nil, err
-	}
-	return resp.Body, err
-}
-
-func (s *s3Backend) s3Client(ep *url.URL) (cfg S3StoreConfig, client *s3.S3, err error) {
-	if err = parseStoreArgs(ep, &cfg); err != nil {
-		return
-	}
-	// Omit leading slash from bucket prefix. Note that FragmentStore already
-	// enforces that URL Paths end in '/'.
-	cfg.bucket, cfg.prefix = ep.Host, ep.Path[1:]
-
-	defer s.clientsMu.Unlock()
-	s.clientsMu.Lock()
-
-	var key = [3]string{cfg.Endpoint, cfg.Profile, cfg.Region}
-	if client = s.clients[key]; client != nil {
-		return
-	}
-
-	var awsConfig = aws.NewConfig()
-	awsConfig.WithCredentialsChainVerboseErrors(true)
-	awsConfig.WithCredentials(S3Creds)
-
-	if cfg.Region != "" {
-		awsConfig.WithRegion(cfg.Region)
-	}
-
-	if cfg.Endpoint != "" {
-		awsConfig.WithEndpoint(cfg.Endpoint)
-		// We must force path style because bucket-named virtual hosts
-		// are not compatible with explicit endpoints.
-		awsConfig.WithS3ForcePathStyle(true)
-	} else {
-		// Real S3. Override the default http.Transport's behavior of inserting
-		// "Accept-Encoding: gzip" and transparently decompressing client-side.
-		awsConfig.WithHTTPClient(&http.Client{
-
-			Transport: &http.Transport{DisableCompression: true},
-		})
-	}
-
-	awsSession, err := session.NewSessionWithOptions(session.Options{
-		Config: *awsConfig,
-	})
-	if err != nil {
-		err = fmt.Errorf("constructing S3 session: %s", err)
-		return
-	}
-
-	creds, err := awsSession.Config.Credentials.Get()
-	if err != nil {
-		err = fmt.Errorf("fetching AWS credentials: %s", err)
-		return
-	}
-
-	// The aws sdk will always just return an error if this Region is not set, even if
-	// the Endpoint was provided explicitly. It's important to return an error here
-	// in that case, before adding this client to the `clients` map.
-	if awsSession.Config.Region == nil || *awsSession.Config.Region == "" {
-		err = fmt.Errorf("missing AWS region configuration for profile %q", cfg.Profile)
-		return
-	}
-
-	log.WithFields(log.Fields{
-		"endpoint":     cfg.Endpoint,
-		"profile":      cfg.Profile,
-		"region":       *awsSession.Config.Region,
-		"keyID":        creds.AccessKeyID,
-		"providerName": creds.ProviderName,
-	}).Info("constructed new aws.Session")
-
-	client = s3.New(awsSession, awsConfig)
-	s.clients[key] = client
-
-	return
-}
-
-type S3StoreConfig struct {
-	bucket string
-	prefix string
-
-	RewriterConfig
-	// AWS Profile to extract credentials from the shared credentials file.
-	// For details, see:
-	//   https://aws.amazon.com/blogs/security/a-new-and-standardized-way-to-manage-credentials-in-the-aws-sdks/
-	// If empty, the default credentials are used.
-	Profile string
-	// Endpoint to connect to S3. If empty, the default S3 service is used.
-	Endpoint string
-	// ACL applied when persisting new fragments. By default, this is
-	// s3.ObjectCannedACLBucketOwnerFullControl.
-	ACL string
-	// Storage class applied when persisting new fragments. By default,
-	// this is s3.ObjectStorageClassStandard.
-	StorageClass string
-	// SSE is the server-side encryption type to be applied (eg, "AES256").
-	// By default, encryption is not used.
-	SSE string
-	// SSEKMSKeyId specifies the ID for the AWS KMS symmetric customer managed key
-	// By default, not used.
-	SSEKMSKeyId string
-	// Region is the region for the bucket. If empty, the region is determined
-	// from `Profile` or the default credentials.
-	Region string
-}
-
-// ////////////
-// Helper functions for parsing store URLs and rewriting paths.
-// ////////////
-type RewriterConfig struct {
-	// Find is the string to replace in the unmodified journal name.
-	Find string
-	// Replace is the string with which Find is replaced in the constructed store path.
-	Replace string
-}
-
-func (cfg RewriterConfig) rewritePath(s, j string) string {
-	if cfg.Find == "" {
-		return s + j
-	}
-	return s + strings.Replace(j, cfg.Find, cfg.Replace, 1)
-}
-
-func parseStoreArgs(ep *url.URL, args interface{}) error {
-	var decoder = schema.NewDecoder()
-	decoder.IgnoreUnknownKeys(false)
-
-	if q, err := url.ParseQuery(ep.RawQuery); err != nil {
-		return err
-	} else if err = decoder.Decode(args, q); err != nil {
-		return fmt.Errorf("parsing store URL arguments: %s", err)
-	}
-	return nil
-}
