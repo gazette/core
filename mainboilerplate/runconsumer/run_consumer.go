@@ -183,6 +183,8 @@ func (sc Cmd) Execute(args []string) error {
 	if bc.Consumer.SkipSignedURLs {
 		// Register store providers only when using direct bucket access.
 		// These are used by OpenUnsignedFragmentURL in broker/client/reader.go.
+		// The store health checks are only enabled when we are not using signed URLs
+		// and OpenUnsignedFragmentURL is called.
 		stores.RegisterProviders(map[string]stores.Constructor{
 			"azure":    azure.NewAccount,
 			"azure-ad": azure.NewAD,

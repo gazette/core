@@ -131,39 +131,41 @@ func runCheck(ctx context.Context, s *ActiveStore) error {
 		return fmt.Errorf("health check LIST did not find test file")
 	}
 
-	// 4. SignGet to generate URL
-	var signedURL string
-	if signedURL, err = s.Store.SignGet(testPath, 5*time.Minute); err != nil {
-		return fmt.Errorf("health check SignGet failed: %w", err)
-	}
+	if !DisableSignedUrls {
+		// 4. SignGet to generate URL
+		var signedURL string
+		if signedURL, err = s.Store.SignGet(testPath, 5*time.Minute); err != nil {
+			return fmt.Errorf("health check SignGet failed: %w", err)
+		}
 
-	if !strings.HasPrefix(signedURL, "http") {
-		return nil // Skip fetches of non-HTTPS (HTTP when testing) signed URLs.
-	}
+		if !strings.HasPrefix(signedURL, "http") {
+			return nil // Skip fetches of non-HTTPS (HTTP when testing) signed URLs.
+		}
 
-	// 5. Fetch signed URL and verify content
-	var req *http.Request
-	if req, err = http.NewRequestWithContext(ctx, "GET", signedURL, nil); err != nil {
-		return fmt.Errorf("health check request creation failed: %w", err)
-	}
+		// 5. Fetch signed URL and verify content
+		var req *http.Request
+		if req, err = http.NewRequestWithContext(ctx, "GET", signedURL, nil); err != nil {
+			return fmt.Errorf("health check request creation failed: %w", err)
+		}
 
-	var resp *http.Response
-	if resp, err = http.DefaultClient.Do(req); err != nil {
-		return fmt.Errorf("health check fetch failed: %w", err)
-	}
-	defer resp.Body.Close()
+		var resp *http.Response
+		if resp, err = http.DefaultClient.Do(req); err != nil {
+			return fmt.Errorf("health check fetch failed: %w", err)
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("health check fetch returned status %d", resp.StatusCode)
-	}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("health check fetch returned status %d", resp.StatusCode)
+		}
 
-	buf.Reset()
-	if _, err = io.Copy(&buf, resp.Body); err != nil {
-		return fmt.Errorf("health check fetch read failed: %w", err)
-	}
+		buf.Reset()
+		if _, err = io.Copy(&buf, resp.Body); err != nil {
+			return fmt.Errorf("health check fetch read failed: %w", err)
+		}
 
-	if buf.String() != testContent {
-		return fmt.Errorf("health check fetch content mismatch: got %q, want %q", buf.String(), testContent)
+		if buf.String() != testContent {
+			return fmt.Errorf("health check fetch content mismatch: got %q, want %q", buf.String(), testContent)
+		}
 	}
 
 	return nil
