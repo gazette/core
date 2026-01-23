@@ -185,6 +185,7 @@ func (sc Cmd) Execute(args []string) error {
 		// These are used by OpenUnsignedFragmentURL in broker/client/reader.go.
 		// The store health checks are only enabled when we are not using signed URLs
 		// and OpenUnsignedFragmentURL is called.
+		log.Warn("registering store providers as not using signed URLs")
 		stores.RegisterProviders(map[string]stores.Constructor{
 			"azure":    azure.NewAccount,
 			"azure-ad": azure.NewAD,
