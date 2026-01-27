@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -66,6 +68,10 @@ func (cmdServe) Execute(args []string) error {
 
 	var authorizer pb.Authorizer
 	var verifier pb.Verifier
+
+	if Config.Broker.Host != "" && isIPv6(Config.Broker.Host) && !strings.HasPrefix(Config.Broker.Host, "[") {
+		Config.Broker.Host = "[" + Config.Broker.Host + "]"
+	}
 
 	if Config.Broker.AuthKeys != "" {
 		var a, err = auth.NewKeyedAuth(Config.Broker.AuthKeys)
@@ -224,6 +230,15 @@ func (cmdServe) Execute(args []string) error {
 	log.Info("goodbye")
 
 	return nil
+}
+
+func isIPv6(s string) bool {
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return false
+	}
+	// Check if it's IPv6 by seeing if it contains a colon
+	return strings.Contains(s, ":")
 }
 
 func main() {
