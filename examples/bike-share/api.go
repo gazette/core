@@ -19,7 +19,7 @@ import (
 // ServeBikeHistory is an http.HandlerFunc which returns the most recent
 // rides of a bike ID provided via URL parameter. Invoke as:
 //
-//      /api/bikes?id=12345
+//	/api/bikes?id=12345
 //
 // If the bike ID is served by a non-local shard, ServeBikeHistory will
 // proxy to the appropriate peer.
@@ -65,7 +65,7 @@ func (app *Application) ServeBikeHistory(w http.ResponseWriter, r *http.Request)
 	}); err != nil {
 		return
 	} else if res.Status != pc.Status_OK {
-		err = fmt.Errorf(res.Status.String())
+		err = errors.New(res.Status.String())
 		return
 	} else if res.Store == nil {
 		// Shard is assigned to peer.

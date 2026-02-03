@@ -2,10 +2,13 @@ package fragment
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
 	"golang.org/x/net/trace"
 )
 
@@ -57,9 +60,9 @@ func (fi *Index) Query(ctx context.Context, req *pb.ReadRequest) (*pb.ReadRespon
 		// If the requested offset isn't covered by the index, but we do have
 		// a persisted fragment with a *greater* offset...
 		if !found && ind != len(fi.set) && fi.set[ind].ModTime != 0 &&
-			// AND the client is reading from the very beginning of the journal,
+			// AND the client is reading from the very beginning of the available journal,
 			// OR the next available fragment was persisted quite a while ago.
-			(req.Offset == 0 || (fi.set[ind].ModTime < timeNow().Add(-offsetJumpAgeThreshold).Unix())) {
+			(ind == 0 || (fi.set[ind].ModTime < timeNow().Add(-offsetJumpAgeThreshold).Unix())) {
 
 			// Then skip the read forward to the first or next available offset.
 			// This case allows us to recover from "holes" or deletions in the
@@ -218,14 +221,32 @@ func (fi *Index) Inspect(ctx context.Context, callback func(CoverSet) error) err
 
 // WalkAllStores enumerates Fragments from each of |stores| into the returned
 // CoverSet, or returns an encountered error.
-func WalkAllStores(ctx context.Context, name pb.Journal, stores []pb.FragmentStore) (CoverSet, error) {
+func WalkAllStores(ctx context.Context, name pb.Journal, allStores []pb.FragmentStore) (CoverSet, error) {
 	var set CoverSet
 
-	for _, store := range stores {
-		var err = List(ctx, store, name, func(f pb.Fragment) {
-			set, _ = set.Add(Fragment{Fragment: f})
-		})
+	for _, fs := range allStores {
+		var store = stores.Get(fs)
+		store.Mark.Store(true)
 
+		var err = store.List(ctx, string(name)+"/", func(path string, modTime time.Time) error {
+			// The path returned by List is already relative to the prefix
+			if frag, err := pb.ParseFragmentFromRelativePath(name, path); err != nil {
+				// It's not uncommon for extra files to live under a journal.
+				// Don't fail the entire listing when this happens.
+				logrus.WithFields(logrus.Fields{
+					"path":    path,
+					"journal": name,
+					"modTime": modTime,
+				}).Warn("failed to parse fragment")
+			} else if frag.Journal != name {
+				return fmt.Errorf("fragment %s is not of expected journal %s", &frag, name)
+			} else {
+				frag.ModTime = modTime.Unix()
+				frag.BackingStore = fs
+				set, _ = set.Add(Fragment{Fragment: frag})
+			}
+			return nil
+		})
 		if err != nil {
 			return CoverSet{}, err
 		}

@@ -1,4 +1,5 @@
 //go:build !nozstd
+// +build !nozstd
 
 package codecs
 

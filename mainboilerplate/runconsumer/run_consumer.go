@@ -12,10 +12,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/gogo/gateway"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/jessevdk/go-flags"
@@ -25,6 +25,11 @@ import (
 	"go.gazette.dev/core/auth"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
+	"go.gazette.dev/core/broker/stores"
+	"go.gazette.dev/core/broker/stores/azure"
+	"go.gazette.dev/core/broker/stores/fs"
+	"go.gazette.dev/core/broker/stores/gcs"
+	"go.gazette.dev/core/broker/stores/s3"
 	"go.gazette.dev/core/consumer"
 	pc "go.gazette.dev/core/consumer/protocol"
 	mbp "go.gazette.dev/core/mainboilerplate"
@@ -172,21 +177,37 @@ func (sc Cmd) Execute(args []string) error {
 	)
 	mbp.Must(err, "building Server instance")
 
-	// Arize avoidance of using signed URLs.
+	// Arize: use direct bucket access instead of signed URLs.
 	client.SkipSignedURLs = bc.Consumer.SkipSignedURLs
 
-	// If AWS credentials are provided, set them in the client.
-	if bc.Consumer.AWSAccessKeyIDPath != "" {
-		log.Info("reading AWS credentials from files")
-		AWSAccessKeyID, err := os.ReadFile(bc.Consumer.AWSAccessKeyIDPath)
-		if err != nil {
-			log.Fatalf("could not read aws access key ID secret from file: %v", err)
-		}
-		AWSSecretAccessKey, err := os.ReadFile(bc.Consumer.AWSSecretAccessKeyPath)
-		if err != nil {
-			log.Fatalf("could not read aws secret access key secret from file: %v", err)
-		}
-		client.S3Creds = credentials.NewStaticCredentials(string(AWSAccessKeyID), string(AWSSecretAccessKey), "")
+	if bc.Consumer.SkipSignedURLs {
+		// Register store providers only when using direct bucket access.
+		// These are used by OpenUnsignedFragmentURL in broker/client/reader.go.
+		// The store health checks are only enabled when we are not using signed URLs
+		// and OpenUnsignedFragmentURL is called.
+		log.Warn("registering store providers as not using signed URLs")
+		stores.RegisterProviders(map[string]stores.Constructor{
+			"azure":    azure.NewAccount,
+			"azure-ad": azure.NewAD,
+			"file":     fs.New,
+			"gs":       gcs.New,
+			"s3":       s3.New,
+		})
+		stores.DisableSignedUrls = true
+	}
+
+	// Load AWS credentials from file paths if both are configured.
+	if bc.Consumer.AWSAccessKeyIDPath != "" && bc.Consumer.AWSSecretAccessKeyPath != "" {
+		accessKeyID, err := os.ReadFile(bc.Consumer.AWSAccessKeyIDPath)
+		mbp.Must(err, "reading AWS access key ID from file")
+
+		secretAccessKey, err := os.ReadFile(bc.Consumer.AWSSecretAccessKeyPath)
+		mbp.Must(err, "reading AWS secret access key from file")
+
+		mbp.Must(os.Setenv("AWS_ACCESS_KEY_ID", strings.TrimSpace(string(accessKeyID))),
+			"setting AWS_ACCESS_KEY_ID environment variable")
+		mbp.Must(os.Setenv("AWS_SECRET_ACCESS_KEY", strings.TrimSpace(string(secretAccessKey))),
+			"setting AWS_SECRET_ACCESS_KEY environment variable")
 	}
 
 	if !bc.Diagnostics.Private {

@@ -8,8 +8,8 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"go.etcd.io/etcd/client/v3/concurrency"
 	"go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/client/v3/concurrency"
 	"go.gazette.dev/core/task"
 )
 
@@ -32,17 +32,30 @@ func Announce(etcd *clientv3.Client, key, value string, lease clientv3.LeaseID) 
 		var resp, err = etcd.Txn(context.Background()).
 			If(clientv3.Compare(clientv3.Version(key), "=", 0)).
 			Then(clientv3.OpPut(key, value, clientv3.WithLease(lease))).
+			Else(clientv3.OpGet(key)).
 			Commit()
 
-		if err == nil && resp.Succeeded == false {
-			err = fmt.Errorf("key exists")
-		}
-
 		if err == nil {
-			return &Announcement{
-				Key:      key,
-				Revision: resp.Header.Revision,
-				etcd:     etcd,
+			if resp.Succeeded {
+				// Key was created successfully
+				return &Announcement{
+					Key:      key,
+					Revision: resp.Header.Revision,
+					etcd:     etcd,
+				}
+			} else {
+				// Key exists, check if it's ours
+				var kv = resp.Responses[0].GetResponseRange().Kvs[0]
+				if clientv3.LeaseID(kv.Lease) == lease {
+					// This is our key from a previous attempt that succeeded
+					return &Announcement{
+						Key:      key,
+						Revision: kv.ModRevision,
+						etcd:     etcd,
+					}
+				}
+				// Key exists with different lease, will retry
+				err = fmt.Errorf("key exists with different lease")
 			}
 		}
 
@@ -85,14 +98,14 @@ type SessionArgs struct {
 }
 
 // StartSession starts an allocator session. It:
-//  * Validates the MemberSpec.
-//  * Establishes an Etcd lease which conveys "liveness" of this member to its peers.
-//  * Announces the MemberSpec under the lease.
-//  * Loads the KeySpace as-of the announcement revision.
-//  * Queues tasks to the *task.Group which:
-//    - Closes the Etcd lease on task.Group cancellation.
-//    - Monitors SignalCh and zeros the MemberSpec ItemLimit on its signal.
-//    - Runs the Allocate loop, cancelling the *task.Group on completion.
+//   - Validates the MemberSpec.
+//   - Establishes an Etcd lease which conveys "liveness" of this member to its peers.
+//   - Announces the MemberSpec under the lease.
+//   - Loads the KeySpace as-of the announcement revision.
+//   - Queues tasks to the *task.Group which:
+//   - Closes the Etcd lease on task.Group cancellation.
+//   - Monitors SignalCh and zeros the MemberSpec ItemLimit on its signal.
+//   - Runs the Allocate loop, cancelling the *task.Group on completion.
 func StartSession(args SessionArgs) error {
 	if err := args.Spec.Validate(); err != nil {
 		return errors.WithMessage(err, "spec.Validate")

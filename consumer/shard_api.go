@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -107,28 +108,33 @@ func ShardApply(ctx context.Context, claims pb.Claims, srv *Service, req *pc.App
 		return nil, err
 	}
 
-	// The Apply API is authorized exclusively through the "id" label.
-	var authorizeShard = func(claims *pb.Claims, shard pc.ShardID) error {
-		if !claims.Selector.Matches(pb.MustLabelSet("id", shard.String())) {
-			return status.Error(codes.Unauthenticated, fmt.Sprintf("not authorized to %s", shard))
-		}
-		return nil
-	}
 	var cmp []clientv3.Cmp
 	var ops []clientv3.Op
+	var scratch pb.LabelSet
 
 	for _, change := range req.Changes {
 		var key string
 
 		if change.Upsert != nil {
-			if err := authorizeShard(&claims, change.Upsert.Id); err != nil {
-				return nil, err
+			// For Upserts, authorize against the shard's labels plus meta-labels
+			scratch = change.Upsert.LabelSetExt(scratch)
+			if !claims.Selector.Matches(scratch) {
+				return nil, status.Error(codes.Unauthenticated, fmt.Sprintf("not authorized to %s", change.Upsert.Id))
 			}
 			key = allocator.ItemKey(s.KS, change.Upsert.Id.String())
 			ops = append(ops, clientv3.OpPut(key, change.Upsert.MarshalString()))
+
+			if change.PrimaryHints != nil {
+				var val, err = json.Marshal(change.PrimaryHints)
+				if err != nil {
+					return nil, errors.WithMessage(err, "json.Marshal(hints)")
+				}
+				ops = append(ops, clientv3.OpPut(change.Upsert.HintPrimaryKey(), string(val)))
+			}
 		} else {
-			if err := authorizeShard(&claims, change.Delete); err != nil {
-				return nil, err
+			// For Deletes, use id-only authorization
+			if !claims.Selector.Matches(pb.MustLabelSet("id", change.Delete.String())) {
+				return nil, status.Error(codes.Unauthenticated, fmt.Sprintf("not authorized to %s", change.Delete))
 			}
 			key = allocator.ItemKey(s.KS, change.Delete.String())
 			ops = append(ops, clientv3.OpDelete(key))
@@ -149,16 +155,16 @@ func ShardApply(ctx context.Context, claims pb.Claims, srv *Service, req *pc.App
 
 	var txnResp, err = srv.Etcd.Do(ctx, clientv3.OpTxn(cmp, ops, nil))
 	if err != nil {
-		// Pass.
+		return resp, err
 	} else if !txnResp.Txn().Succeeded {
 		resp.Status = pc.Status_ETCD_TRANSACTION_FAILED
 	} else if len(ops) != 0 {
 		// If we made changes, delay responding until we have read our own Etcd write.
 		s.KS.Mu.RLock()
-		err = s.KS.WaitForRevision(ctx, txnResp.Txn().Header.Revision)
+		err = s.KS.WaitForRevision(ctx, txnResp.Txn().Header.GetRevision())
 		s.KS.Mu.RUnlock()
 	}
-	resp.Header.Etcd.Revision = txnResp.Txn().Header.Revision
+	resp.Header.Etcd.Revision = txnResp.Txn().Header.GetRevision()
 	return resp, err
 }
 

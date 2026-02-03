@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	rocks "github.com/jgraettinger/gorocksdb"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	rocks "github.com/jgraettinger/gorocksdb"
 	"go.gazette.dev/core/broker/client"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/brokertest"
@@ -220,7 +220,8 @@ func TestPlayThenCancel(t *testing.T) {
 	defer r.teardown()
 
 	// Create a Context which will cancel itself after a delay.
-	var deadlineCtx, _ = context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond*10))
+	var deadlineCtx, cancel = context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond*10))
+	defer cancel()
 	// Blocks until |ctx| is cancelled.
 	var err = r.player.Play(deadlineCtx, recoverylog.FSMHints{Log: aRecoveryLog}, r.tmpdir, bk)
 	require.Equal(t, context.DeadlineExceeded, errors.Cause(err))
@@ -251,9 +252,9 @@ func TestCancelThenPlay(t *testing.T) {
 }
 
 // Models the typical lifetime of an observed rocks database:
-//  * Begin by reading from the most-recent available hints.
-//  * When ready, make the database "Live".
-//  * Perform new writes against the replica, which are recorded in the log.
+//   - Begin by reading from the most-recent available hints.
+//   - When ready, make the database "Live".
+//   - Perform new writes against the replica, which are recorded in the log.
 type testReplica struct {
 	client client.AsyncJournalClient
 
