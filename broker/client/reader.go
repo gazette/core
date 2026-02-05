@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/codecs"
 	pb "go.gazette.dev/core/broker/protocol"
 	"go.gazette.dev/core/broker/stores"
@@ -67,6 +68,7 @@ func NewReader(ctx context.Context, client pb.RoutedJournalClient, req pb.ReadRe
 
 // Read from the journal. If this is the first Read of the Reader, a Read RPC is started.
 func (r *Reader) Read(p []byte) (n int, err error) {
+	log.Warn("Reader.Read start")
 	// If we have an open direct reader of a persisted fragment, delegate to it.
 	if r.direct != nil {
 
@@ -76,6 +78,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 				if err = r.direct.Close(); err == nil {
 					n, err = 0, io.EOF
 				}
+				log.Warn("Reader.Read return 1")
 				return
 			} else if int64(len(p)) > remain {
 				p = p[:remain]
@@ -87,6 +90,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 		}
 		r.Request.Offset += int64(n)
 		r.counter.Add(float64(n))
+		log.Warn("Reader.Read return 2")
 		return
 	}
 
@@ -95,6 +99,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 		n = copy(p, r.Response.Content[d:])
 		r.Request.Offset += int64(n)
 		r.counter.Add(float64(n))
+		log.Warn("Reader.Read return 3")
 		return
 	}
 
@@ -116,6 +121,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 		} else {
 			err = mapGRPCCtxErr(r.ctx, err)
 		}
+		log.Warn("Reader.Read return 4")
 		return
 	}
 
@@ -168,10 +174,12 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 			// Recurse to read that closure, and _then_ return a final error.
 			n, err = r.Read(p)
 		}
+		log.Warn("Reader.Read return 5")
 		return
 
 	} else if err != io.EOF {
 		// We read an error _other_ than a graceful tear-down of the stream.
+		log.Warn("Reader.Read return 6")
 		return
 	}
 
@@ -179,17 +187,23 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 
 	// If the frame preceding EOF provided a fragment URL, open it directly.
 	if !r.Request.MetadataOnly && r.Response.Status == pb.Status_OK && r.Response.FragmentUrl != "" {
+		log.Warn("Reader.Read fragment url")
 		if SkipSignedURLs {
+			log.Warn("Reader.Read open unsigned fragment url")
 			if r.direct, err = OpenUnsignedFragmentURL(r.ctx, *r.Response.Fragment,
 				r.Request.Offset); err == nil {
+				log.Warn("Reader.Read open unsigned fragment url read")
 				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
 			}
 		} else {
+			log.Warn("Reader.Read open fragment url")
 			if r.direct, err = OpenFragmentURL(r.ctx, *r.Response.Fragment,
 				r.Request.Offset, r.Response.FragmentUrl); err == nil {
+				log.Warn("Reader.Read open fragment url read")
 				n, err = r.Read(p) // Recurse to attempt read against opened |r.direct|.
 			}
 		}
+		log.Warn("Reader.Read return 7")
 		return
 	}
 
@@ -214,6 +228,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	default:
 		err = errors.New(r.Response.Status.String())
 	}
+	log.Warn("Reader.Read return at end")
 	return
 }
 
