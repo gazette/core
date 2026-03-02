@@ -39,16 +39,17 @@ const iniFilename = "gazette.ini"
 var Config = new(struct {
 	Broker struct {
 		mbp.ServiceConfig
-		Limit             uint32        `long:"limit" env:"LIMIT" default:"1024" description:"Maximum number of Journals the broker will allocate"`
-		FileRoot          string        `long:"file-root" env:"FILE_ROOT" description:"Local path which roots file:// fragment stores (optional)"`
-		FileOnly          bool          `long:"file-only" env:"FILE_ONLY" description:"Use the local file:// store for all journal fragments, ignoring cloud bucket storage configuration (for example, S3)"`
-		MaxAppendRate     uint32        `long:"max-append-rate" env:"MAX_APPEND_RATE" default:"0" description:"Max rate (in bytes-per-sec) that any one journal may be appended to. If zero, there is no max rate"`
-		MaxReplication    uint32        `long:"max-replication" env:"MAX_REPLICATION" default:"9" description:"Maximum effective replication of any one journal, which upper-bounds its stated replication."`
-		MinAppendRate     uint32        `long:"min-append-rate" env:"MIN_APPEND_RATE" default:"65536" description:"Min rate (in bytes-per-sec) at which a client may stream Append RPC content. RPCs unable to sustain this rate are aborted"`
-		WatchDelay        time.Duration `long:"watch-delay" env:"WATCH_DELAY" default:"30ms" description:"Delay applied to the application of watched Etcd events. Larger values amortize the processing of fast-changing Etcd keys."`
-		AuthKeys          string        `long:"auth-keys" env:"AUTH_KEYS" description:"Whitespace or comma separated, base64-encoded keys used to sign (first key) and verify (all keys) Authorization tokens." json:"-"`
-		AutoSuspend       bool          `long:"auto-suspend" env:"AUTO_SUSPEND" description:"Automatically suspend journals which have persisted all fragments"`
-		DisableSignedUrls bool          `long:"disable-signed-urls" env:"DISABLE_SIGNED_URLS" description:"When a signed URL is requested, return an unsigned URL instead. This is useful when clients do not require the signing."`
+		Limit                          uint32        `long:"limit" env:"LIMIT" default:"1024" description:"Maximum number of Journals the broker will allocate"`
+		FileRoot                       string        `long:"file-root" env:"FILE_ROOT" description:"Local path which roots file:// fragment stores (optional)"`
+		FileOnly                       bool          `long:"file-only" env:"FILE_ONLY" description:"Use the local file:// store for all journal fragments, ignoring cloud bucket storage configuration (for example, S3)"`
+		MaxAppendRate                  uint32        `long:"max-append-rate" env:"MAX_APPEND_RATE" default:"0" description:"Max rate (in bytes-per-sec) that any one journal may be appended to. If zero, there is no max rate"`
+		MaxReplication                 uint32        `long:"max-replication" env:"MAX_REPLICATION" default:"9" description:"Maximum effective replication of any one journal, which upper-bounds its stated replication."`
+		MinAppendRate                  uint32        `long:"min-append-rate" env:"MIN_APPEND_RATE" default:"65536" description:"Min rate (in bytes-per-sec) at which a client may stream Append RPC content. RPCs unable to sustain this rate are aborted"`
+		WatchDelay                     time.Duration `long:"watch-delay" env:"WATCH_DELAY" default:"30ms" description:"Delay applied to the application of watched Etcd events. Larger values amortize the processing of fast-changing Etcd keys."`
+		AuthKeys                       string        `long:"auth-keys" env:"AUTH_KEYS" description:"Whitespace or comma separated, base64-encoded keys used to sign (first key) and verify (all keys) Authorization tokens." json:"-"`
+		AutoSuspend                    bool          `long:"auto-suspend" env:"AUTO_SUSPEND" description:"Automatically suspend journals which have persisted all fragments"`
+		DisableSignedUrls              bool          `long:"disable-signed-urls" env:"DISABLE_SIGNED_URLS" description:"When a signed URL is requested, return an unsigned URL instead. This is useful when clients do not require the signing."`
+		ForceStoreHealthCheckToHealthy bool          `long:"force-store-health-check-to-healthy" env:"FORCE_STORE_HEALTH_CHECK_TO_HEALTHY" description:"Force the health check of fragment stores to healthy"`
 	} `group:"Broker" namespace:"broker" env-namespace:"BROKER"`
 
 	Etcd struct {
@@ -151,6 +152,7 @@ func (cmdServe) Execute(args []string) error {
 	broker.MinAppendRate = int64(Config.Broker.MinAppendRate)
 	pb.MaxReplication = int32(Config.Broker.MaxReplication)
 	stores.DisableSignedUrls = Config.Broker.DisableSignedUrls
+	stores.ForceStoreHealthCheckToHealthy = Config.Broker.ForceStoreHealthCheckToHealthy
 
 	var (
 		lo   = pb.NewAuthJournalClient(pb.NewJournalClient(srv.GRPCLoopback), authorizer)

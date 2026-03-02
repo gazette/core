@@ -38,7 +38,7 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version-file: 'go.mod'
-      - run: sudo apt install -y protobuf-compiler librocksdb-dev libsqlite3-dev etcd-server
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler librocksdb-dev libsqlite3-dev etcd-server 
       - run: |
           sha=${{ github.sha }}
           if [[ '${{ github.ref }}' == 'refs/heads/arize' ]]; then

@@ -92,13 +92,14 @@ type Config interface {
 type BaseConfig struct {
 	Consumer struct {
 		mbp.ServiceConfig
-		Limit                  uint32        `long:"limit" env:"LIMIT" default:"32" description:"Maximum number of Shards this consumer process will allocate"`
-		MaxHotStandbys         uint32        `long:"max-hot-standbys" env:"MAX_HOT_STANDBYS" default:"3" description:"Maximum effective hot standbys of any one shard, which upper-bounds its stated hot-standbys."`
-		WatchDelay             time.Duration `long:"watch-delay" env:"WATCH_DELAY" default:"30ms" description:"Delay applied to the application of watched Etcd events. Larger values amortize the processing of fast-changing Etcd keys."`
-		SkipSignedURLs         bool          `long:"skip-signed-urls" env:"SKIP_SIGNED_URLS" description:"When a signed URL is received, use fragment info instead to retrieve data with auth header. This is useful when clients do not wish/require the signing."`
-		AuthKeys               string        `long:"auth-keys" env:"AUTH_KEYS" description:"Whitespace or comma separated, base64-encoded keys used to sign (first key) and verify (all keys) Authorization tokens." json:"-"`
-		AWSAccessKeyIDPath     string        `long:"aws-access-key-id-path" env:"AWS_ACCESS_KEY_ID_PATH" default:"" description:"file path to the aws access key id secret"`
-		AWSSecretAccessKeyPath string        `long:"aws-secret-access-key-path" env:"AWS_SECRET_ACCESS_KEY_PATH" default:"" description:"file path to the aws secret access key secret"`
+		Limit                          uint32        `long:"limit" env:"LIMIT" default:"32" description:"Maximum number of Shards this consumer process will allocate"`
+		MaxHotStandbys                 uint32        `long:"max-hot-standbys" env:"MAX_HOT_STANDBYS" default:"3" description:"Maximum effective hot standbys of any one shard, which upper-bounds its stated hot-standbys."`
+		WatchDelay                     time.Duration `long:"watch-delay" env:"WATCH_DELAY" default:"30ms" description:"Delay applied to the application of watched Etcd events. Larger values amortize the processing of fast-changing Etcd keys."`
+		SkipSignedURLs                 bool          `long:"skip-signed-urls" env:"SKIP_SIGNED_URLS" description:"When a signed URL is received, use fragment info instead to retrieve data with auth header. This is useful when clients do not wish/require the signing."`
+		AuthKeys                       string        `long:"auth-keys" env:"AUTH_KEYS" description:"Whitespace or comma separated, base64-encoded keys used to sign (first key) and verify (all keys) Authorization tokens." json:"-"`
+		AWSAccessKeyIDPath             string        `long:"aws-access-key-id-path" env:"AWS_ACCESS_KEY_ID_PATH" default:"" description:"file path to the aws access key id secret"`
+		AWSSecretAccessKeyPath         string        `long:"aws-secret-access-key-path" env:"AWS_SECRET_ACCESS_KEY_PATH" default:"" description:"file path to the aws secret access key secret"`
+		ForceStoreHealthCheckToHealthy bool          `long:"force-store-health-check-to-healthy" env:"FORCE_STORE_HEALTH_CHECK_TO_HEALTHY" description:"Force the health check of fragment stores to healthy"`
 	} `group:"Consumer" namespace:"consumer" env-namespace:"CONSUMER"`
 
 	Broker struct {
@@ -194,6 +195,10 @@ func (sc Cmd) Execute(args []string) error {
 			"s3":       s3.New,
 		})
 		stores.DisableSignedUrls = true
+	}
+
+	if bc.Consumer.ForceStoreHealthCheckToHealthy {
+		stores.ForceStoreHealthCheckToHealthy = true
 	}
 
 	// Load AWS credentials from file paths if both are configured.
