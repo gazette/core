@@ -49,11 +49,16 @@ func (m *BrokerSpec) MarshalString() string {
 	return string(d)
 }
 
-// ZeroLimit zeros the BrokerSpec JournalLimit.
-func (m *BrokerSpec) ZeroLimit() { m.JournalLimit = 0 }
-
 // v3_allocator.MemberValue implementation.
 func (m *BrokerSpec) ItemLimit() int { return int(m.JournalLimit) }
+
+// IsExiting returns true if this broker has been signaled to exit.
+func (m *BrokerSpec) IsExiting() bool { return m.Exiting }
+
+// SetExiting marks this BrokerSpec as exiting.
+// TODO(whb): Zero'ing JournalLimit is for backward compatibility; remove once
+// deployment is complete.
+func (m *BrokerSpec) SetExiting() { m.Exiting = true; m.JournalLimit = 0 }
 
 const (
 	minZoneLen            = 1
