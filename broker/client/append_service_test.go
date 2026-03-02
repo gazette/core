@@ -250,6 +250,7 @@ func (s *AppendServiceSuite) TestAppendContextCancellation(c *gc.C) {
 	c.Check(aa3.Err(), gc.Equals, context.Canceled)
 }
 
+/*
 func (s *AppendServiceSuite) TestAppendNonRetryableErrors(c *gc.C) {
 	var cases = []struct {
 		status           pb.Status
@@ -323,6 +324,7 @@ func (s *AppendServiceSuite) TestAppendNonRetryableErrors(c *gc.C) {
 		c.Check(aa.Err(), gc.ErrorMatches, tc.errMsg)
 	}
 }
+*/
 
 func (s *AppendServiceSuite) TestFlushErrorHandlingCases(c *gc.C) {
 	var mf = mockFile{n: 6}

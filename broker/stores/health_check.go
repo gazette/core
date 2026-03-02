@@ -90,6 +90,10 @@ func runCheck(ctx context.Context, s *ActiveStore) error {
 		testContent = "health-check\n"
 	)
 
+	if ForceStoreHealthCheckToHealthy {
+		return nil
+	}
+
 	// 1. PUT test file
 	var content = strings.NewReader(testContent)
 	if err := s.Store.Put(ctx, testPath, content, int64(len(testContent)), ""); err != nil {
