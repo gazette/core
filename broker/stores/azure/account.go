@@ -31,7 +31,8 @@ type accountStore struct {
 //   - Else if AZURE_ACCOUNT_NAME, AZURE_TENANT_ID, and both AZURE_CLIENT_ID and AZURE_CLIENT_SECRET are set: client secret.
 //   - Else if AZURE_ACCOUNT_NAME and AZURE_TENANT_ID are set: DefaultAzureCredential (workload identity, managed identity, Azure CLI).
 //
-// So existing customers keep using azure:// with account key; migrating to managed identity only requires setting AZURE_TENANT_ID and removing the key (and optionally AZURE_CLIENT_ID for workload identity).
+// Existing customer can keep using azure:// with account key; migrating to managed identity requires setting AZURE_TENANT_ID and removing the key.
+// AZURE_CLIENT_SECRET is not required for managed identity but can be used for client secret authentication.
 func NewAccount(ep *url.URL) (stores.Store, error) {
 	var args StoreQueryArgs
 
