@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -37,9 +36,6 @@ type adStore struct {
 }
 
 // NewAD creates a new Azure AD authenticated Store from the provided URL.
-// Authentication: if AZURE_CLIENT_ID and AZURE_CLIENT_SECRET are both set, client secret is used.
-// Otherwise DefaultAzureCredential is used, which supports workload identity (e.g. in Kubernetes
-// with AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE), managed identity, and Azure CLI.
 func NewAD(ep *url.URL) (stores.Store, error) {
 	var args StoreQueryArgs
 
@@ -57,38 +53,29 @@ func NewAD(ep *url.URL) (stores.Store, error) {
 	var container = path[1]
 	var prefix = strings.Join(path[2:], "/")
 
+	var clientID = os.Getenv("AZURE_CLIENT_ID")
+	var clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
+
+	if clientID == "" || clientSecret == "" {
+		return nil, fmt.Errorf("AZURE_CLIENT_ID and AZURE_CLIENT_SECRET must be set for azure-ad:// URLs")
+	}
+
 	// arize change to support china cloud
 	blobDomain := os.Getenv("AZURE_BLOB_DOMAIN")
 	if blobDomain == "" {
 		blobDomain = "blob.core.windows.net"
 	}
 
-	var credentials azcore.TokenCredential
-	var err error
-	var clientID = os.Getenv("AZURE_CLIENT_ID")
-	var clientSecret = os.Getenv("AZURE_CLIENT_SECRET")
-	if clientID != "" && clientSecret != "" {
-		credentials, err = azidentity.NewClientSecretCredential(
-			tenantID,
-			clientID,
-			clientSecret,
-			&azidentity.ClientSecretCredentialOptions{
-				DisableInstanceDiscovery: true,
-			},
-		)
-	} else {
-		credentials, err = azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
-			TenantID:                 tenantID,
+	var credentials, err = azidentity.NewClientSecretCredential(
+		tenantID,
+		clientID,
+		clientSecret,
+		&azidentity.ClientSecretCredentialOptions{
 			DisableInstanceDiscovery: true,
-		})
-	}
+		},
+	)
 	if err != nil {
 		return nil, err
-	}
-
-	var authMethod = "workload identity / default chain"
-	if clientID != "" && clientSecret != "" {
-		authMethod = "client secret"
 	}
 
 	var refreshFn = func(credential azblob.TokenCredential) time.Duration {
@@ -139,7 +126,6 @@ func NewAD(ep *url.URL) (stores.Store, error) {
 		"blobDomain":     blobDomain,
 		"container":      container,
 		"prefix":         prefix,
-		"auth":           authMethod,
 	}).Info("constructed new Azure AD storage client")
 
 	return store, nil

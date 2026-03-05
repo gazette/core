@@ -239,8 +239,8 @@ func isIPv6(s string) bool {
 	if ip == nil {
 		return false
 	}
-	// Check if it's IPv6 by seeing if it contains a colon
-	return strings.Contains(s, ":")
+	// Only IPv6 addresses may be wrapped in brackets in URLs; IPv4 must not be.
+	return ip.To4() == nil
 }
 
 func main() {
