@@ -275,10 +275,21 @@ func completeRecovery(s *shard) (_ pc.Checkpoint, err error) {
 		// completing InjectHandoff will cause appends of this Recorder to fail.
 		s.recovery.recorder = recoverylog.NewRecorder(
 			s.recovery.log, recovered.FSM, author, recovered.Dir, s.ajc)
+	} else {
+		// Without a recovery log there is no player to wait on, but we must
+		// still check for context cancellation before creating a store.
+		// This prevents a cancelled shard (e.g. from a delete-then-create
+		// race in updateLocalShards) from proceeding into NewStore.
+		select {
+		case <-s.ctx.Done():
+			err = s.ctx.Err()
+			return
+		default:
+		}
 	}
 
 	if s.store, err = s.svc.App.NewStore(s, s.recovery.recorder); err != nil {
-		if s.store == nil {
+		if s.store == nil && s.recovery.recorder != nil {
 			// s.store is nil, ergo its Destroy() will not be invoked by
 			// waitAndTearDown(), and we are responsible for best-effort
 			// cleanup of the playback directory now.
