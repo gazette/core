@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,10 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/gorilla/schema"
 	log "github.com/sirupsen/logrus"
 	"go.gazette.dev/core/broker/stores"
@@ -31,10 +34,10 @@ type StoreQueryArgs struct {
 	// Endpoint to connect to S3. If empty, the default S3 service is used.
 	Endpoint string
 	// ACL applied when persisting new fragments. By default, this is
-	// s3.ObjectCannedACLBucketOwnerFullControl.
+	// s3types.ObjectCannedACLBucketOwnerFullControl.
 	ACL string
 	// Storage class applied when persisting new fragments. By default,
-	// this is s3.ObjectStorageClassStandard.
+	// this is s3types.ObjectStorageClassStandard.
 	StorageClass string
 	// SSE is the server-side encryption type to be applied (eg, "AES256").
 	// By default, encryption is not used.
@@ -50,8 +53,9 @@ type StoreQueryArgs struct {
 type store struct {
 	bucket string
 	prefix string
+	region string
 	args   StoreQueryArgs
-	client *s3.S3
+	client *s3.Client
 }
 
 // New creates a new S3 Store from the provided URL.
@@ -64,75 +68,103 @@ func New(ep *url.URL) (stores.Store, error) {
 	// enforces that URL Paths end in '/'.
 	var bucket, prefix = ep.Host, ep.Path[1:]
 
-	var awsConfig = aws.NewConfig()
-	awsConfig.WithCredentialsChainVerboseErrors(true)
-
-	if args.Region != "" {
-		awsConfig.WithRegion(args.Region)
+	var loadOpts []func(*config.LoadOptions) error
+	if args.Profile != "" {
+		loadOpts = append(loadOpts, config.WithSharedConfigProfile(args.Profile))
 	}
-
-	if args.Endpoint != "" {
-		awsConfig.WithEndpoint(args.Endpoint)
-		// We must force path style because bucket-named virtual hosts
-		// are not compatible with explicit endpoints.
-		awsConfig.WithS3ForcePathStyle(true)
-	} else {
+	if args.Region != "" {
+		loadOpts = append(loadOpts, config.WithRegion(args.Region))
+	}
+	if args.Endpoint == "" {
 		// Real S3. Override the default http.Transport's behavior of inserting
 		// "Accept-Encoding: gzip" and transparently decompressing client-side.
-		awsConfig.WithHTTPClient(&http.Client{
+		loadOpts = append(loadOpts, config.WithHTTPClient(&http.Client{
 			Transport: &http.Transport{DisableCompression: true},
-		})
+		}))
 	}
 
-	awsSession, err := session.NewSessionWithOptions(session.Options{
-		Profile: args.Profile,
-	})
+	cfg, err := config.LoadDefaultConfig(context.Background(), loadOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("constructing S3 session: %s", err)
+		return nil, fmt.Errorf("constructing AWS config: %w", err)
 	}
 
-	creds, err := awsSession.Config.Credentials.Get()
+	creds, err := cfg.Credentials.Retrieve(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("fetching AWS credentials for profile %q: %s", args.Profile, err)
+		return nil, fmt.Errorf("fetching AWS credentials for profile %q: %w", args.Profile, err)
 	}
 
 	// The aws sdk will always just return an error if this Region is not set, even if
 	// the Endpoint was provided explicitly. It's important to fail-fast in this case.
-	if awsSession.Config.Region == nil || *awsSession.Config.Region == "" {
+	if cfg.Region == "" {
 		return nil, fmt.Errorf("missing AWS region configuration for profile %q", args.Profile)
 	}
 
 	log.WithFields(log.Fields{
 		"endpoint":     args.Endpoint,
 		"profile":      args.Profile,
-		"region":       *awsSession.Config.Region,
+		"region":       cfg.Region,
 		"keyID":        creds.AccessKeyID,
-		"providerName": creds.ProviderName,
-	}).Info("constructed new aws.Session")
+		"providerName": creds.Source,
+	}).Info("constructed new AWS config")
 
 	// arize fix for sts:AssumeRoleWithWebIdentity, #16048
-	var client = s3.New(awsSession, awsConfig)
+	var client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+		if args.Endpoint != "" {
+			o.BaseEndpoint = aws.String(args.Endpoint)
+			// We must force path style because bucket-named virtual hosts
+			// are not compatible with explicit endpoints.
+			o.UsePathStyle = true
+		}
+		// Leave o.UseARNRegion = true and o.DisableMultiRegionAccessPoints = false
+		// at v2 defaults so bucket values that are S3 access-point or MRAP
+		// ARNs resolve to their correct endpoint and use SigV4A signing.
+	})
 
 	return &store{
 		bucket: bucket,
 		prefix: prefix,
+		region: cfg.Region,
 		args:   args,
 		client: client,
 	}, nil
 }
 
 func (s *store) SignGet(path string, d time.Duration) (string, error) {
-	var getObj = s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(s.args.RewritePath(s.prefix, path)),
-	}
-	var req, _ = s.client.GetObjectRequest(&getObj)
+	var key = s.args.RewritePath(s.prefix, path)
 
 	if stores.DisableSignedUrls {
-		return req.HTTPRequest.URL.String(), nil
-	} else {
-		return req.Presign(d)
+		// S3 access-point and MRAP ARNs (resolved by the SDK to a special
+		// endpoint and requiring SigV4A signing) have no valid unsigned URL
+		// form. Fail loudly rather than producing a URL that will 403 at
+		// fetch time.
+		if strings.HasPrefix(s.bucket, "arn:") &&
+			strings.Contains(s.bucket, ":s3") &&
+			strings.Contains(s.bucket, ":accesspoint/") {
+			return "", fmt.Errorf(
+				"broker.disable-signed-urls is incompatible with S3 access point bucket %q",
+				s.bucket)
+		}
+		if s.args.Endpoint != "" {
+			// Path-style URL matches what the v1 SDK produced under
+			// S3ForcePathStyle and what callers with an explicit endpoint expect.
+			return fmt.Sprintf("%s/%s/%s",
+				strings.TrimRight(s.args.Endpoint, "/"), s.bucket, key), nil
+		}
+		// Virtual-host style for real S3 with no explicit endpoint.
+		return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s",
+			s.bucket, s.region, key), nil
 	}
+
+	var getObj = s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}
+	var presigner = s3.NewPresignClient(s.client)
+	out, err := presigner.PresignGetObject(context.Background(), &getObj, s3.WithPresignExpires(d))
+	if err != nil {
+		return "", err
+	}
+	return out.URL, nil
 }
 
 func (s *store) Exists(ctx context.Context, path string) (bool, error) {
@@ -140,11 +172,13 @@ func (s *store) Exists(ctx context.Context, path string) (bool, error) {
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.args.RewritePath(s.prefix, path)),
 	}
-	if _, err := s.client.HeadObjectWithContext(ctx, &headObj); err == nil {
+	if _, err := s.client.HeadObject(ctx, &headObj); err == nil {
 		return true, nil
-	} else if awsErr, ok := err.(awserr.RequestFailure); ok && awsErr.StatusCode() == http.StatusNotFound {
-		return false, nil
 	} else {
+		var respErr *awshttp.ResponseError
+		if errors.As(err, &respErr) && respErr.HTTPStatusCode() == http.StatusNotFound {
+			return false, nil
+		}
 		return false, err
 	}
 }
@@ -154,12 +188,11 @@ func (s *store) Get(ctx context.Context, path string) (io.ReadCloser, error) {
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.args.RewritePath(s.prefix, path)),
 	}
-	var resp *s3.GetObjectOutput
-	var err error
-	if resp, err = s.client.GetObjectWithContext(ctx, &getObj); err != nil {
+	var resp, err = s.client.GetObject(ctx, &getObj)
+	if err != nil {
 		return nil, err
 	}
-	return resp.Body, err
+	return resp.Body, nil
 }
 
 func (s *store) Put(ctx context.Context, path string, content io.ReaderAt, contentLength int64, contentEncoding string) error {
@@ -171,13 +204,13 @@ func (s *store) Put(ctx context.Context, path string, content io.ReaderAt, conte
 	}
 
 	if s.args.ACL != "" {
-		putObj.ACL = aws.String(s.args.ACL)
+		putObj.ACL = s3types.ObjectCannedACL(s.args.ACL)
 	}
 	if s.args.StorageClass != "" {
-		putObj.StorageClass = aws.String(s.args.StorageClass)
+		putObj.StorageClass = s3types.StorageClass(s.args.StorageClass)
 	}
 	if s.args.SSE != "" {
-		putObj.ServerSideEncryption = aws.String(s.args.SSE)
+		putObj.ServerSideEncryption = s3types.ServerSideEncryption(s.args.SSE)
 	}
 	if s.args.SSEKMSKeyId != "" {
 		putObj.SSEKMSKeyId = aws.String(s.args.SSEKMSKeyId)
@@ -186,7 +219,7 @@ func (s *store) Put(ctx context.Context, path string, content io.ReaderAt, conte
 		putObj.ContentEncoding = aws.String(contentEncoding)
 	}
 
-	_, err := s.client.PutObjectWithContext(ctx, &putObj)
+	_, err := s.client.PutObject(ctx, &putObj)
 	return err
 }
 
@@ -196,25 +229,24 @@ func (s *store) List(ctx context.Context, prefix string, callback func(path stri
 		Bucket: aws.String(s.bucket),
 		Prefix: aws.String(prefix),
 	}
-	var listErr error
-	err := s.client.ListObjectsV2PagesWithContext(ctx, &q, func(objs *s3.ListObjectsV2Output, _ bool) bool {
-		for _, obj := range objs.Contents {
+	var paginator = s3.NewListObjectsV2Paginator(s.client, &q)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return err
+		}
+		for _, obj := range page.Contents {
 			if strings.HasSuffix(*obj.Key, "/") {
 				continue // Ignore directory-like objects
 			}
 			// Return path relative to the listing prefix
 			var relPath = strings.TrimPrefix(*obj.Key, prefix)
 			if err := callback(relPath, *obj.LastModified); err != nil {
-				listErr = err
-				return false // Stop pagination
+				return err
 			}
 		}
-		return true // Continue to next page
-	})
-	if listErr != nil {
-		return listErr
 	}
-	return err
+	return nil
 }
 
 func (s *store) Remove(ctx context.Context, path string) error {
@@ -223,23 +255,23 @@ func (s *store) Remove(ctx context.Context, path string) error {
 		Key:    aws.String(s.args.RewritePath(s.prefix, path)),
 	}
 
-	_, err := s.client.DeleteObjectWithContext(ctx, &deleteObj)
+	_, err := s.client.DeleteObject(ctx, &deleteObj)
 	return err
 }
 
 func (s *store) IsAuthError(err error) bool {
-	if awsErr, ok := err.(awserr.Error); ok {
-		switch awsErr.Code() {
-		case s3.ErrCodeNoSuchBucket:
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NoSuchBucket":
 			return true
 		case s3ErrCodeAccessDenied:
 			return true
 		}
 	}
-	if awsErr, ok := err.(awserr.RequestFailure); ok {
-		if awsErr.StatusCode() == http.StatusForbidden {
-			return true
-		}
+	var respErr *awshttp.ResponseError
+	if errors.As(err, &respErr) && respErr.HTTPStatusCode() == http.StatusForbidden {
+		return true
 	}
 	return false
 }
