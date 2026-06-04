@@ -51,11 +51,13 @@ type StoreQueryArgs struct {
 }
 
 type store struct {
-	bucket string
-	prefix string
-	region string
-	args   StoreQueryArgs
-	client *s3.Client
+	bucket   string
+	prefix   string
+	region   string
+	args     StoreQueryArgs
+	client   *s3.Client
+	presign  *s3.PresignClient
+	resolver s3.EndpointResolverV2
 }
 
 // New creates a new S3 Store from the provided URL.
@@ -121,11 +123,13 @@ func New(ep *url.URL) (stores.Store, error) {
 	})
 
 	return &store{
-		bucket: bucket,
-		prefix: prefix,
-		region: cfg.Region,
-		args:   args,
-		client: client,
+		bucket:   bucket,
+		prefix:   prefix,
+		region:   cfg.Region,
+		args:     args,
+		client:   client,
+		presign:  s3.NewPresignClient(client),
+		resolver: s3.NewDefaultEndpointResolverV2(),
 	}, nil
 }
 
@@ -133,38 +137,36 @@ func (s *store) SignGet(path string, d time.Duration) (string, error) {
 	var key = s.args.RewritePath(s.prefix, path)
 
 	if stores.DisableSignedUrls {
-		// S3 access-point and MRAP ARNs (resolved by the SDK to a special
-		// endpoint and requiring SigV4A signing) have no valid unsigned URL
-		// form. Fail loudly rather than producing a URL that will 403 at
-		// fetch time.
-		if strings.HasPrefix(s.bucket, "arn:") &&
-			strings.Contains(s.bucket, ":s3") &&
-			strings.Contains(s.bucket, ":accesspoint/") {
-			return "", fmt.Errorf(
-				"broker.disable-signed-urls is incompatible with S3 access point bucket %q",
-				s.bucket)
+		// Resolve the bucket endpoint via the SDK (honoring a custom endpoint,
+		// path-style, and ARN/MRAP routing) and append the object key ourselves.
+		// This yields an unsigned URL without retrieving credentials or signing.
+		var params = s3.EndpointParameters{
+			Bucket: aws.String(s.bucket),
+			Region: aws.String(s.region),
 		}
 		if s.args.Endpoint != "" {
-			// Path-style URL matches what the v1 SDK produced under
-			// S3ForcePathStyle and what callers with an explicit endpoint expect.
-			return fmt.Sprintf("%s/%s/%s",
-				strings.TrimRight(s.args.Endpoint, "/"), s.bucket, key), nil
+			params.Endpoint = aws.String(s.args.Endpoint)
+			params.ForcePathStyle = aws.Bool(true)
 		}
-		// Virtual-host style for real S3 with no explicit endpoint.
-		return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s",
-			s.bucket, s.region, key), nil
+		var endpoint, err = s.resolver.ResolveEndpoint(context.Background(), params)
+		if err != nil {
+			return "", err
+		}
+		var unsignedUrl = endpoint.URI
+		unsignedUrl.Path = strings.TrimRight(unsignedUrl.Path, "/") + "/" + key
+		return unsignedUrl.String(), nil
+	} else {
+		var getObj = s3.GetObjectInput{
+			Bucket: aws.String(s.bucket),
+			Key:    aws.String(key),
+		}
+		var req, err = s.presign.PresignGetObject(
+			context.Background(), &getObj, s3.WithPresignExpires(d))
+		if err != nil {
+			return "", err
+		}
+		return req.URL, nil
 	}
-
-	var getObj = s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
-	}
-	var presigner = s3.NewPresignClient(s.client)
-	out, err := presigner.PresignGetObject(context.Background(), &getObj, s3.WithPresignExpires(d))
-	if err != nil {
-		return "", err
-	}
-	return out.URL, nil
 }
 
 func (s *store) Exists(ctx context.Context, path string) (bool, error) {
