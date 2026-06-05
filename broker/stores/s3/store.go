@@ -58,6 +58,10 @@ type store struct {
 	client   *s3.Client
 	presign  *s3.PresignClient
 	resolver s3.EndpointResolverV2
+	// endpointParams mirrors the toggles the live client resolved, so
+	// the unsigned-URL branch in SignGet doesn't drift on env-driven
+	// settings (FIPS, dual-stack, accelerate, ARN region, MRAP).
+	endpointParams s3.EndpointParameters
 }
 
 // New creates a new S3 Store from the provided URL.
@@ -110,6 +114,7 @@ func New(ep *url.URL) (stores.Store, error) {
 	}).Info("constructed new AWS config")
 
 	// arize fix for sts:AssumeRoleWithWebIdentity, #16048
+	var endpointParams s3.EndpointParameters
 	var client = s3.NewFromConfig(cfg, func(o *s3.Options) {
 		if args.Endpoint != "" {
 			o.BaseEndpoint = aws.String(args.Endpoint)
@@ -120,16 +125,34 @@ func New(ep *url.URL) (stores.Store, error) {
 		// Leave o.UseARNRegion = true and o.DisableMultiRegionAccessPoints = false
 		// at v2 defaults so bucket values that are S3 access-point or MRAP
 		// ARNs resolve to their correct endpoint and use SigV4A signing.
+
+		// Snapshot AFTER the v2 SDK's resolve*() functions have populated
+		// o from cfg + env vars + shared config. Bucket is per-call.
+		endpointParams = s3.EndpointParameters{
+			Region:                         aws.String(o.Region),
+			Endpoint:                       o.BaseEndpoint,
+			ForcePathStyle:                 aws.Bool(o.UsePathStyle),
+			Accelerate:                     aws.Bool(o.UseAccelerate),
+			UseArnRegion:                   aws.Bool(o.UseARNRegion),
+			DisableMultiRegionAccessPoints: aws.Bool(o.DisableMultiRegionAccessPoints),
+		}
+		if o.EndpointOptions.UseFIPSEndpoint == aws.FIPSEndpointStateEnabled {
+			endpointParams.UseFIPS = aws.Bool(true)
+		}
+		if o.EndpointOptions.UseDualStackEndpoint == aws.DualStackEndpointStateEnabled {
+			endpointParams.UseDualStack = aws.Bool(true)
+		}
 	})
 
 	return &store{
-		bucket:   bucket,
-		prefix:   prefix,
-		region:   cfg.Region,
-		args:     args,
-		client:   client,
-		presign:  s3.NewPresignClient(client),
-		resolver: s3.NewDefaultEndpointResolverV2(),
+		bucket:         bucket,
+		prefix:         prefix,
+		region:         cfg.Region,
+		args:           args,
+		client:         client,
+		presign:        s3.NewPresignClient(client),
+		resolver:       s3.NewDefaultEndpointResolverV2(),
+		endpointParams: endpointParams,
 	}, nil
 }
 
@@ -140,20 +163,14 @@ func (s *store) SignGet(path string, d time.Duration) (string, error) {
 		// Resolve the bucket endpoint via the SDK (honoring a custom endpoint,
 		// path-style, and ARN/MRAP routing) and append the object key ourselves.
 		// This yields an unsigned URL without retrieving credentials or signing.
-		var params = s3.EndpointParameters{
-			Bucket: aws.String(s.bucket),
-			Region: aws.String(s.region),
-		}
-		if s.args.Endpoint != "" {
-			params.Endpoint = aws.String(s.args.Endpoint)
-			params.ForcePathStyle = aws.Bool(true)
-		}
+		var params = s.endpointParams // value copy
+		params.Bucket = aws.String(s.bucket)
+
 		var endpoint, err = s.resolver.ResolveEndpoint(context.Background(), params)
 		if err != nil {
 			return "", err
 		}
-		var unsignedUrl = endpoint.URI
-		unsignedUrl.Path = strings.TrimRight(unsignedUrl.Path, "/") + "/" + key
+		var unsignedUrl = endpoint.URI.JoinPath(key)
 		return unsignedUrl.String(), nil
 	} else {
 		var getObj = s3.GetObjectInput{
@@ -203,6 +220,7 @@ func (s *store) Put(ctx context.Context, path string, content io.ReaderAt, conte
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.args.RewritePath(s.prefix, path)),
 		Body:   io.NewSectionReader(content, 0, contentLength),
+		ContentLength: aws.Int64(contentLength),
 	}
 
 	if s.args.ACL != "" {
