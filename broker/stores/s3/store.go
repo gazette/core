@@ -118,9 +118,12 @@ func New(ep *url.URL) (stores.Store, error) {
 	var client = s3.NewFromConfig(cfg, func(o *s3.Options) {
 		if args.Endpoint != "" {
 			o.BaseEndpoint = aws.String(args.Endpoint)
-			// We must force path style because bucket-named virtual hosts
-			// are not compatible with explicit endpoints.
-			o.UsePathStyle = true
+			// Path-style addressing is required by S3-compatible
+			// stores (MinIO, Ceph, OCI, etc.), but the AWS SDK rejects it when the bucket is
+			// an Access Point / Multi-Region Access Point (MRAP) ARN with "Path-style
+			// addressing cannot be used with ARN buckets" — those must use virtual-hosted
+			// addressing. Returns false only for ARN-identified buckets.
+			o.UsePathStyle = !strings.HasPrefix(bucket, "arn:aws:s3")
 		}
 		// Leave o.UseARNRegion = true and o.DisableMultiRegionAccessPoints = false
 		// at v2 defaults so bucket values that are S3 access-point or MRAP
