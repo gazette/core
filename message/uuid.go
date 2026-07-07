@@ -162,6 +162,14 @@ const (
 	// the progress of the furthest checkpoint ever achieved.
 	Flag_ACK_TXN Flags = 0x2
 
+	// Flag_CONTROL marks the message as an application control message: an
+	// out-of-band metadata event which carries no content of its own. It
+	// occupies bit 2 and is orthogonal to the transaction semantics in the
+	// low two bits: the Sequencer masks Flag_CONTROL off and sequences the
+	// message by its underlying Flag_OUTSIDE_TXN / Flag_CONTINUE_TXN /
+	// Flag_ACK_TXN, while consumers inspect the retained bit to recognize it.
+	Flag_CONTROL Flags = 0x4
+
 	// g1582ns100 is the time interval between 15 Oct 1582 (RFC 4122)
 	// and 1 Jan 1970 (Unix epoch), in units of 100 nanoseconds.
 	g1582ns100 = 122192928000000000
@@ -169,14 +177,19 @@ const (
 
 // String returns a string representation of the Flags value.
 func (f Flags) String() string {
-	switch f {
+	var s string
+	switch f &^ Flag_CONTROL {
 	case Flag_OUTSIDE_TXN:
-		return "OUTSIDE_TXN"
+		s = "OUTSIDE_TXN"
 	case Flag_ACK_TXN:
-		return "ACK_TXN"
+		s = "ACK_TXN"
 	case Flag_CONTINUE_TXN:
-		return "CONTINUE_TXN"
+		s = "CONTINUE_TXN"
 	default:
 		return fmt.Sprintf("Flags(%x)", uint16(f))
 	}
+	if f&Flag_CONTROL != 0 {
+		s += "|CONTROL"
+	}
+	return s
 }

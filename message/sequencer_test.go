@@ -438,6 +438,37 @@ func TestSequencerOutsideTxnCases(t *testing.T) {
 	require.Equal(t, pb.Offsets{"test/journal": z2.End}, seq.offsets)
 }
 
+func TestSequencerControlMessages(t *testing.T) {
+	var (
+		generate = newTestMsgGenerator()
+		seq      = NewSequencer(nil, nil, 0)
+		A        = NewProducerID()
+	)
+
+	// A control message carries Flag_OUTSIDE_TXN in its low bits, so it's
+	// sequenced as an immediately-committed message and dequeues at once. The
+	// Flag_CONTROL bit is masked off for sequencing rather than tripping the
+	// unknown-flags path.
+	var (
+		a1 = generate(A, 1, Flag_OUTSIDE_TXN|Flag_CONTROL)
+		a2 = generate(A, 2, Flag_OUTSIDE_TXN|Flag_CONTROL)
+	)
+	require.Equal(t, []QueueOutcome{QueueOutsideCommit}, queue(seq, a1))
+	expectDeque(t, seq, a1)
+	require.Equal(t, []QueueOutcome{QueueOutsideCommit}, queue(seq, a2))
+	expectDeque(t, seq, a2)
+	require.False(t, seq.HasPending())
+
+	// The dequeued envelope retains its Flag_CONTROL bit, so a consumer can
+	// still recognize and drop the control message.
+	require.NotZero(t, GetFlags(a2.GetUUID())&Flag_CONTROL)
+
+	// A duplicate control message (an already-acked clock) is ignored.
+	var a1Dup = generate(A, 1, Flag_OUTSIDE_TXN|Flag_CONTROL)
+	require.Equal(t, []QueueOutcome{QueueOutsideAlreadyAcked}, queue(seq, a1Dup))
+	require.Nil(t, seq.emit)
+}
+
 func TestSequencerProducerStatesRoundTrip(t *testing.T) {
 	var (
 		generate = newTestMsgGenerator()

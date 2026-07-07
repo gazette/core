@@ -201,8 +201,13 @@ func (w *Sequencer) QueueUncommitted(env Envelope) QueueOutcome {
 
 	// Inspect |flags|, |clock|, and the |partial| sequence to determine an |outcome|.
 	// Keep state mutations *outside* of this if/else block.
+	//
+	// Mask off Flag_CONTROL: a control message carries its transaction
+	// semantics in the low bits (Flag_OUTSIDE_TXN), so it's sequenced and
+	// committed immediately like any other out-of-transaction message. The
+	// consumer distinguishes control messages via their retained UUID flags.
 	var outcome QueueOutcome
-	switch flags {
+	switch flags &^ Flag_CONTROL {
 	default:
 		w.logError(env, partial, "unexpected UUID flags")
 		fallthrough // Handle as Flag_OUTSIDE_TXN.

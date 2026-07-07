@@ -81,3 +81,16 @@ func TestUUIDBuilding(t *testing.T) {
 	// Original nanos (981273734) rounded to 100ns (981273700) + 2000ns from 2 ticks = 981275700
 	require.Equal(t, int64(981275700), nsec)
 }
+
+func TestFlagsString(t *testing.T) {
+	require.Equal(t, "OUTSIDE_TXN", Flag_OUTSIDE_TXN.String())
+	require.Equal(t, "CONTINUE_TXN", Flag_CONTINUE_TXN.String())
+	require.Equal(t, "ACK_TXN", Flag_ACK_TXN.String())
+
+	// The control bit composes with the underlying transaction flag.
+	require.Equal(t, "OUTSIDE_TXN|CONTROL", Flag_CONTROL.String())
+	require.Equal(t, "CONTINUE_TXN|CONTROL", (Flag_CONTINUE_TXN | Flag_CONTROL).String())
+
+	// Genuinely-unrecognized flags fall back to hex.
+	require.Equal(t, "Flags(100)", Flags(0x100).String())
+}
