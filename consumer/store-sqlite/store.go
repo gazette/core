@@ -3,6 +3,7 @@ package store_sqlite
 /*
 #cgo LDFLAGS: -lsqlite3 -lrocksdb
 
+#include <stdlib.h>
 #include "store.h"
 */
 import "C"
@@ -145,11 +146,14 @@ func NewStore(recorder *recoverylog.Recorder) (*Store, error) {
 		}
 	}
 
+	// newRecFS copies both strings, so they're freed once it returns.
+	var cName = C.CString(s.SQLiteURIValues.Get("vfs"))
+	defer C.free(unsafe.Pointer(cName))
+	var cRoot = C.CString(s.recorder.Dir() + string(filepath.Separator))
+	defer C.free(unsafe.Pointer(cRoot))
+
 	// Wire this Store instance to be wrapped by a registered SQLite shim VFS,
-	s.vfs = C.newRecFS(
-		C.CString(s.SQLiteURIValues.Get("vfs")),
-		C.CString(s.recorder.Dir()+string(filepath.Separator)),
-	)
+	s.vfs = C.newRecFS(cName, cRoot)
 	if rc := sqlite3.ErrNo(C.sqlite3_vfs_register(s.vfs, 0)); rc != 0 {
 		C.recFSFree(s.vfs)
 		return nil, errors.WithMessage(rc, "registering SQLite VFS")
